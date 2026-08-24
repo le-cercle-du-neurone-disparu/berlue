@@ -3,8 +3,8 @@ from setuptools import find_packages, setup
 
 def load_requirements(filename: str) -> list:
     """
-    Load requirements from a file, ignoring empty lines
-    and '-r' directives (to avoid recursive loops).
+    Load requirements from a file, ignoring empty lines, comments (#...,
+    inline or full-line) and '-r' directives (to avoid recursive loops).
     """
     if not os.path.exists(filename):
         return []
@@ -12,10 +12,11 @@ def load_requirements(filename: str) -> list:
     with open(filename, "r") as f:
         content = f.readlines()
 
-    requirements = [
-        x.strip() for x in content
-        if x.strip() and not x.startswith("-r") and "git+" not in x
-    ]
+    requirements = []
+    for line in content:
+        line = line.split("#", 1)[0].strip()
+        if line and not line.startswith("-r") and "git+" not in line:
+            requirements.append(line)
     return requirements
 
 setup(
