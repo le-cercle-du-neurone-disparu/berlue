@@ -1,0 +1,26 @@
+name: Notify Slack on toreview
+
+# Se déclenche uniquement quand le label 'toreview' est ajouté à une PR
+# (les autres labels ajoutés/retirés ne matchent pas la condition ci-dessous).
+on:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  notify-slack:
+    if: github.event.label.name == 'toreview'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Envoie une notification Slack
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # Webhook créé via Slack Workflow Builder (pas une Incoming Webhook classique
+          # d'app Slack) : le workspace ne permet pas d'installer d'apps custom.
+          webhook-type: webhook-trigger
+          payload: |
+            {
+              "pr_title": "${{ github.event.pull_request.title }}",
+              "pr_author": "${{ github.event.pull_request.user.login }}",
+              "pr_url": "${{ github.event.pull_request.html_url }}"
+            }
