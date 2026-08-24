@@ -7,8 +7,7 @@ from prefect import task, flow
 
 from berlue.interface.main import evaluate, preprocess, train
 from berlue.params import *
-# TODO: mlflow_transition_model n'est pas encore défini dans registry.py
-# from berlue.ml_logic.registry import mlflow_transition_model
+from berlue.ml_logic.registry import mlflow_transition_model
 
 @task
 def preprocess_new_data(min_date: str, max_date: str):
