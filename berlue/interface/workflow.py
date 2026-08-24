@@ -6,8 +6,9 @@ from dateutil.relativedelta import relativedelta
 from prefect import task, flow
 
 from berlue.interface.main import evaluate, preprocess, train
-from berlue.ml_logic.registry import mlflow_transition_model
 from berlue.params import *
+# TODO: mlflow_transition_model n'est pas encore défini dans registry.py
+# from berlue.ml_logic.registry import mlflow_transition_model
 
 @task
 def preprocess_new_data(min_date: str, max_date: str):
@@ -23,7 +24,9 @@ def re_train(min_date: str, max_date: str, split_ratio: str):
 
 @task
 def transition_model(current_stage: str, new_stage: str):
-    return mlflow_transition_model(current_stage=current_stage, new_stage=new_stage)
+    # TODO: mlflow_transition_model n'est pas encore défini dans registry.py
+    # return mlflow_transition_model(current_stage=current_stage, new_stage=new_stage)
+    raise NotImplementedError("mlflow_transition_model is not implemented yet.")
 
 @task
 def notify(old_mae, new_mae):

@@ -10,13 +10,15 @@ from berlue.ml_logic.data import get_data_with_cache, clean_data, load_data_to_b
 from berlue.ml_logic.model import build_model, train_model, evaluate_model
 from berlue.ml_logic.preprocessor import preprocess_features
 from berlue.ml_logic.registry import load_model, save_model, save_results
-from berlue.ml_logic.registry import mlflow_run, mlflow_transition_model
+# TODO: mlflow_run / mlflow_transition_model ne sont pas encore définis dans registry.py
+# from berlue.ml_logic.registry import mlflow_run, mlflow_transition_model
 
 def preprocess() -> None:
     pass
     # print("✅ preprocess() done \n")
 
-@mlflow_run
+# TODO: mlflow_run n'est pas encore défini dans registry.py
+# @mlflow_run
 def train(
         # min_date:str = '2009-01-01',
         # max_date:str = '2015-01-01',
@@ -39,7 +41,8 @@ def train(
     pass
 
 
-@mlflow_run
+# TODO: mlflow_run n'est pas encore défini dans registry.py
+# @mlflow_run
 def evaluate(
         # min_date:str = '2014-01-01',
         # max_date:str = '2015-01-01',

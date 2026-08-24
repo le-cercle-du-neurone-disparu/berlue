@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pydantic
+numpy
+pandas
+colorama
+python-dateutil
+pygeohash
+requests
+google-cloud-bigquery
+google-cloud-storage
+mlflow
+prefect
