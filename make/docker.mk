@@ -12,7 +12,10 @@ docker_build_local: ## Build the Docker image locally for testing
 docker_run_local: ## Run the local Docker container on port 8080
 	@echo "🏃‍♂️ Running container $(GAR_IMAGE):dev..."
 	@echo "👉 Go to http://localhost:8080"
-	docker run -it -e PORT=8000 -p 8080:8000 $(GAR_IMAGE):dev
+	docker run -it \
+		--env-file .env \
+		-p 8000:8000 \
+		$(GAR_IMAGE):dev
 
 artifact_registry_create: ## Create the Docker repository in Artifact Registry
 	@echo "📦 Creating Artifact Registry repository $(ARTIFACTSREPO)..."

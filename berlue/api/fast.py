@@ -1,15 +1,24 @@
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-# from berlue.ml_logic.preprocessor import preprocess_features
+from berlue.api.schemas import (
+    EvaluateInput,
+    EvaluateOutput,
+    PredictInput,
+    PredictOutput,
+)
 from berlue.ml_logic.registry import load_model
+from berlue.params import USE_MOCK
 
-# from berlue.api.schemas import MyCustomSchemas
+# ==========================================
+# 1. API INITIALIZATION
+# ==========================================
 
-# Pydantic V2 TypeAdapter for efficient batch serialization
-# my_custom_model_list_adapter = TypeAdapter(List[MyCustomSchemas])
-
-app = FastAPI(title="MY CUSTOM API", description="API for XXX.", version="1.0.0")
+app = FastAPI(
+    title="BERLUE API",
+    description="API for the Berlue LLM hallucination checker.",
+    version="1.0.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,11 +28,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load model at startup
-model = load_model()
-# assert model is not None
-app.state.model = model
+# ==========================================
+# 2. DYNAMIC MODEL LOADING (MOCK VS REAL)
+# ==========================================
 
+if USE_MOCK:
+    print("⚠️ STARTING IN MOCK MODE: The real ML model is not loaded.")
+    from berlue.mocks.mock_pipeline import MockBerluePipeline
+    app.state.model = MockBerluePipeline()
+else:
+    print("🚀 STARTING IN PRODUCTION MODE: Loading the real ML model...")
+    app.state.model = load_model()
+
+# ==========================================
+# 3. TECHNICAL ENDPOINTS (Existing template)
+# ==========================================
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
@@ -32,34 +51,17 @@ async def favicon():
     """
     return Response(status_code=204)
 
-
 @app.get("/")
 def root():
     """
     Root health-check endpoint.
     """
-    return {"greeting": "Hello"}
-
+    return {"greeting": "Hello from Berlue API"}
 
 @app.put("/model")
 def update_model(stage: str = "Production"):
     """
     Reload or swap the active machine learning model in application state on-the-fly.
-
-    This endpoint allows hot-swapping the model loaded in memory (e.g., switching
-    between 'Production', 'Staging', or a specific model version) without requiring
-    an API process restart or causing service downtime.
-
-    Args:
-        stage (str, optional): Target MLflow stage/tag of the model to fetch
-                               from registry. Defaults to "Production".
-
-    Returns:
-        dict: Confirmation payload detailing update status and active model stage.
-
-    Raises:
-        HTTPException: 404 error if target model stage does not exist in registry,
-                       or 500 error if model loading fails internally.
     """
     try:
         new_model = load_model(stage=stage)
@@ -74,34 +76,53 @@ def update_model(stage: str = "Production"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading model for stage '{stage}': {str(e)}") from e
 
+# ==========================================
+# 4. BUSINESS ENDPOINTS (Berlue)
+# ==========================================
 
-@app.get("/predict")
-def predict(
-    # p1: type-p1,
-    # p2: type-p2,
-):
+@app.post("/predict", response_model=PredictOutput)
+def predict(payload: PredictInput):
     """
-    Predict XXX.
-
-    Args:
-        p1 (type-p1): XXX.
-        ...
-
-    Returns:
-        dict: Single estimation result, e.g. `{"XXX": XXX}`.
+    Takes a question and an LLM model, generates the response, and checks for hallucinations.
     """
-    pass
+    pipeline = app.state.model
 
+    try:
+        # Call the model's predict method (to be implemented in ml_logic)
+        result_dict = pipeline.predict(
+            question=payload.question,
+            llm_name=payload.llm_model
+        )
+        return result_dict
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction error: {str(e)}"
+        )
 
-@app.post("/predict_batch")
-async def predict_batch(inputs: list[dict]):
+@app.post("/evaluate", response_model=EvaluateOutput)
+def evaluate(payload: EvaluateInput):
     """
-    Predict XXX for multiple XXX in a single batch request via JSON POST payload.
-
-    Args:
-        XXX
-
-    Returns:
-        dict: Dictionary containing the array of predicted XXX, e.g. `{"XXX": [XXX, XXX]}`.
+    Runs a complete evaluation of the Berlue system on a dataset.
     """
-    pass
+    pipeline = app.state.model
+
+    try:
+        # Call the evaluation method (to be implemented in ml_logic)
+        metrics_dict = pipeline.evaluate_dataset(
+            dataset_name=payload.dataset_name,
+            n_samples=payload.sample_size,
+            llm_name=payload.llm_model_to_test
+        )
+
+        return {
+            "dataset": payload.dataset_name,
+            "samples_evaluated": payload.sample_size,
+            "metrics": metrics_dict,
+            "status": "success"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Evaluation error: {str(e)}"
+        )

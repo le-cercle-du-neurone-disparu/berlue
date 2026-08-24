@@ -1,5 +1,5 @@
 # 1. Retrieve the base image dynamically (passed by the Makefile)
-ARG DOCKER_BASE_IMAGE
+ARG DOCKER_BASE_IMAGE=python:3.10.6-slim
 FROM ${DOCKER_BASE_IMAGE}
 
 WORKDIR /api
