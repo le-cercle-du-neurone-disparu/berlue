@@ -7,9 +7,13 @@ import mlflow
 from colorama import Fore, Style
 from mlflow.tracking import MlflowClient
 
-# TODO: Replace "package_name" with the actual dynamic package name,
-# or use relative imports (e.g., from .params import *)
-from berlue.params import *
+from berlue.params import (
+    LOCAL_REGISTRY_PATH,
+    MLFLOW_EXPERIMENT,
+    MLFLOW_MODEL_NAME,
+    MLFLOW_TRACKING_URI,
+    MODEL_TARGET,
+)
 
 
 def save_results(params: dict, metrics: dict) -> None:

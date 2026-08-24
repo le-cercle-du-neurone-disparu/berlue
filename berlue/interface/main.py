@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 
 from berlue.ml_logic.registry import mlflow_run
-from berlue.params import *
 
 
 def preprocess() -> None:

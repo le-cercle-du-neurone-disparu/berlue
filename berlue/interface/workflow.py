@@ -6,7 +6,13 @@ from dateutil.relativedelta import relativedelta
 from prefect import flow, task
 
 from berlue.interface.main import evaluate, preprocess, train
-from berlue.params import *
+from berlue.params import (
+    EVALUATION_START_DATE,
+    NOTIFY_AUTHOR,
+    NOTIFY_BASE_URL,
+    NOTIFY_CHANNEL,
+    PREFECT_FLOW_NAME,
+)
 
 
 @task

@@ -4,8 +4,6 @@ import pandas as pd
 from colorama import Fore, Style
 from google.cloud import bigquery
 
-from berlue.params import *
-
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
