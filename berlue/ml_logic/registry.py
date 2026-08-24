@@ -116,3 +116,55 @@ def load_model(stage="Production"):
         raise NotImplementedError("Loading model from MLflow is not implemented yet.")
 
     return None
+
+def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
+    """
+    Transition the latest model from the `current_stage` to the
+    `new_stage` and archive the existing model in `new_stage`.
+    """
+    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
+    client = MlflowClient()
+
+    version = client.get_latest_versions(name=MLFLOW_MODEL_NAME, stages=[current_stage])
+
+    if not version:
+        print(f"\n❌ No model found with name {MLFLOW_MODEL_NAME} in stage {current_stage}")
+        return None
+
+    client.transition_model_version_stage(
+        name=MLFLOW_MODEL_NAME,
+        version=version[0].version,
+        stage=new_stage,
+        archive_existing_versions=True
+    )
+
+    print(f"✅ Model {MLFLOW_MODEL_NAME} (version {version[0].version}) transitioned from {current_stage} to {new_stage}")
+
+    return None
+
+
+def mlflow_run(func):
+    """
+    Generic function to log params and results to MLflow along with universal auto-logging.
+
+    Args:
+        - func (function): Function you want to run within the MLflow run
+    """
+    def wrapper(*args, **kwargs):
+        # End any active run to avoid conflicts
+        if mlflow.active_run():
+            mlflow.end_run()
+
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        mlflow.set_experiment(experiment_name=MLFLOW_EXPERIMENT)
+
+        with mlflow.start_run():
+            # Universal autolog works for TensorFlow, Scikit-learn, XGBoost, etc.
+            mlflow.autolog()
+            results = func(*args, **kwargs)
+
+        print("✅ mlflow_run auto-log done")
+
+        return results
+    return wrapper
