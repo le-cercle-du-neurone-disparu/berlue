@@ -30,7 +30,7 @@ gcs_delete_bucket: ## Delete the Cloud Storage bucket and all its contents
 iam_setup_service_account: ## Create the Service Account and assign IAM roles
 	@echo "🤖 Creating or verifying Service Account..."
 	gcloud iam service-accounts create $(SA_NAME) \
-		--display-name="Service Account for TaxiFare VM" \
+		--display-name="Service Account for VM" \
 		--project=$(GCP_PROJECT) || true
 	@echo "🔐 Adding BigQuery Data Editor role..."
 	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \

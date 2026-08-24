@@ -18,6 +18,3 @@ local_setup: ## Setup local virtual environment using pyenv
 	@echo "📚 Installing project and dependencies in editable mode..."
 	pip install -e ".[dev]"
 	@echo "✅ Local setup complete! Your folder is now using $(VENV_NAME)."
-
-init_project: ## 🏗️ Initialize the template with PACKAGE_NAME from .env
-	@bash scripts/init_template.sh

@@ -12,12 +12,12 @@ venv/
 **/__pycache__/
 *.pyc
 .pytest_cache/
-taxifare.egg-info/
+*.egg-info/
 
 # Dossiers inutiles en prod
 tests/
 notebooks/
-taxifare/interface/
+berlue/interface/
 data/
 
 # Git

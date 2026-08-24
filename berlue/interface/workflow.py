@@ -48,7 +48,7 @@ def notify(old_mae, new_mae):
 @flow(name=PREFECT_FLOW_NAME)
 def train_flow():
     """
-    Build the Prefect workflow for the `taxifare` package. It should:
+    Build the Prefect workflow for the `berlue` package. It should:
         - preprocess 1 month of new data, starting from EVALUATION_START_DATE
         - compute `old_mae` by evaluating the current production model in this new month period
         - compute `new_mae` by re-training, then evaluating the current production model on this new month period

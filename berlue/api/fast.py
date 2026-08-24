@@ -6,15 +6,15 @@ from fastapi import FastAPI, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import TypeAdapter
 
-# from XXX.ml_logic.preprocessor import preprocess_features
+# from berlue.ml_logic.preprocessor import preprocess_features
 from berlue.ml_logic.registry import load_model
-# from XXX.api.schemas import MyCustomSchemas
+# from berlue.api.schemas import MyCustomSchemas
 
 # Pydantic V2 TypeAdapter for efficient batch serialization
-# ride_list_adapter = TypeAdapter(List[MyCustomSchemas])
+# my_custom_model_list_adapter = TypeAdapter(List[MyCustomSchemas])
 
 app = FastAPI(
-    title="TaxiFare API",
+    title="MY CUSTOM API",
     description="API for XXX.",
     version="1.0.0"
 )
@@ -29,7 +29,7 @@ app.add_middleware(
 
 # Load model at startup
 model = load_model()
-assert model is not None
+# assert model is not None
 app.state.model = model
 
 
@@ -109,7 +109,7 @@ def predict(
     pass
 
 @app.post("/predict_batch")
-async def predict_batch(rides: List[Ride]):
+async def predict_batch(inputs: List[dict]):
     """
     Predict XXX for multiple XXX in a single batch request via JSON POST payload.
 

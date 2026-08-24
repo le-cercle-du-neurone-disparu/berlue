@@ -10,7 +10,7 @@ from mlflow.tracking import MlflowClient
 
 # TODO: Replace "package_name" with the actual dynamic package name,
 # or use relative imports (e.g., from .params import *)
-from package_name.params import *
+from berlue.params import *
 
 def save_results(params: dict, metrics: dict) -> None:
     """

@@ -7,7 +7,7 @@ from dateutil.parser import parse
 
 from berlue.params import *
 from berlue.ml_logic.data import get_data_with_cache, clean_data, load_data_to_bq
-from berlue.ml_logic.model import initialize_model, compile_model, train_model, evaluate_model
+from berlue.ml_logic.model import build_model, train_model, evaluate_model
 from berlue.ml_logic.preprocessor import preprocess_features
 from berlue.ml_logic.registry import load_model, save_model, save_results
 from berlue.ml_logic.registry import mlflow_run, mlflow_transition_model

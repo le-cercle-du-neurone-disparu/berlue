@@ -2,15 +2,8 @@
 
 A robust, framework-agnostic template to jumpstart your Machine Learning projects with best practices in software engineering, CI/CD, and GCP deployment.
 
-## 🛠️ 1. Project Initialization
+## 🛠️ 1. Local Environment Setup
 
-Open the `.env` file and fill in your variables, especially `PACKAGE_NAME`. Run the initialization script to rename all folders and imports:
-
-```bash
-make init_project
-```
-
-### Local Environment Setup
 Automatically set up your Python virtual environment using `pyenv` and install the package with all dependencies:
 
 ```bash
