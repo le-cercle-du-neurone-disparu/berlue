@@ -39,7 +39,11 @@ make lint_python_format    # vérifie sans rien modifier (--check)
 
 La config `ruff` (règles activées/ignorées, longueur de ligne) est dans [`pyproject.toml`](pyproject.toml) à la racine — c'est la seule source de vérité, pas de doublon ici.
 
-Règles actives : `E`/`F` (pycodestyle + pyflakes), `I` (tri des imports), `UP` (syntaxe moderne), `B` (bugbear). `F403`/`F405` sont ignorées car `from berlue.params import *` est un pattern volontaire du projet. `line-length = 120`.
+Règles actives : `E`/`F` (pycodestyle + pyflakes), `I` (tri des imports), `UP` (syntaxe moderne), `B` (bugbear). Aucune règle ignorée. `line-length = 120`.
+
+## CI
+
+`.github/workflows/lint.yml` lance `make lint_python` et `make lint_shell` sur chaque push vers `main` et chaque PR.
 
 ## Sans passer par `make`
 
