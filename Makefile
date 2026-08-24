@@ -4,8 +4,9 @@
 # 2. Export des variables pour qu'elles soient dispo dans le terminal
 export
 
-# 3. Création de l'email du Service Account dynamiquement
+# 3. Valeurs dérivées (nom fixe + identité/paramètre propre à chacun dans .env)
 SA_EMAIL = $(SA_NAME)@$(GCP_PROJECT).iam.gserviceaccount.com
+BUCKET_NAME = $(GCP_PROJECT)-berlue_$(BUCKET_SUFFIX)
 
 # 4. Import des sous-makefiles (Ordre logique MLOps)
 # include make/local.mk # Étape 1 : Création de l'environnement local
