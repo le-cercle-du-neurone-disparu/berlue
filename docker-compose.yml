@@ -1,0 +1,17 @@
+services:
+  api:
+    image: ${GAR_IMAGE}:dev
+    env_file: .env
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - PYTHONWARNINGS=ignore
+      # - TF_CPP_MIN_LOG_LEVEL=2  # Uncomment if you use TensorFlow to hide C++ warnings
+    stdin_open: true # Enables interactive mode (equivalent to -i)
+    tty: true        # Allocates a pseudo-TTY (equivalent to -t)
+    volumes:
+      # Mounts your local code inside the container for live-reloading
+      - ./package_folder:/api/package_folder
+    # Starts the API with auto-reload activated
+    command: sh -c "exec uvicorn package_folder.api.fast:app --host 0.0.0.0 --port 8000 --reload"
