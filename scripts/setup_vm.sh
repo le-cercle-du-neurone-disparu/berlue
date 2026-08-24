@@ -46,9 +46,9 @@ eval "$(pyenv init --path)"
 
 # 6. Install Python (this takes about 5 minutes)
 echo "🐍 Installing Python ${PYTHON_VERSION} (please wait)..."
-pyenv install -s ${PYTHON_VERSION}
-pyenv virtualenv ${PYTHON_VERSION} ${VENV_NAME}
-pyenv global ${VENV_NAME}
+pyenv install -s "${PYTHON_VERSION}"
+pyenv virtualenv "${PYTHON_VERSION}" "${VENV_NAME}"
+pyenv global "${VENV_NAME}"
 
 # 7. Install Python packages for GCP
 echo "📦 Installing GCP libraries..."

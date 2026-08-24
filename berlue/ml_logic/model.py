@@ -1,5 +1,6 @@
+from typing import Any
+
 import numpy as np
-from typing import Tuple, Any
 
 # Generic type alias to accommodate Scikit-Learn, Keras, PyTorch, or XGBoost models
 Model = Any
@@ -36,7 +37,7 @@ def train_model(
         batch_size: int = 256,    # for DL : ignored if ML (can be removed)
         patience: int = 2,        # for DL : ignored if ML (can be removed)
         **kwargs
-    ) -> Tuple[Model, dict]:
+    ) -> tuple[Model, dict]:
     """
     Fit the model and return a tuple (fitted_model, history_or_metrics).
     """

@@ -1,10 +1,11 @@
-import pandas as pd
-
-from google.cloud import bigquery
-from colorama import Fore, Style
 from pathlib import Path
 
+import pandas as pd
+from colorama import Fore, Style
+from google.cloud import bigquery
+
 from berlue.params import *
+
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -71,7 +72,10 @@ def load_data_to_bq(
     print(Fore.BLUE + f"\nSave data to BigQuery @ {full_table_name}...:" + Style.RESET_ALL)
 
     # Fix column names to BigQuery accepted format (cannot start with a number)
-    data.columns = [f"_{column}" if not str(column)[0].isalpha() and not str(column)[0] == "_" else str(column) for column in data.columns]
+    data.columns = [
+        f"_{column}" if not str(column)[0].isalpha() and not str(column)[0] == "_" else str(column)
+        for column in data.columns
+    ]
 
     client = bigquery.Client()
 

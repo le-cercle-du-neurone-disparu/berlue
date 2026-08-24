@@ -1,5 +1,4 @@
 import os
-import numpy as np
 
 ##################  VARIABLES (paramétrables via .env : diffèrent par personne/environnement)  ##################
 DATA_SIZE = os.environ.get("DATA_SIZE")

@@ -1,4 +1,5 @@
 import os
+
 import pytest
 from google.cloud import storage
 
@@ -7,7 +8,8 @@ BUCKET_NAME = os.environ.get("BUCKET_NAME")
 
 def test_setup_key_env():
     """Verify that $GOOGLE_APPLICATION_CREDENTIALS is defined"""
-    assert os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), "❌ GOOGLE_APPLICATION_CREDENTIALS environment variable is not defined."
+    assert os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), \
+        "❌ GOOGLE_APPLICATION_CREDENTIALS environment variable is not defined."
 
 def test_setup_key_path():
     """Verify that $GOOGLE_APPLICATION_CREDENTIALS points to an existing file"""
@@ -27,7 +29,8 @@ def test_setup_project_id():
     """Verify that the provided project id matches the authenticated one"""
     assert GCP_PROJECT, "❌ GCP_PROJECT is not defined in your environment."
     client = storage.Client()
-    assert client.project == GCP_PROJECT, f"❌ Authenticated project '{client.project}' differs from env GCP_PROJECT '{GCP_PROJECT}'"
+    assert client.project == GCP_PROJECT, \
+        f"❌ Authenticated project '{client.project}' differs from env GCP_PROJECT '{GCP_PROJECT}'"
 
 def test_setup_bucket_name():
     """Verify that the provided bucket exists and is accessible"""

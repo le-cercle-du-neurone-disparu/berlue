@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+# E/F : base pycodestyle + pyflakes. I : tri des imports. UP : syntaxe moderne.
+# B : bugbear (pièges Python courants). Volontairement pas plus strict pour
+# l'instant (pas de D/docstrings, pas de ANN/annotations obligatoires) — le code
+# est encore largement le squelette hérité du template, pas la peine d'imposer
+# une rigueur que le projet n'a pas encore.
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+    "F403",  # `from berlue.params import *` : pattern volontaire du projet, pas à corriger
+    "F405",  # (idem : symboles "peut-être définis par un import étoile")
+]

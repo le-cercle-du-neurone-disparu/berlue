@@ -1,13 +1,10 @@
-from typing import List
-import numpy as np
-import pandas as pd
 
-from fastapi import FastAPI, Response, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import TypeAdapter
 
 # from berlue.ml_logic.preprocessor import preprocess_features
 from berlue.ml_logic.registry import load_model
+
 # from berlue.api.schemas import MyCustomSchemas
 
 # Pydantic V2 TypeAdapter for efficient batch serialization
@@ -88,7 +85,7 @@ def update_model(stage: str = "Production"):
         raise HTTPException(
             status_code=500,
             detail=f"Error loading model for stage '{stage}': {str(e)}"
-        )
+        ) from e
 
 
 @app.get("/predict")
@@ -109,7 +106,7 @@ def predict(
     pass
 
 @app.post("/predict_batch")
-async def predict_batch(inputs: List[dict]):
+async def predict_batch(inputs: list[dict]):
     """
     Predict XXX for multiple XXX in a single batch request via JSON POST payload.
 

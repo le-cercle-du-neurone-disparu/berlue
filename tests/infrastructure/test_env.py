@@ -1,7 +1,8 @@
 import os
-import pytest
 from pathlib import Path
+
 from dotenv import load_dotenv
+
 
 def test_env_file_exists():
     """Verify that the .env file exists at the root of the project."""
