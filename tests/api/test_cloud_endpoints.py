@@ -11,6 +11,7 @@ EXPECTED_PREDICT_KEY = "prediction"
 
 SERVICE_URL = os.environ.get("SERVICE_URL")
 
+
 @pytest.mark.asyncio
 async def test_root_is_up():
     assert SERVICE_URL, "❌ SERVICE_URL is not set in environment variables."

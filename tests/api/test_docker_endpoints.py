@@ -16,11 +16,7 @@ image_name = f"{os.environ.get('GAR_IMAGE')}:dev"
 
 # Use docker ps to list all running containers derived from $GAR_IMAGE:dev
 docker_ps_command = f'docker ps --filter ancestor={image_name} --format "{{{{.Ports}}}}"'
-docker_ps_output = subprocess.Popen(
-    docker_ps_command,
-    shell=True,
-    stdout=subprocess.PIPE
-).stdout.read().decode("utf-8")
+docker_ps_output = subprocess.Popen(docker_ps_command, shell=True, stdout=subprocess.PIPE).stdout.read().decode("utf-8")
 
 # If we have an output, extract the port the container is running on
 if docker_ps_output:

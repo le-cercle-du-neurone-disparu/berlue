@@ -121,6 +121,7 @@ def load_model(stage="Production"):
 
     return None
 
+
 def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
     """
     Transition the latest model from the `current_stage` to the
@@ -137,15 +138,11 @@ def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
         return None
 
     client.transition_model_version_stage(
-        name=MLFLOW_MODEL_NAME,
-        version=version[0].version,
-        stage=new_stage,
-        archive_existing_versions=True
+        name=MLFLOW_MODEL_NAME, version=version[0].version, stage=new_stage, archive_existing_versions=True
     )
 
     print(
-        f"✅ Model {MLFLOW_MODEL_NAME} (version {version[0].version}) "
-        f"transitioned from {current_stage} to {new_stage}"
+        f"✅ Model {MLFLOW_MODEL_NAME} (version {version[0].version}) transitioned from {current_stage} to {new_stage}"
     )
 
     return None
@@ -158,6 +155,7 @@ def mlflow_run(func):
     Args:
         - func (function): Function you want to run within the MLflow run
     """
+
     def wrapper(*args, **kwargs):
         # End any active run to avoid conflicts
         if mlflow.active_run():
@@ -174,4 +172,5 @@ def mlflow_run(func):
         print("✅ mlflow_run auto-log done")
 
         return results
+
     return wrapper

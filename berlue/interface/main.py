@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 
@@ -9,16 +8,16 @@ def preprocess() -> None:
     pass
     # print("✅ preprocess() done \n")
 
+
 @mlflow_run
 def train(
-        # min_date:str = '2009-01-01',
-        # max_date:str = '2015-01-01',
-        split_ratio: float,
-        learning_rate,
-        batch_size,
-        patience
-    ) -> float:
-
+    # min_date:str = '2009-01-01',
+    # max_date:str = '2015-01-01',
+    split_ratio: float,
+    learning_rate,
+    batch_size,
+    patience,
+) -> float:
     """
     - Download processed data from your BQ table (or from cache if it exists)
     - Train on the preprocessed dataset (which should be ordered by date)
@@ -34,10 +33,10 @@ def train(
 
 @mlflow_run
 def evaluate(
-        # min_date:str = '2014-01-01',
-        # max_date:str = '2015-01-01',
-        stage: str = "Production"
-    ) -> float:
+    # min_date:str = '2014-01-01',
+    # max_date:str = '2015-01-01',
+    stage: str = "Production",
+) -> float:
     """
     Evaluate the performance of the latest production model on processed data
     Return XXX as a float
@@ -105,7 +104,8 @@ def pred(X_pred: pd.DataFrame = None) -> np.ndarray:
     # return y_pred
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # preprocess()
     # train()
     # evaluate()

@@ -12,43 +12,19 @@
   brew install shellcheck
   ```
 
-## Lancer les linters
+## Commandes
 
 ```bash
-make lint            # tout (Python + shell)
-make lint_python      # ruff check uniquement
-make lint_shell        # shellcheck uniquement (scripts/*.sh)
-```
-
-Pour corriger automatiquement ce qui est fixable (imports inutilisés/mal triés, etc.) :
-
-```bash
-make lint_python FIX=1
-```
-
-## Formatage
-
-`ruff format` (équivalent Black) existe mais **n'est pas dans `make lint`** pour l'instant — il reformatterait 14 fichiers d'un coup (tout le style existant, pas juste des erreurs), ce qui créerait des conflits avec les branches en cours. À activer dans une tâche dédiée une fois celles-ci mergées.
-
-```bash
-make format_python         # reformate les fichiers pour de vrai
-make lint_python_format    # vérifie sans rien modifier (--check)
+make lint            # vérifie tout (Python + shell), ne modifie rien
+make lint_format      # corrige et formate automatiquement le code Python
 ```
 
 ## Configuration
 
-La config `ruff` (règles activées/ignorées, longueur de ligne) est dans [`pyproject.toml`](pyproject.toml) à la racine — c'est la seule source de vérité, pas de doublon ici.
+La config `ruff` (règles activées, longueur de ligne) est dans [`pyproject.toml`](pyproject.toml) à la racine.
 
 Règles actives : `E`/`F` (pycodestyle + pyflakes), `I` (tri des imports), `UP` (syntaxe moderne), `B` (bugbear). Aucune règle ignorée. `line-length = 120`.
 
 ## CI
 
-`.github/workflows/lint.yml` lance `make lint_python` et `make lint_shell` sur chaque push vers `main` et chaque PR.
-
-## Sans passer par `make`
-
-```bash
-ruff check berlue/ tests/              # équivalent à make lint_python
-ruff check --fix berlue/ tests/        # équivalent à make lint_python FIX=1
-shellcheck scripts/*.sh                # équivalent à make lint_shell
-```
+`.github/workflows/lint.yml` lance `make lint` sur chaque push vers `main` et chaque PR.

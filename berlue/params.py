@@ -22,8 +22,9 @@ RUN_ENV = os.environ.get("RUN_ENV", "local")
 # MODEL_TARGET se règle en ligne de commande, pas dans .env — cf. make/pipeline.mk
 # (ex: `make run_train MODEL_TARGET=gcs`). Défaut "local".
 MODEL_TARGET = os.environ.get("MODEL_TARGET", "local")
-assert MODEL_TARGET in ("local", "gcs", "mlflow"), \
+assert MODEL_TARGET in ("local", "gcs", "mlflow"), (
     f"❌ MODEL_TARGET invalide : {MODEL_TARGET!r} (doit être local, gcs ou mlflow)"
+)
 
 # MLflow : le serveur de tracking dépend de RUN_ENV.
 # TODO: pas encore de serveur MLflow partagé pour "gcp".

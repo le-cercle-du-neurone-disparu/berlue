@@ -5,9 +5,12 @@ import numpy as np
 # Generic type alias to accommodate Scikit-Learn, Keras, PyTorch, or XGBoost models
 Model = Any
 
-def build_model(input_shape: tuple = None,    # for DL: ignored if ML (can be removed)
-                learning_rate: float = 0.0005, # for DL: ignored if ML (can be removed)
-                **kwargs) -> Model:
+
+def build_model(
+    input_shape: tuple = None,  # for DL: ignored if ML (can be removed)
+    learning_rate: float = 0.0005,  # for DL: ignored if ML (can be removed)
+    **kwargs,
+) -> Model:
     """
     Instantiate the model.
     (For neural networks, this includes initializing weights and compiling).
@@ -31,13 +34,13 @@ def build_model(input_shape: tuple = None,    # for DL: ignored if ML (can be re
 
 
 def train_model(
-        model: Model,
-        X: np.ndarray,
-        y: np.ndarray,
-        batch_size: int = 256,    # for DL : ignored if ML (can be removed)
-        patience: int = 2,        # for DL : ignored if ML (can be removed)
-        **kwargs
-    ) -> tuple[Model, dict]:
+    model: Model,
+    X: np.ndarray,
+    y: np.ndarray,
+    batch_size: int = 256,  # for DL : ignored if ML (can be removed)
+    patience: int = 2,  # for DL : ignored if ML (can be removed)
+    **kwargs,
+) -> tuple[Model, dict]:
     """
     Fit the model and return a tuple (fitted_model, history_or_metrics).
     """
@@ -69,12 +72,12 @@ def train_model(
 
 
 def evaluate_model(
-        model: Model,
-        X: np.ndarray,
-        y: np.ndarray,
-        batch_size: int = 64,    # for DL : ignored if ML (can be removed)
-        **kwargs
-    ) -> dict:
+    model: Model,
+    X: np.ndarray,
+    y: np.ndarray,
+    batch_size: int = 64,  # for DL : ignored if ML (can be removed)
+    **kwargs,
+) -> dict:
     """
     Evaluate trained model performance on the dataset.
     Returns a dictionary of metrics.

@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,11 +9,7 @@ from berlue.ml_logic.registry import load_model
 # Pydantic V2 TypeAdapter for efficient batch serialization
 # my_custom_model_list_adapter = TypeAdapter(List[MyCustomSchemas])
 
-app = FastAPI(
-    title="MY CUSTOM API",
-    description="API for XXX.",
-    version="1.0.0"
-)
+app = FastAPI(title="MY CUSTOM API", description="API for XXX.", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -30,7 +25,6 @@ model = load_model()
 app.state.model = model
 
 
-
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """
@@ -44,7 +38,7 @@ def root():
     """
     Root health-check endpoint.
     """
-    return {'greeting': 'Hello'}
+    return {"greeting": "Hello"}
 
 
 @app.put("/model")
@@ -71,21 +65,14 @@ def update_model(stage: str = "Production"):
         new_model = load_model(stage=stage)
         if new_model is None:
             raise HTTPException(
-                status_code=404,
-                detail=f"Model for stage '{stage}' could not be found or loaded from registry."
+                status_code=404, detail=f"Model for stage '{stage}' could not be found or loaded from registry."
             )
 
         # Hot-swap the loaded model stored in FastAPI application state
         app.state.model = new_model
-        return {
-            "status": "success",
-            "message": f"Model successfully updated to stage '{stage}'."
-        }
+        return {"status": "success", "message": f"Model successfully updated to stage '{stage}'."}
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error loading model for stage '{stage}': {str(e)}"
-        ) from e
+        raise HTTPException(status_code=500, detail=f"Error loading model for stage '{stage}': {str(e)}") from e
 
 
 @app.get("/predict")
@@ -104,6 +91,7 @@ def predict(
         dict: Single estimation result, e.g. `{"XXX": XXX}`.
     """
     pass
+
 
 @app.post("/predict_batch")
 async def predict_batch(inputs: list[dict]):
