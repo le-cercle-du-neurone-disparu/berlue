@@ -1,0 +1,42 @@
+# berlue/ml_logic/mock.py
+
+
+class MockBerluePipeline:
+    """
+    Fake pipeline used for frontend development.
+    Simulates the behavior of the real ML model.
+    """
+
+    def predict(self, question: str, llm_name: str) -> dict:
+        """
+        Simulates generating an answer and finding a hallucination.
+        """
+        # We return a dictionary that exactly matches the PredictOutput schema
+        return {
+            "question": question,
+            "llm_model_used": llm_name,
+            "full_llm_answer": "Le ciel est vert. C'est dû à la réfraction.",
+            "claims": [
+                {
+                    "claim_text": "Le ciel est vert.",
+                    "status": "red",
+                    "fusion_score": 0.88,
+                    "evidence_source": "FEVER_corpus",
+                    "evidence_text": "Le ciel est bleu pendant la journée.",
+                },
+                {
+                    "claim_text": "C'est dû à la réfraction.",
+                    "status": "green",
+                    "fusion_score": 0.15,
+                    "evidence_source": "SelfCheckGPT",
+                    "evidence_text": "Aucune contradiction détectée.",
+                },
+            ],
+        }
+
+    def evaluate_dataset(self, dataset_name: str, n_samples: int, llm_name: str) -> dict:
+        """
+        Simulates running a full benchmark.
+        """
+        # We return a dictionary that exactly matches the Metrics schema
+        return {"berlue_accuracy": 0.82, "baseline_nli_accuracy": 0.65, "berlue_precision": 0.85}
