@@ -25,6 +25,9 @@ eggs/
 lib/
 lib64/
 parts/
+# Exception : notre propre lib bash partagée, pas un dossier de venv.
+!scripts/lib/
+!scripts/lib/**
 sdist/
 var/
 wheels/
