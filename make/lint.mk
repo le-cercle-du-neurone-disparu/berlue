@@ -13,7 +13,7 @@ lint: ## Vérifie tout (Python + shell), ne modifie rien
 	}
 	ruff check berlue/ tests/
 	ruff format --check berlue/ tests/
-	shellcheck scripts/*.sh
+	shellcheck -x scripts/*.sh
 
 lint_format: ## Corrige et formate automatiquement le code Python (ruff)
 	ruff check --fix berlue/ tests/

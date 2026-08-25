@@ -40,7 +40,7 @@ set -uo pipefail
 # échec par candidat et on continue sur le suivant)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/gpu_detect.sh
+# shellcheck source=scripts/lib/gpu_detect.sh
 source "$SCRIPT_DIR/lib/gpu_detect.sh"
 
 OLLAMA_HOST="${BERLUE_OLLAMA_HOST:-http://localhost:11434}"
