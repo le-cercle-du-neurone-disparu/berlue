@@ -22,10 +22,7 @@ class MockBerluePipeline:
         # We return a dictionary that exactly matches the PredictOutput schema
         return {
             "question": question,
-            "llm_used": {
-                "name": llm_config.name,
-                "temperature": llm_config.temperature
-            },
+            "llm_used": {"name": llm_config.name, "temperature": llm_config.temperature},
             "full_llm_answer": "Le ciel est vert. C'est dû à la réfraction.",
             "claims": [
                 {
