@@ -46,7 +46,17 @@ class MockBerluePipeline:
         """
         Simulates running a full benchmark.
         """
-        # We return a dictionary that exactly matches the Metrics schema
+        # We return a dictionary that exactly matches the Metrics schema (2 matrices
+        # de confusion 2x3 : baseline vs berlue, sur 75 assertions vraies + 25 fausses)
         # The llm_config is passed here if you ever need to simulate different metrics
         # based on the model or temperature chosen!
-        return {"berlue_accuracy": 0.82, "baseline_nli_accuracy": 0.65, "berlue_precision": 0.85}
+        return {
+            "baseline": {
+                "ground_truth_true": {"predicted_true": 50, "predicted_undecided": 15, "predicted_false": 10},
+                "ground_truth_false": {"predicted_true": 8, "predicted_undecided": 7, "predicted_false": 10},
+            },
+            "berlue": {
+                "ground_truth_true": {"predicted_true": 62, "predicted_undecided": 8, "predicted_false": 5},
+                "ground_truth_false": {"predicted_true": 4, "predicted_undecided": 6, "predicted_false": 15},
+            },
+        }
