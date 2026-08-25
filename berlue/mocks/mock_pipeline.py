@@ -11,9 +11,9 @@ class MockBerluePipeline:
 
     def get_available_llms(self) -> list[str]:
         """
-        Returns a mock list of available LLMs.
+        Returns a mock list of available LLMs (tags Ollama réels, pullables).
         """
-        return ["llama3", "mistral-7b", "gpt-3.5-turbo", "claude-3-haiku"]
+        return ["qwen2.5:0.5b", "qwen2.5:1.5b", "llama3.2:1b", "gemma3:1b"]
 
     def predict(self, question: str, llm_config: LLMConfig) -> dict:
         """
