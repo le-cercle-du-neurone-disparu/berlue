@@ -46,7 +46,8 @@ MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000"
 OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "qwen2.5:0.5b")
 SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
-SELFCHECK_TEMPERATURE = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE", "1.0"))
+SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.7"))
+SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- Embeddings + RAG inversé ---

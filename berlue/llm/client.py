@@ -1,5 +1,7 @@
 """Wrapper autour du LLM local (Ollama) — seul point de contact avec Ollama."""
 
+import random
+
 from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
 
 
@@ -15,6 +17,12 @@ class OllamaClient:
         # TODO(llm)
         raise NotImplementedError
 
-    def generate_many(self, prompt: str, k: int, temperature: float) -> list[str]:
-        """Génère `k` réponses indépendantes au même prompt."""
-        return [self.generate(prompt, temperature=temperature) for _ in range(k)]
+    def generate_many(
+        self, prompt: str, k: int, temperature_min: float, temperature_max: float
+    ) -> list[str]:
+        """Génère `k` réponses indépendantes au même prompt, chacune à une température
+        tirée aléatoirement dans `[temperature_min, temperature_max]`."""
+        return [
+            self.generate(prompt, temperature=random.uniform(temperature_min, temperature_max))
+            for _ in range(k)
+        ]
