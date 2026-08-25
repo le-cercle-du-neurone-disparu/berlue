@@ -1,35 +1,54 @@
 import os
 import numpy as np
 
-##################  VARIABLES  ##################
+##################  VARIABLES (paramétrables via .env : diffèrent par personne/environnement)  ##################
 DATA_SIZE = os.environ.get("DATA_SIZE")
-CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE"))
-MODEL_TARGET = os.environ.get("MODEL_TARGET")
 
-# GCP Infrastructure
+# GCP : identité du projet de chacun + secrets/emplacements propres à la machine
 GCP_PROJECT = os.environ.get("GCP_PROJECT")
-GCP_REGION = os.environ.get("GCP_REGION")
-BQ_DATASET = os.environ.get("BQ_DATASET")
-BQ_REGION = os.environ.get("BQ_REGION")
-BUCKET_NAME = os.environ.get("BUCKET_NAME")
-INSTANCE = os.environ.get("INSTANCE")
 
-# MLflow & Prefect
-MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
-MLFLOW_EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT")
-MLFLOW_MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME")
-PREFECT_FLOW_NAME = os.environ.get("PREFECT_FLOW_NAME")
-PREFECT_LOG_LEVEL = os.environ.get("PREFECT_LOG_LEVEL")
-EVALUATION_START_DATE = os.environ.get("EVALUATION_START_DATE")
+# Bucket : unique GLOBALEMENT sur GCP, jamais un nom fixe littéral. Reconstruit à
+# partir du projet de chacun + un nom commun + un suffixe (cf. .env.sample) —
+# même formule que BUCKET_NAME dans le Makefile.
+BUCKET_SUFFIX = os.environ.get("BUCKET_SUFFIX", "1")
+BUCKET_NAME = f"{GCP_PROJECT}-berlue_{BUCKET_SUFFIX}"
 
-# Docker & Artifact Registry
-GAR_IMAGE = os.environ.get("GAR_IMAGE")
-GAR_MEMORY = os.environ.get("GAR_MEMORY")
-
-# Notifications (Webhook)
+# Notifications : secret (URL de webhook)
 NOTIFY_BASE_URL = os.environ.get("NOTIFY_BASE_URL")
-NOTIFY_CHANNEL = os.environ.get("NOTIFY_CHANNEL")
-NOTIFY_AUTHOR = os.environ.get("NOTIFY_AUTHOR")
+
+# RUN_ENV : quel environnement pour `make run_*` (local/docker/gcp) — pilote aussi
+# MLFLOW_TRACKING_URI ci-dessous. Défaut "local".
+RUN_ENV = os.environ.get("RUN_ENV", "local")
+
+# MODEL_TARGET se règle en ligne de commande, pas dans .env — cf. make/pipeline.mk
+# (ex: `make run_train MODEL_TARGET=gcs`). Défaut "local".
+MODEL_TARGET = os.environ.get("MODEL_TARGET", "local")
+assert MODEL_TARGET in ("local", "gcs", "mlflow"), \
+    f"❌ MODEL_TARGET invalide : {MODEL_TARGET!r} (doit être local, gcs ou mlflow)"
+
+# MLflow : le serveur de tracking dépend de RUN_ENV.
+# TODO: pas encore de serveur MLflow partagé pour "gcp".
+_MLFLOW_TRACKING_URIS = {
+    "local": "http://localhost:5000",
+    "docker": "http://localhost:5000",
+    "gcp": None,
+}
+MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000")
+
+##################  CONFIGURATION FIXE (décisions de mainteneur, pas des paramètres .env)  ##################
+# Mêmes valeurs pour tout le monde — cf. make/config.mk pour l'équivalent côté Make
+# (GCP_REGION, ZONE, BQ_REGION, INSTANCE, SA_NAME, ARTIFACTSREPO, GAR_IMAGE...).
+CHUNK_SIZE = 100_000
+BQ_DATASET = "berlue"
+
+MLFLOW_EXPERIMENT = "berlue_experiment"
+MLFLOW_MODEL_NAME = "berlue_model"
+PREFECT_FLOW_NAME = "berlue_main_flow"
+PREFECT_LOG_LEVEL = "INFO"
+EVALUATION_START_DATE = "2024-01-01"
+
+NOTIFY_CHANNEL = "#berlue-alerts"
+NOTIFY_AUTHOR = "Berlue_Pipeline_Bot"
 
 ##################  CONSTANTS  #####################
 # 💡 Cette ligne trouve dynamiquement la racine du projet
@@ -53,17 +72,3 @@ LOCAL_REGISTRY_PATH = os.path.join(PROJECT_ROOT, "models")
 
 # TODO: Define the final data type for the matrices after preprocessing.
 # DTYPES_PROCESSED = np.float32
-
-################## VALIDATIONS #################
-env_valid_options = dict(
-    # DATA_SIZE=["1k", "200k", "all"],
-    MODEL_TARGET=["local", "gcs", "mlflow"],
-)
-
-def validate_env_value(env, valid_options):
-    env_value = os.environ.get(env)
-    if env_value not in valid_options:
-        raise NameError(f"❌ Invalid value for {env} in `.env` file: '{env_value}' must be in {valid_options}")
-
-for env, valid_options in env_valid_options.items():
-    validate_env_value(env, valid_options)
