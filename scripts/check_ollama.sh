@@ -22,7 +22,7 @@
 #
 # Variables d'env optionnelles :
 #   BERLUE_OLLAMA_HOST    (défaut: http://localhost:11434)
-#   BERLUE_OLLAMA_MODEL   (défaut: llama3.1:8b) — modèle testé en mode simple (sans --bench/--perf)
+#   BERLUE_OLLAMA_MODEL   (défaut: qwen2.5:0.5b) — modèle testé en mode simple (sans --bench/--perf)
 #   BENCH_VRAM_GB         (défaut: auto-détecté) — force la limite VRAM en Go (--bench/--perf)
 #   BENCH_RUN_TIMEOUT     (défaut: 240)  — secondes max par appel (--bench/--perf)
 #   BENCH_PULL_TIMEOUT    (défaut: 1800) — secondes max pour le téléchargement (--bench/--perf)
@@ -44,7 +44,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/gpu_detect.sh"
 
 OLLAMA_HOST="${BERLUE_OLLAMA_HOST:-http://localhost:11434}"
-OLLAMA_MODEL="${BERLUE_OLLAMA_MODEL:-llama3.1:8b}"
+OLLAMA_MODEL="${BERLUE_OLLAMA_MODEL:-qwen2.5:0.5b}"
 RUN_TIMEOUT="${BENCH_RUN_TIMEOUT:-240}"
 PULL_TIMEOUT="${BENCH_PULL_TIMEOUT:-1800}"
 KEEP_MODELS="${BENCH_KEEP_MODELS:-}"
@@ -145,6 +145,7 @@ CATALOG=(
     "Llama|llama3.1:8b|4.9"
     "Llama|llama3.2:3b|2.0"
     "Llama|llama3.2:1b|1.3"
+    "Qwen3.5|qwen3.5:9b|6.6"
     "Qwen2.5|qwen2.5:72b|47"
     "Qwen2.5|qwen2.5:32b|20"
     "Qwen2.5|qwen2.5:14b|9.0"
@@ -162,7 +163,8 @@ CATALOG=(
     "Mistral|mixtral:8x7b|26"
     "Mistral|mistral-nemo:12b|7.1"
     "Mistral|mistral:7b|4.1"
-)
+ )
+
 
 BENCH_RESULTS=()  # lignes "model|status|seconds|processor|note" pour le résumé final
 
