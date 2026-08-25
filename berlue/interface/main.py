@@ -1,30 +1,23 @@
 import numpy as np
 import pandas as pd
 
-from pathlib import Path
-from colorama import Fore, Style
+from berlue.ml_logic.registry import mlflow_run
 
-from berlue.params import *
-from berlue.ml_logic.data import get_data_with_cache, clean_data, load_data_to_bq
-from berlue.ml_logic.model import build_model, train_model, evaluate_model
-from berlue.ml_logic.preprocessor import preprocess_features
-from berlue.ml_logic.registry import load_model, save_model, save_results
-from berlue.ml_logic.registry import mlflow_run, mlflow_transition_model
 
 def preprocess() -> None:
     pass
     # print("✅ preprocess() done \n")
 
+
 @mlflow_run
 def train(
-        # min_date:str = '2009-01-01',
-        # max_date:str = '2015-01-01',
-        split_ratio: float,
-        learning_rate,
-        batch_size,
-        patience
-    ) -> float:
-
+    # min_date:str = '2009-01-01',
+    # max_date:str = '2015-01-01',
+    split_ratio: float,
+    learning_rate,
+    batch_size,
+    patience,
+) -> float:
     """
     - Download processed data from your BQ table (or from cache if it exists)
     - Train on the preprocessed dataset (which should be ordered by date)
@@ -40,10 +33,10 @@ def train(
 
 @mlflow_run
 def evaluate(
-        # min_date:str = '2014-01-01',
-        # max_date:str = '2015-01-01',
-        stage: str = "Production"
-    ) -> float:
+    # min_date:str = '2014-01-01',
+    # max_date:str = '2015-01-01',
+    stage: str = "Production",
+) -> float:
     """
     Evaluate the performance of the latest production model on processed data
     Return XXX as a float
@@ -111,7 +104,8 @@ def pred(X_pred: pd.DataFrame = None) -> np.ndarray:
     # return y_pred
     pass
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # preprocess()
     # train()
     # evaluate()

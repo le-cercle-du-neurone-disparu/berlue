@@ -1,16 +1,20 @@
 import glob
 import os
-import time
 import pickle
+import time
 
-from colorama import Fore, Style
-from google.cloud import storage
 import mlflow
+from colorama import Fore, Style
 from mlflow.tracking import MlflowClient
 
-# TODO: Replace "package_name" with the actual dynamic package name,
-# or use relative imports (e.g., from .params import *)
-from berlue.params import *
+from berlue.params import (
+    LOCAL_REGISTRY_PATH,
+    MLFLOW_EXPERIMENT,
+    MLFLOW_MODEL_NAME,
+    MLFLOW_TRACKING_URI,
+    MODEL_TARGET,
+)
+
 
 def save_results(params: dict, metrics: dict) -> None:
     """
@@ -49,7 +53,7 @@ def save_model(model) -> None:
     - if MODEL_TARGET='gcs', also persist it in the GCS bucket
     - if MODEL_TARGET='mlflow', also persist it on MLflow
     """
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    timestamp = time.strftime("%Y%m%d-%H%M%S")  # noqa: F841 -- utilisé par le code commenté ci-dessous
 
     # TODO: Modify the saving logic depending on the chosen framework (Scikit-Learn, Keras, PyTorch...)
     # Example for Scikit-Learn:
@@ -83,7 +87,7 @@ def load_model(stage="Production"):
     - or from MLFLOW (by "stage") if MODEL_TARGET=='mlflow'
     """
     if MODEL_TARGET == "local":
-        print(Fore.BLUE + f"\nLoad latest model from local registry..." + Style.RESET_ALL)
+        print(Fore.BLUE + "\nLoad latest model from local registry..." + Style.RESET_ALL)
 
         local_model_directory = os.path.join(LOCAL_REGISTRY_PATH, "models")
         local_model_paths = glob.glob(f"{local_model_directory}/*")
@@ -92,7 +96,7 @@ def load_model(stage="Production"):
             print("❌ No local model found")
             return None
 
-        most_recent_model_path_on_disk = sorted(local_model_paths)[-1]
+        most_recent_model_path_on_disk = sorted(local_model_paths)[-1]  # noqa: F841 -- utilisé par le code commenté ci-dessous
 
         # TODO: Modify the loading logic depending on the chosen framework
         # Example for Scikit-Learn:
@@ -117,6 +121,7 @@ def load_model(stage="Production"):
 
     return None
 
+
 def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
     """
     Transition the latest model from the `current_stage` to the
@@ -133,13 +138,12 @@ def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
         return None
 
     client.transition_model_version_stage(
-        name=MLFLOW_MODEL_NAME,
-        version=version[0].version,
-        stage=new_stage,
-        archive_existing_versions=True
+        name=MLFLOW_MODEL_NAME, version=version[0].version, stage=new_stage, archive_existing_versions=True
     )
 
-    print(f"✅ Model {MLFLOW_MODEL_NAME} (version {version[0].version}) transitioned from {current_stage} to {new_stage}")
+    print(
+        f"✅ Model {MLFLOW_MODEL_NAME} (version {version[0].version}) transitioned from {current_stage} to {new_stage}"
+    )
 
     return None
 
@@ -151,6 +155,7 @@ def mlflow_run(func):
     Args:
         - func (function): Function you want to run within the MLflow run
     """
+
     def wrapper(*args, **kwargs):
         # End any active run to avoid conflicts
         if mlflow.active_run():
@@ -167,4 +172,5 @@ def mlflow_run(func):
         print("✅ mlflow_run auto-log done")
 
         return results
+
     return wrapper

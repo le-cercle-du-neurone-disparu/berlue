@@ -1,31 +1,40 @@
-import os
+from datetime import datetime
 
 import requests
-from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from prefect import task, flow
+from prefect import flow, task
 
 from berlue.interface.main import evaluate, preprocess, train
-from berlue.params import *
-from berlue.ml_logic.registry import mlflow_transition_model
+from berlue.params import (
+    EVALUATION_START_DATE,
+    NOTIFY_AUTHOR,
+    NOTIFY_BASE_URL,
+    NOTIFY_CHANNEL,
+    PREFECT_FLOW_NAME,
+)
+
 
 @task
 def preprocess_new_data(min_date: str, max_date: str):
     return preprocess(min_date=min_date, max_date=max_date)
 
+
 @task
 def evaluate_production_model(min_date: str, max_date: str):
     return evaluate(min_date=min_date, max_date=max_date)
 
+
 @task
 def re_train(min_date: str, max_date: str, split_ratio: str):
     return train(min_date=min_date, max_date=max_date, split_ratio=split_ratio)
+
 
 @task
 def transition_model(current_stage: str, new_stage: str):
     # TODO: mlflow_transition_model n'est pas encore défini dans registry.py
     # return mlflow_transition_model(current_stage=current_stage, new_stage=new_stage)
     raise NotImplementedError("mlflow_transition_model is not implemented yet.")
+
 
 @task
 def notify(old_mae, new_mae):
@@ -64,7 +73,7 @@ def train_flow():
     preprocessed = preprocess_new_data.submit(min_date=min_date, max_date=max_date)
 
     old_mae = evaluate_production_model.submit(min_date=min_date, max_date=max_date, wait_for=[preprocessed])
-    new_mae = re_train.submit(min_date=min_date, max_date=max_date, split_ratio = 0.2, wait_for=[preprocessed])
+    new_mae = re_train.submit(min_date=min_date, max_date=max_date, split_ratio=0.2, wait_for=[preprocessed])
 
     old_mae = old_mae.result()
     new_mae = new_mae.result()
@@ -76,6 +85,7 @@ def train_flow():
         print(f"🚀 Old model kept in place with MAE: {old_mae}. The new MAE was: {new_mae}")
 
     notify.submit(old_mae, new_mae)
+
 
 if __name__ == "__main__":
     train_flow()
