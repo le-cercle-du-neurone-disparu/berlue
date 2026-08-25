@@ -86,6 +86,7 @@ def update_model(stage: str = "Production"):
 # 4. BUSINESS ENDPOINTS (Berlue)
 # ==========================================
 
+
 @app.get("/llms", response_model=LLMListOutput)
 def get_llm_list():
     """
@@ -99,6 +100,7 @@ def get_llm_list():
         return {"available_llms": llms}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not retrieve LLM list: {str(e)}") from e
+
 
 @app.post("/predict", response_model=PredictOutput)
 def predict(payload: PredictInput):

@@ -12,10 +12,12 @@ from pydantic import BaseModel
 # CORE ENTITIES
 # ==============================================================================
 
+
 class LLMConfig(BaseModel):
     """
     Standard configuration for an LLM model.
     """
+
     name: str = "llama3"
     temperature: float = 0.7
 
@@ -24,10 +26,12 @@ class LLMConfig(BaseModel):
 # GENERAL ENDPOINT SCHEMAS
 # ==============================================================================
 
+
 class LLMListOutput(BaseModel):
     """
     Response payload containing the list of available LLM models.
     """
+
     available_llms: list[str]
 
 
