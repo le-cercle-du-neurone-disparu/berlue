@@ -40,6 +40,36 @@ _MLFLOW_TRACKING_URIS = {
 }
 MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000")
 
+##################  PIPELINE BERLUE (LLM local, RAG inversé, SelfCheckGPT)  ##################
+
+# --- LLM (Ollama) ---
+OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "qwen2.5:0.5b")
+SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
+SELFCHECK_TEMPERATURE = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE", "1.0"))
+BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
+
+# --- Embeddings + RAG inversé ---
+EMBEDDING_MODEL = os.environ.get("BERLUE_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+VECTOR_DB_BACKEND = os.environ.get("BERLUE_VECTOR_DB_BACKEND", "faiss")
+VECTOR_DB_PATH = os.environ.get("BERLUE_VECTOR_DB_PATH", "./data/index/fever_faiss")
+
+# --- NLI léger ---
+NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
+NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./data/models/nli_tfidf_logreg.joblib")
+
+# --- Données ---
+FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/raw/fever")
+HALUEVAL_DATA_PATH = os.environ.get("BERLUE_HALUEVAL_DATA_PATH", "./data/raw/halueval")
+TRUTHFULQA_DATA_PATH = os.environ.get("BERLUE_TRUTHFULQA_DATA_PATH", "./data/raw/truthfulqa")
+
+# --- MLOps ---
+MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
+
+# --- Fusion des scores ---
+FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.6"))
+FUSION_WEIGHT_SELFCHECK = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK", "0.4"))
+
 ##################  CONFIGURATION FIXE (décisions de mainteneur, pas des paramètres .env)  ##################
 # Mêmes valeurs pour tout le monde — cf. make/config.mk pour l'équivalent côté Make
 # (GCP_REGION, ZONE, BQ_REGION, INSTANCE, SA_NAME, ARTIFACTSREPO, GAR_IMAGE...).
