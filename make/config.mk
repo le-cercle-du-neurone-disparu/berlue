@@ -8,7 +8,7 @@
 # GCP existantes.
 
 # --- Python & environnement local ---
-PYTHON_VERSION = 3.14.7
+PYTHON_VERSION = 3.14.6
 VENV_NAME = berlue-env
 
 # --- Docker ---
