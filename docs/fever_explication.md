@@ -55,7 +55,6 @@ Chaque exemple dans FEVER est un objet JSON avec les champs suivants :
 | `id`     | int/string | Identifiant unique du claim | 12345  |
 | `Claim`       | string   | L'affirmation à vérifier    |  "Nikolaj Coster-Waldau was born in Denmark"  |
 | `label`       | Test   | 123    | "SUPPORTS" |
-| `evidence`       | Test   | 123    | Voir ci-dessous |
 
 ## Les Labels
 
@@ -70,7 +69,9 @@ Chaque exemple dans FEVER est un objet JSON avec les champs suivants :
 ### 📊 Distribution des 145,449 exemples :
 
 SUPPORTS          : 80,035 (55.0%) ██████████████████████████████████
+
 REFUTES           : 29,713 (20.4%) ████████████████
+
 NOT ENOUGH INFO   : 35,701 (24.5%) ███████████████████
 
 ## 3. Chargement du Dataset
@@ -197,6 +198,8 @@ plt.xlabel('Labels', fontsize=12)
 plt.ylabel("Nombre d'exemples", fontsize=12)
 plt.show()
 ```
+<img src="/opt/wagon/src/berlue/labels.png" alt="Description" width="300" height="200">
+
 ### Chargement de tous les splits
 
 ```
@@ -266,9 +269,9 @@ Test: 19998
 
 | Split | Exemples | Source |
 |----------------|--------|----------|
-| Train	| 145,449 | fever.ai/download/fever/train.jsonl |
-| Validation | 19,998| fever.ai/download/fever/shared_task_dev.jsonl |
-| Test | 19,998 | fever.ai/download/fever/shared_task_test.jsonl |
+| Train	| 145,449 | [Train](fever.ai/download/fever/train.jsonl) |
+| Validation | 19,998| [Validation](fever.ai/download/fever/shared_task_dev.jsonl) |
+| Test | 19,998 | [Test](fever.ai/download/fever/shared_task_test.jsonl)|
 
 ### Longueur des Claims
 ```
@@ -502,9 +505,17 @@ Telechargement des datasets :
 - [validation](https://fever.ai/download/fever/shared_task_dev.jsonl)
 - [test](https://fever.ai/download/fever/shared_task_test.jsonl)
 
-Code Source: GitHub - FEVER
+Code Source: [GitHub](https://github.com/le-cercle-du-neurone-disparu/berlue/blob/datafever/notebooks/api_usage.ipynb)
 
-🔄 13. Flux de Travail Recommandé
+## 🔄 13. Flux de Travail Recommandé
+graph TD
+    A[Charger les données] --> B[Explorer les données]
+    B --> C[Prétraiter les claims]
+    C --> D[Vectorisation TF-IDF]
+    D --> E[Entraîner le modèle]
+    E --> F[Évaluer sur validation]
+    F --> G[Optimiser les hyperparamètres]
+    G --> H[Tester sur test set]
 
 
 
