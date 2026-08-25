@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from berlue.api.schemas import (
     EvaluateInput,
     EvaluateOutput,
+    LLMListOutput,
     PredictInput,
     PredictOutput,
 )
@@ -85,6 +86,19 @@ def update_model(stage: str = "Production"):
 # 4. BUSINESS ENDPOINTS (Berlue)
 # ==========================================
 
+@app.get("/llms", response_model=LLMListOutput)
+def get_llm_list():
+    """
+    Returns the list of available LLM models that can be tested and compared.
+    """
+    pipeline = app.state.model
+
+    try:
+        # Call the method that retrieves available models from the active pipeline
+        llms = pipeline.get_available_llms()
+        return {"available_llms": llms}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not retrieve LLM list: {str(e)}") from e
 
 @app.post("/predict", response_model=PredictOutput)
 def predict(payload: PredictInput):
@@ -94,8 +108,8 @@ def predict(payload: PredictInput):
     pipeline = app.state.model
 
     try:
-        # Call the model's predict method (to be implemented in ml_logic)
-        result_dict = pipeline.predict(question=payload.question, llm_name=payload.llm_model)
+        # On passe directement l'objet LLMConfig à la méthode predict
+        result_dict = pipeline.predict(question=payload.question, llm_config=payload.llm)
         return result_dict
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}") from e
@@ -109,9 +123,9 @@ def evaluate(payload: EvaluateInput):
     pipeline = app.state.model
 
     try:
-        # Call the evaluation method (to be implemented in ml_logic)
+        # On passe directement l'objet LLMConfig à la méthode evaluate
         metrics_dict = pipeline.evaluate_dataset(
-            dataset_name=payload.dataset_name, n_samples=payload.sample_size, llm_name=payload.llm_model_to_test
+            dataset_name=payload.dataset_name, n_samples=payload.sample_size, llm_config=payload.llm_to_test
         )
 
         return {

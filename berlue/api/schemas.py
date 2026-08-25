@@ -9,6 +9,29 @@ validate data and generate the Swagger documentation.
 from pydantic import BaseModel
 
 # ==============================================================================
+# CORE ENTITIES
+# ==============================================================================
+
+class LLMConfig(BaseModel):
+    """
+    Standard configuration for an LLM model.
+    """
+    name: str = "llama3"
+    temperature: float = 0.7
+
+
+# ==============================================================================
+# GENERAL ENDPOINT SCHEMAS
+# ==============================================================================
+
+class LLMListOutput(BaseModel):
+    """
+    Response payload containing the list of available LLM models.
+    """
+    available_llms: list[str]
+
+
+# ==============================================================================
 # PREDICT ENDPOINT SCHEMAS
 # ==============================================================================
 
@@ -19,7 +42,7 @@ class PredictInput(BaseModel):
     """
 
     question: str
-    llm_model: str = "llama3"
+    llm: LLMConfig = LLMConfig()
 
 
 class ClaimResult(BaseModel):
@@ -41,7 +64,7 @@ class PredictOutput(BaseModel):
     """
 
     question: str
-    llm_model_used: str
+    llm_used: LLMConfig
     full_llm_answer: str
     claims: list[ClaimResult]
 
@@ -58,7 +81,7 @@ class EvaluateInput(BaseModel):
 
     dataset_name: str
     sample_size: int = 100
-    llm_model_to_test: str
+    llm_to_test: LLMConfig = LLMConfig()
 
 
 class Metrics(BaseModel):
