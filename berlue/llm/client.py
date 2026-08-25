@@ -15,9 +15,7 @@ class OllamaClient:
         # TODO(llm)
         raise NotImplementedError
 
-    def generate_many(
-        self, prompt: str, k: int, temperature_min: float, temperature_max: float
-    ) -> list[str]:
+    def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> list[str]:
         """Génère `k` réponses indépendantes au même prompt, chacune à une température
         choisie dans `[temperature_min, temperature_max]`.
 

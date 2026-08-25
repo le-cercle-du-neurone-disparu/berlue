@@ -14,6 +14,4 @@ def sample_responses(
     """Génère K réponses indépendantes à `question`, chacune à une température
     espacée dans `[temperature_min, temperature_max]`."""
     client = client or OllamaClient()
-    return client.generate_many(
-        question, k=k, temperature_min=temperature_min, temperature_max=temperature_max
-    )
+    return client.generate_many(question, k=k, temperature_min=temperature_min, temperature_max=temperature_max)
