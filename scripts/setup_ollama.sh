@@ -13,7 +13,7 @@
 #     correspondante, avec vérification du sha256.
 #
 # Variables d'env optionnelles (mêmes noms que berlue-draft/.env.example) :
-#   BERLUE_OLLAMA_MODEL  (défaut: llama3.1:8b)
+#   BERLUE_OLLAMA_MODEL  (défaut: qwen2.5:0.5b)
 #   BERLUE_OLLAMA_HOST   (défaut: http://localhost:11434)
 #
 # Usage : ./scripts/setup_ollama.sh
@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # — jamais en suivant silencieusement le "latest" d'Ollama.
 OLLAMA_PIN_VERSION="0.32.15"
 
-OLLAMA_MODEL="${BERLUE_OLLAMA_MODEL:-llama3.1:8b}"
+OLLAMA_MODEL="${BERLUE_OLLAMA_MODEL:-qwen2.5:0.5b}"
 OLLAMA_HOST="${BERLUE_OLLAMA_HOST:-http://localhost:11434}"
 MACOS_INSTALL_DIR="${HOME}/.ollama/versions/${OLLAMA_PIN_VERSION}"
 
