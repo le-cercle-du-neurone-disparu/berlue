@@ -35,6 +35,7 @@ app.add_middleware(
 if USE_MOCK:
     print("⚠️ STARTING IN MOCK MODE: The real ML model is not loaded.")
     from berlue.mocks.mock_pipeline import MockBerluePipeline
+
     app.state.model = MockBerluePipeline()
 else:
     print("🚀 STARTING IN PRODUCTION MODE: Loading the real ML model...")
@@ -44,6 +45,7 @@ else:
 # 3. TECHNICAL ENDPOINTS (Existing template)
 # ==========================================
 
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """
@@ -51,12 +53,14 @@ async def favicon():
     """
     return Response(status_code=204)
 
+
 @app.get("/")
 def root():
     """
     Root health-check endpoint.
     """
     return {"greeting": "Hello from Berlue API"}
+
 
 @app.put("/model")
 def update_model(stage: str = "Production"):
@@ -76,9 +80,11 @@ def update_model(stage: str = "Production"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error loading model for stage '{stage}': {str(e)}") from e
 
+
 # ==========================================
 # 4. BUSINESS ENDPOINTS (Berlue)
 # ==========================================
+
 
 @app.post("/predict", response_model=PredictOutput)
 def predict(payload: PredictInput):
@@ -89,16 +95,11 @@ def predict(payload: PredictInput):
 
     try:
         # Call the model's predict method (to be implemented in ml_logic)
-        result_dict = pipeline.predict(
-            question=payload.question,
-            llm_name=payload.llm_model
-        )
+        result_dict = pipeline.predict(question=payload.question, llm_name=payload.llm_model)
         return result_dict
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Prediction error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}") from e
+
 
 @app.post("/evaluate", response_model=EvaluateOutput)
 def evaluate(payload: EvaluateInput):
@@ -110,19 +111,14 @@ def evaluate(payload: EvaluateInput):
     try:
         # Call the evaluation method (to be implemented in ml_logic)
         metrics_dict = pipeline.evaluate_dataset(
-            dataset_name=payload.dataset_name,
-            n_samples=payload.sample_size,
-            llm_name=payload.llm_model_to_test
+            dataset_name=payload.dataset_name, n_samples=payload.sample_size, llm_name=payload.llm_model_to_test
         )
 
         return {
             "dataset": payload.dataset_name,
             "samples_evaluated": payload.sample_size,
             "metrics": metrics_dict,
-            "status": "success"
+            "status": "success",
         }
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Evaluation error: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Evaluation error: {str(e)}") from e

@@ -1,5 +1,6 @@
 # berlue/ml_logic/mock.py
 
+
 class MockBerluePipeline:
     """
     Fake pipeline used for frontend development.
@@ -21,16 +22,16 @@ class MockBerluePipeline:
                     "status": "red",
                     "fusion_score": 0.88,
                     "evidence_source": "FEVER_corpus",
-                    "evidence_text": "Le ciel est bleu pendant la journée."
+                    "evidence_text": "Le ciel est bleu pendant la journée.",
                 },
                 {
                     "claim_text": "C'est dû à la réfraction.",
                     "status": "green",
                     "fusion_score": 0.15,
                     "evidence_source": "SelfCheckGPT",
-                    "evidence_text": "Aucune contradiction détectée."
-                }
-            ]
+                    "evidence_text": "Aucune contradiction détectée.",
+                },
+            ],
         }
 
     def evaluate_dataset(self, dataset_name: str, n_samples: int, llm_name: str) -> dict:
@@ -38,8 +39,4 @@ class MockBerluePipeline:
         Simulates running a full benchmark.
         """
         # We return a dictionary that exactly matches the Metrics schema
-        return {
-            "berlue_accuracy": 0.82,
-            "baseline_nli_accuracy": 0.65,
-            "berlue_precision": 0.85
-        }
+        return {"berlue_accuracy": 0.82, "baseline_nli_accuracy": 0.65, "berlue_precision": 0.85}
