@@ -88,14 +88,37 @@ class EvaluateInput(BaseModel):
     llm_to_test: LLMConfig = LLMConfig()
 
 
-class Metrics(BaseModel):
+class ConfusionRow(BaseModel):
     """
-    Data structure holding the computed performance metrics.
+    Une ligne de matrice de confusion : combien d'assertions d'une catégorie de
+    vérité terrain donnée (vraie ou fausse) ont été prédites vraies / indécises
+    / fausses par le système.
     """
 
-    berlue_accuracy: float
-    baseline_nli_accuracy: float
-    berlue_precision: float
+    predicted_true: int
+    predicted_undecided: int
+    predicted_false: int
+
+
+class ConfusionMatrix(BaseModel):
+    """
+    Matrice de confusion 2x3 (vérité terrain : assertion vraie/fausse) x
+    (prédiction : vrai/indécis/faux) — sert à afficher une matrice de
+    corrélation côté front.
+    """
+
+    ground_truth_true: ConfusionRow
+    ground_truth_false: ConfusionRow
+
+
+class Metrics(BaseModel):
+    """
+    Matrices de confusion comparant le système Berlue à la baseline (NLI seul),
+    pour évaluer l'apport de la fusion Berlue par rapport à la baseline.
+    """
+
+    baseline: ConfusionMatrix
+    berlue: ConfusionMatrix
 
 
 class EvaluateOutput(BaseModel):
