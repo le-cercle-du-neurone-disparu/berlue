@@ -17,5 +17,6 @@ local_setup: ## Setup local virtual environment using pyenv
 	fi
 	@echo "📚 Installing project and dependencies in editable mode..."
 	pip install -e ".[dev]"
+	@bash scripts/setup_env.sh
 	@command -v direnv >/dev/null 2>&1 && direnv allow || true
 	@echo "✅ Local setup complete! Your folder is now using $(VENV_NAME)."
