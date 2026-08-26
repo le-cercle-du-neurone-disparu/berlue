@@ -54,7 +54,15 @@ projet potentiellement différent.
 
 ## Déployer
 
-3 environnements (test/staging/prod), 3 services Cloud Run
+Une seule fois, avant le tout premier déploiement (crée le dépôt Docker et
+configure l'authentification Docker vers Artifact Registry) :
+
+```bash
+make artifact_registry_create
+make docker_auth
+```
+
+Puis, 3 environnements (test/staging/prod), 3 services Cloud Run
 (`berlue-api-test`/`-staging`/`-prod`), une seule image `:prod` construite et
 poussée une fois, puis promue progressivement sur les 3 :
 
