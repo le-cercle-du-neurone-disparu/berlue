@@ -101,13 +101,14 @@ Une fois l'API native fonctionnelle, assurez-vous qu'elle tourne correctement da
 make docker_build_local
 make docker_run_local
 ```
-*Vérifiez votre API conteneurisée* : test d'intégration dédié à venir (cf. `README.tests.md`).
-
-### Étape 3 : Déploiement en production Cloud
-Une fois le conteneur local validé, construisez l'image de production (qui utilise `pip install .` pour un poids plus léger) et déployez-la sur GCP Cloud Run.
+*Vérifiez votre API conteneurisée :*
 ```bash
-make docker_build_prod
-make docker_push
-make cloudrun_deploy
+make test_functional
 ```
-*Vérifiez votre endpoint de production en direct* : test d'intégration dédié à venir (cf. `README.tests.md`).
+
+### Étape 3 : Déploiement Cloud (test → staging → prod)
+Une fois le conteneur local validé, construisez l'image de production (qui utilise `pip install .` pour un poids plus léger) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement.
+
+Voir `docs/gcp-deployment.md` pour toutes les commandes (authentification, build/push, déploiement par environnement) ainsi que l'architecture multi-projets, la gestion d'accès par personne, et comment tout supprimer (`make gcp_destroy`).
+
+*Vérifiez votre endpoint en direct* : test d'intégration dédié à venir (cf. `README.tests.md`).

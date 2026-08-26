@@ -26,7 +26,11 @@ testpaths = ["tests"]
 addopts = "-v -x -s --color=yes --tb=short -W ignore::DeprecationWarning"
 # Tests non marqués = rapides, aucune dépendance externe (in-memory, tournent sur
 # le runner GitHub). Marquer @pytest.mark.functional tout test qui a besoin d'une
-# infra réelle (fichier .env rempli, Docker, GCP, un vrai modèle entraîné...).
+# infra locale réelle (fichier .env rempli, Docker, un vrai modèle entraîné...).
+# Marquer @pytest.mark.gcp tout test qui a besoin d'un vrai environnement GCP
+# (projet test/staging/prod) — catégorie à part, encore plus restrictive que
+# functional (make test_functional exclut les tests gcp).
 markers = [
-    "functional: nécessite une infra réelle (.env rempli, Docker, GCP, modèle entraîné...) — pas dans la lane CI rapide",
+    "functional: nécessite une infra locale réelle (.env rempli, Docker, modèle entraîné...) — pas dans la lane CI rapide",
+    "gcp: nécessite un vrai environnement GCP (projet test/staging/prod) — lancé via `make test_gcp`",
 ]
