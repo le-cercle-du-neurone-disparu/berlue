@@ -18,13 +18,7 @@ class OllamaClient:
         """Génère une réponse pour `prompt` à la température donnée."""
         try:
             # Appel natif via la librairie officielle
-            response = self.client.generate(
-                model=self.model,
-                prompt=prompt,
-                options={
-                    "temperature": temperature
-                }
-            )
+            response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": temperature})
             # La librairie renvoie un dictionnaire, on extrait le texte généré
             return response.get("response", "")
 
@@ -119,4 +113,4 @@ if __name__ == "__main__":
     reponses_multi = client.generate_many(question, k=3, temperature_min=0.2, temperature_max=0.8)
 
     for idx, rep in enumerate(reponses_multi):
-        print(f"🤖 [Rép {idx+1}] : {rep.strip()}")
+        print(f"🤖 [Rép {idx + 1}] : {rep.strip()}")
