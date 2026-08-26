@@ -1,26 +1,26 @@
 # ==============================================================================
-# ML PIPELINE COMMANDS
+# COMMANDES DU PIPELINE ML
 # ==============================================================================
 
 # Surchargeable sur la ligne de commande : `make run_train MODEL_TARGET=gcs`.
 MODEL_TARGET ?= local
 
-run_preprocess: ## Run the preprocessing step
+run_preprocess: ## Lance l'étape de prétraitement
 	python -c 'from berlue.interface.main import preprocess; preprocess()'
 
-run_train: ## Run the training step (MODEL_TARGET=local|gcs|mlflow, défaut local)
+run_train: ## Lance l'étape d'entraînement (MODEL_TARGET=local|gcs|mlflow, défaut local)
 	python -c 'from berlue.interface.main import train; train()'
 
-run_evaluate: ## Run the evaluation step (MODEL_TARGET=local|gcs|mlflow, défaut local)
+run_evaluate: ## Lance l'étape d'évaluation (MODEL_TARGET=local|gcs|mlflow, défaut local)
 	python -c 'from berlue.interface.main import evaluate; evaluate()'
 
-run_pred: ## Run the prediction step (MODEL_TARGET=local|gcs|mlflow, défaut local)
+run_pred: ## Lance l'étape de prédiction (MODEL_TARGET=local|gcs|mlflow, défaut local)
 	python -c 'from berlue.interface.main import pred; pred()'
 
-run_all: run_preprocess run_train run_evaluate run_pred ## Run the full pipeline (preprocess train evaluate pred)
+run_all: run_preprocess run_train run_evaluate run_pred ## Lance le pipeline complet (preprocess train evaluate pred)
 
-run_api_local: ## Run the FastAPI application locally with hot-reloading
-	@echo "🚀 Starting FastAPI locally..."
+run_api_local: ## Lance l'application FastAPI en local avec rechargement à chaud
+	@echo "🚀 Démarrage de FastAPI en local..."
 	uvicorn berlue.api.fast:app --host 0.0.0.0 --port 8000 --reload
 
 run_api: ## Lance l'API selon RUN_ENV=local|docker|gcp (github : pas encore configuré, tâche à part)
@@ -38,5 +38,5 @@ else
 	@exit 1
 endif
 
-run_workflow: ## Run the Prefect orchestration workflow
+run_workflow: ## Lance le workflow d'orchestration Prefect
 	PREFECT__LOGGING__LEVEL=$(PREFECT_LOG_LEVEL) python -m berlue.interface.workflow

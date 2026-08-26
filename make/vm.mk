@@ -1,9 +1,9 @@
 # ==============================================================================
-# COMPUTE ENGINE (VM) COMMANDS
+# COMMANDES COMPUTE ENGINE (VM)
 # ==============================================================================
 
-vm_create: iam_setup_service_account ## Create the virtual machine with IAM rights
-	@echo "🖥️ Creating VM $(INSTANCE) with service account $(SA_EMAIL)..."
+vm_create: iam_setup_service_account ## Crée la machine virtuelle avec les droits IAM
+	@echo "🖥️ Création de la VM $(INSTANCE) avec le compte de service $(SA_EMAIL)..."
 	gcloud compute instances create $(INSTANCE) \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE) \
@@ -13,53 +13,53 @@ vm_create: iam_setup_service_account ## Create the virtual machine with IAM righ
 		--service-account=$(SA_EMAIL) \
 		--scopes=https://www.googleapis.com/auth/cloud-platform
 
-vm_setup: ## Send and execute the setup script on the VM
-	@echo "📦 Sending setup script to VM..."
+vm_setup: ## Envoie et exécute le script de setup sur la VM
+	@echo "📦 Envoi du script de setup vers la VM..."
 	gcloud compute scp scripts/setup_vm.sh $(INSTANCE):~/ \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE)
-	@echo "⚙️ Executing script on the VM..."
+	@echo "⚙️ Exécution du script sur la VM..."
 	gcloud compute ssh $(INSTANCE) \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE) \
 		--command="bash ~/setup_vm.sh $(PYTHON_VERSION) $(VENV_NAME)"
-	@echo "🗑️ Cleaning up script on the VM..."
+	@echo "🗑️ Nettoyage du script sur la VM..."
 	gcloud compute ssh $(INSTANCE) \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE) \
 		--command="rm ~/setup_vm.sh"
 
-vm_connect: ## Connect to the VM via SSH with agent forwarding
+vm_connect: ## Se connecte à la VM via SSH avec agent forwarding
 	@if [ -z "$(INSTANCE)" ]; then \
-		echo "❌ ERROR: Missing INSTANCE name."; \
-		echo "👉 Try: make vm_connect INSTANCE=my-server"; \
+		echo "❌ ERREUR : nom d'INSTANCE manquant."; \
+		echo "👉 Essayez : make vm_connect INSTANCE=my-server"; \
 		exit 1; \
 	fi
-	@echo "🔌 Connecting to $(INSTANCE)..."
+	@echo "🔌 Connexion à $(INSTANCE)..."
 	gcloud compute ssh $(INSTANCE) --project=$(GCP_PROJECT) --zone=$(ZONE) --ssh-flag="-A"
 
-vm_start: ## Start the virtual machine (CPU billing resumes)
+vm_start: ## Démarre la machine virtuelle (la facturation CPU reprend)
 	@if [ -z "$(INSTANCE)" ]; then \
-		echo "❌ ERROR: Missing INSTANCE name."; \
+		echo "❌ ERREUR : nom d'INSTANCE manquant."; \
 		exit 1; \
 	fi
-	@echo "🟢 Starting machine $(INSTANCE)..."
+	@echo "🟢 Démarrage de la machine $(INSTANCE)..."
 	gcloud compute instances start $(INSTANCE) \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE)
 
-vm_stop: ## Stop the virtual machine (Save CPU billing)
+vm_stop: ## Arrête la machine virtuelle (économise la facturation CPU)
 	@if [ -z "$(INSTANCE)" ]; then \
-		echo "❌ ERROR: Missing INSTANCE name."; \
+		echo "❌ ERREUR : nom d'INSTANCE manquant."; \
 		exit 1; \
 	fi
-	@echo "🔴 Stopping machine $(INSTANCE)... (CPU is no longer billed)"
+	@echo "🔴 Arrêt de la machine $(INSTANCE)... (le CPU n'est plus facturé)"
 	gcloud compute instances stop $(INSTANCE) \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE)
 
-vm_delete: ## Delete the virtual machine permanently
-	@echo "💣 Deleting machine $(INSTANCE) permanently..."
+vm_delete: ## Supprime définitivement la machine virtuelle
+	@echo "💣 Suppression définitive de la machine $(INSTANCE)..."
 	gcloud compute instances delete $(INSTANCE) \
 		--project=$(GCP_PROJECT) \
 		--zone=$(ZONE) \

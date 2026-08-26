@@ -12,12 +12,12 @@ from berlue.ml_logic.registry import load_model
 from berlue.params import USE_MOCK
 
 # ==========================================
-# 1. API INITIALIZATION
+# 1. INITIALISATION DE L'API
 # ==========================================
 
 app = FastAPI(
     title="BERLUE API",
-    description="API for the Berlue LLM hallucination checker.",
+    description="API du détecteur d'hallucinations LLM Berlue.",
     version="1.0.0",
 )
 
@@ -30,27 +30,27 @@ app.add_middleware(
 )
 
 # ==========================================
-# 2. DYNAMIC MODEL LOADING (MOCK VS REAL)
+# 2. CHARGEMENT DYNAMIQUE DU MODELE (MOCK VS REEL)
 # ==========================================
 
 if USE_MOCK:
-    print("⚠️ STARTING IN MOCK MODE: The real ML model is not loaded.")
+    print("⚠️ DÉMARRAGE EN MODE MOCK : le vrai modèle ML n'est pas chargé.")
     from berlue.mocks.mock_pipeline import MockBerluePipeline
 
     app.state.model = MockBerluePipeline()
 else:
-    print("🚀 STARTING IN PRODUCTION MODE: Loading the real ML model...")
+    print("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement du vrai modèle ML...")
     app.state.model = load_model()
 
 # ==========================================
-# 3. TECHNICAL ENDPOINTS (Existing template)
+# 3. ENDPOINTS TECHNIQUES (template existant)
 # ==========================================
 
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """
-    Silence 404 errors for favicon requests automatically sent by web browsers.
+    Fait taire les erreurs 404 pour les requêtes favicon envoyées automatiquement par les navigateurs.
     """
     return Response(status_code=204)
 
@@ -58,7 +58,7 @@ async def favicon():
 @app.get("/")
 def root():
     """
-    Root health-check endpoint.
+    Endpoint racine de health-check.
     """
     return {"greeting": "Hello from Berlue API"}
 
@@ -66,46 +66,50 @@ def root():
 @app.put("/model")
 def update_model(stage: str = "Production"):
     """
-    Reload or swap the active machine learning model in application state on-the-fly.
+    Recharge ou remplace à la volée le modèle de machine learning actif dans l'état de l'application.
     """
     try:
         new_model = load_model(stage=stage)
         if new_model is None:
             raise HTTPException(
-                status_code=404, detail=f"Model for stage '{stage}' could not be found or loaded from registry."
+                status_code=404,
+                detail=f"Le modèle pour le stage '{stage}' est introuvable ou n'a pas pu être chargé "
+                "depuis le registry.",
             )
 
-        # Hot-swap the loaded model stored in FastAPI application state
+        # Remplace à la volée le modèle stocké dans l'état de l'application FastAPI
         app.state.model = new_model
-        return {"status": "success", "message": f"Model successfully updated to stage '{stage}'."}
+        return {"status": "success", "message": f"Modèle mis à jour avec succès vers le stage '{stage}'."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading model for stage '{stage}': {str(e)}") from e
+        raise HTTPException(
+            status_code=500, detail=f"Erreur lors du chargement du modèle pour le stage '{stage}' : {str(e)}"
+        ) from e
 
 
 # ==========================================
-# 4. BUSINESS ENDPOINTS (Berlue)
+# 4. ENDPOINTS METIER (Berlue)
 # ==========================================
 
 
 @app.get("/llms", response_model=LLMListOutput)
 def get_llm_list():
     """
-    Returns the list of available LLM models that can be tested and compared.
+    Retourne la liste des modèles LLM disponibles pouvant être testés et comparés.
     """
     pipeline = app.state.model
 
     try:
-        # Call the method that retrieves available models from the active pipeline
+        # Appelle la méthode qui récupère les modèles disponibles depuis le pipeline actif
         llms = pipeline.get_available_llms()
         return {"available_llms": llms}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Could not retrieve LLM list: {str(e)}") from e
+        raise HTTPException(status_code=500, detail=f"Impossible de récupérer la liste des LLM : {str(e)}") from e
 
 
 @app.post("/predict", response_model=PredictOutput)
 def predict(payload: PredictInput):
     """
-    Takes a question and an LLM model, generates the response, and checks for hallucinations.
+    Prend une question et un modèle LLM, génère la réponse, et vérifie les hallucinations.
     """
     pipeline = app.state.model
 
@@ -114,13 +118,13 @@ def predict(payload: PredictInput):
         result_dict = pipeline.predict(question=payload.question, llm_config=payload.llm)
         return result_dict
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}") from e
+        raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e
 
 
 @app.post("/evaluate", response_model=EvaluateOutput)
 def evaluate(payload: EvaluateInput):
     """
-    Runs a complete evaluation of the Berlue system on a dataset.
+    Lance une évaluation complète du système Berlue sur un dataset.
     """
     pipeline = app.state.model
 
@@ -137,4 +141,4 @@ def evaluate(payload: EvaluateInput):
             "status": "success",
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Evaluation error: {str(e)}") from e
+        raise HTTPException(status_code=500, detail=f"Erreur d'évaluation : {str(e)}") from e

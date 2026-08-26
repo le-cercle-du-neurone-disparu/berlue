@@ -18,12 +18,12 @@ from berlue.params import (
 
 def save_results(params: dict, metrics: dict) -> None:
     """
-    Persist params & metrics locally on the hard drive.
-    If MODEL_TARGET='mlflow', also persist them on MLflow.
+    Persiste les params & métriques localement sur le disque dur.
+    Si MODEL_TARGET='mlflow', les persiste aussi sur MLflow.
     """
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    # 1. Save locally
+    # 1. Sauvegarde locale
     if params is not None:
         params_path = os.path.join(LOCAL_REGISTRY_PATH, "params", f"{timestamp}.pickle")
         os.makedirs(os.path.dirname(params_path), exist_ok=True)
@@ -36,96 +36,98 @@ def save_results(params: dict, metrics: dict) -> None:
         with open(metrics_path, "wb") as file:
             pickle.dump(metrics, file)
 
-    print("✅ Results saved locally")
+    print("✅ Résultats sauvegardés localement")
 
-    # 2. Save on MLflow
+    # 2. Sauvegarde sur MLflow
     if MODEL_TARGET == "mlflow":
         if params is not None:
             mlflow.log_params(params)
         if metrics is not None:
             mlflow.log_metrics(metrics)
-        print("✅ Results saved on MLflow")
+        print("✅ Résultats sauvegardés sur MLflow")
 
 
 def save_model(model) -> None:
     """
-    Persist trained model locally on the hard drive.
-    - if MODEL_TARGET='gcs', also persist it in the GCS bucket
-    - if MODEL_TARGET='mlflow', also persist it on MLflow
+    Persiste le modèle entraîné localement sur le disque dur.
+    - si MODEL_TARGET='gcs', le persiste aussi dans le bucket GCS
+    - si MODEL_TARGET='mlflow', le persiste aussi sur MLflow
     """
     timestamp = time.strftime("%Y%m%d-%H%M%S")  # noqa: F841 -- utilisé par le code commenté ci-dessous
 
-    # TODO: Modify the saving logic depending on the chosen framework (Scikit-Learn, Keras, PyTorch...)
-    # Example for Scikit-Learn:
+    # TODO: Modifier la logique de sauvegarde selon le framework choisi (Scikit-Learn, Keras, PyTorch...)
+    # Exemple pour Scikit-Learn :
     # model_path = os.path.join(LOCAL_REGISTRY_PATH, "models", f"{timestamp}.pkl")
     # os.makedirs(os.path.dirname(model_path), exist_ok=True)
     # with open(model_path, "wb") as file:
     #     pickle.dump(model, file)
-    # print("✅ Model saved locally")
+    # print("✅ Modèle sauvegardé localement")
 
     if MODEL_TARGET == "gcs":
-        # TODO: Implement GCS upload logic
-        # print("✅ Model saved to GCS")
-        raise NotImplementedError("Saving model to GCS is not implemented yet.")
+        # TODO: Implémenter la logique d'upload vers GCS
+        # print("✅ Modèle sauvegardé sur GCS")
+        raise NotImplementedError("La sauvegarde du modèle sur GCS n'est pas encore implémentée.")
 
     if MODEL_TARGET == "mlflow":
-        # TODO: Modify the mlflow log depending on the framework (mlflow.sklearn, mlflow.tensorflow...)
+        # TODO: Modifier le log mlflow selon le framework (mlflow.sklearn, mlflow.tensorflow...)
         # mlflow.sklearn.log_model(
         #     sk_model=model,
         #     artifact_path="model",
         #     registered_model_name=MLFLOW_MODEL_NAME
         # )
-        # print("✅ Model saved to MLflow")
-        raise NotImplementedError("Saving model to MLflow is not implemented yet.")
+        # print("✅ Modèle sauvegardé sur MLflow")
+        raise NotImplementedError("La sauvegarde du modèle sur MLflow n'est pas encore implémentée.")
 
 
 def load_model(stage="Production"):
     """
-    Return a saved model:
-    - locally (latest one in alphabetical order)
-    - or from GCS (most recent one) if MODEL_TARGET=='gcs'
-    - or from MLFLOW (by "stage") if MODEL_TARGET=='mlflow'
+    Retourne un modèle sauvegardé :
+    - localement (le plus récent par ordre alphabétique)
+    - ou depuis GCS (le plus récent) si MODEL_TARGET=='gcs'
+    - ou depuis MLFLOW (par "stage") si MODEL_TARGET=='mlflow'
     """
     if MODEL_TARGET == "local":
-        print(Fore.BLUE + "\nLoad latest model from local registry..." + Style.RESET_ALL)
+        print(Fore.BLUE + "\nChargement du dernier modèle depuis le registry local..." + Style.RESET_ALL)
 
         local_model_directory = os.path.join(LOCAL_REGISTRY_PATH, "models")
         local_model_paths = glob.glob(f"{local_model_directory}/*")
 
         if not local_model_paths:
-            print("❌ No local model found")
+            print("❌ Aucun modèle local trouvé")
             return None
 
         most_recent_model_path_on_disk = sorted(local_model_paths)[-1]  # noqa: F841 -- utilisé par le code commenté ci-dessous
 
-        # TODO: Modify the loading logic depending on the chosen framework
-        # Example for Scikit-Learn:
+        # TODO: Modifier la logique de chargement selon le framework choisi
+        # Exemple pour Scikit-Learn :
         # with open(most_recent_model_path_on_disk, "rb") as file:
         #     latest_model = pickle.load(file)
-        # print("✅ Model loaded from local disk (TODO)")
+        # print("✅ Modèle chargé depuis le disque local (TODO)")
         # return latest_model
 
-        raise NotImplementedError("Loading model from local disk is not implemented yet. See TODO.")
+        raise NotImplementedError(
+            "Le chargement du modèle depuis le disque local n'est pas encore implémenté. Voir TODO."
+        )
 
     elif MODEL_TARGET == "gcs":
-        # TODO: Implement GCS download logic
-        # print("✅ Latest model downloaded from GCS (TODO)")
-        raise NotImplementedError("Loading model from GCS is not implemented yet.")
+        # TODO: Implémenter la logique de téléchargement depuis GCS
+        # print("✅ Dernier modèle téléchargé depuis GCS (TODO)")
+        raise NotImplementedError("Le chargement du modèle depuis GCS n'est pas encore implémenté.")
 
     elif MODEL_TARGET == "mlflow":
-        # TODO: Implement MLflow download logic
-        # print(Fore.BLUE + f"\nLoad [{stage}] model from MLflow..." + Style.RESET_ALL)
+        # TODO: Implémenter la logique de téléchargement depuis MLflow
+        # print(Fore.BLUE + f"\nChargement du modèle [{stage}] depuis MLflow..." + Style.RESET_ALL)
         # model = ...
         # return model
-        raise NotImplementedError("Loading model from MLflow is not implemented yet.")
+        raise NotImplementedError("Le chargement du modèle depuis MLflow n'est pas encore implémenté.")
 
     return None
 
 
 def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
     """
-    Transition the latest model from the `current_stage` to the
-    `new_stage` and archive the existing model in `new_stage`.
+    Fait passer le dernier modèle du `current_stage` au
+    `new_stage` et archive le modèle déjà présent dans `new_stage`.
     """
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
@@ -134,30 +136,29 @@ def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
     version = client.get_latest_versions(name=MLFLOW_MODEL_NAME, stages=[current_stage])
 
     if not version:
-        print(f"\n❌ No model found with name {MLFLOW_MODEL_NAME} in stage {current_stage}")
+        print(f"\n❌ Aucun modèle trouvé avec le nom {MLFLOW_MODEL_NAME} dans le stage {current_stage}")
         return None
 
     client.transition_model_version_stage(
         name=MLFLOW_MODEL_NAME, version=version[0].version, stage=new_stage, archive_existing_versions=True
     )
 
-    print(
-        f"✅ Model {MLFLOW_MODEL_NAME} (version {version[0].version}) transitioned from {current_stage} to {new_stage}"
-    )
+    print(f"✅ Modèle {MLFLOW_MODEL_NAME} (version {version[0].version}) transféré de {current_stage} vers {new_stage}")
 
     return None
 
 
 def mlflow_run(func):
     """
-    Generic function to log params and results to MLflow along with universal auto-logging.
+    Fonction générique pour logger les params et résultats vers MLflow, avec
+    l'auto-logging universel.
 
     Args:
-        - func (function): Function you want to run within the MLflow run
+        - func (function): Fonction que vous voulez exécuter dans le run MLflow
     """
 
     def wrapper(*args, **kwargs):
-        # End any active run to avoid conflicts
+        # Termine tout run actif pour éviter les conflits
         if mlflow.active_run():
             mlflow.end_run()
 
@@ -165,11 +166,11 @@ def mlflow_run(func):
         mlflow.set_experiment(experiment_name=MLFLOW_EXPERIMENT)
 
         with mlflow.start_run():
-            # Universal autolog works for TensorFlow, Scikit-learn, XGBoost, etc.
+            # L'autolog universel fonctionne pour TensorFlow, Scikit-learn, XGBoost, etc.
             mlflow.autolog()
             results = func(*args, **kwargs)
 
-        print("✅ mlflow_run auto-log done")
+        print("✅ Auto-log mlflow_run terminé")
 
         return results
 

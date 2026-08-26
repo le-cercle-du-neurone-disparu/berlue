@@ -5,19 +5,19 @@ from dotenv import load_dotenv
 
 
 def test_env_file_exists():
-    """Verify that the .env file exists at the root of the project."""
+    """Vérifie que le fichier .env existe à la racine du projet."""
     env_path = Path(".env")
-    assert env_path.is_file(), "❌ .env file is missing! Did you run 'cp .env.sample .env'?"
+    assert env_path.is_file(), "❌ Le fichier .env est manquant ! Avez-vous lancé 'cp .env.sample .env' ?"
 
 
 def test_critical_env_variables_are_set():
-    """Verify that critical variables are filled and not left empty."""
-    # We load the .env file explicitly for the test
+    """Vérifie que les variables critiques sont remplies et non laissées vides."""
+    # On charge explicitement le fichier .env pour le test
     load_dotenv()
 
-    # Add any variable here that is absolutely required to start the project
+    # Ajoutez ici toute variable absolument nécessaire au démarrage du projet
     critical_vars = ["PACKAGE_NAME", "GCP_PROJECT", "GCP_REGION", "BUCKET_NAME", "PYTHON_VERSION"]
 
     for var in critical_vars:
         val = os.getenv(var)
-        assert val, f"❌ '{var}' is empty in your .env file! You must fill it out."
+        assert val, f"❌ '{var}' est vide dans votre fichier .env ! Vous devez le remplir."

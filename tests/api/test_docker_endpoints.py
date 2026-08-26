@@ -5,22 +5,22 @@ import subprocess
 import pytest
 from httpx import AsyncClient
 
-# TODO: Fill these parameters with dummy data matching your API input schema
+# TODO: Remplir ces paramètres avec des données factices correspondant au schéma d'entrée de votre API
 test_params = {}
 
-# TODO: Define the expected key returned by your /predict endpoint
+# TODO: Définir la clé attendue retournée par votre endpoint /predict
 EXPECTED_PREDICT_KEY = "prediction"
 
-# Find the port the docker image is running on
+# Trouve le port sur lequel tourne l'image docker
 image_name = f"{os.environ.get('GAR_IMAGE')}:dev"
 
-# Use docker ps to list all running containers derived from $GAR_IMAGE:dev
+# Utilise docker ps pour lister tous les conteneurs en cours dérivés de $GAR_IMAGE:dev
 docker_ps_command = f'docker ps --filter ancestor={image_name} --format "{{{{.Ports}}}}"'
 docker_ps_output = subprocess.Popen(docker_ps_command, shell=True, stdout=subprocess.PIPE).stdout.read().decode("utf-8")
 
-# If we have an output, extract the port the container is running on
+# Si on a une sortie, on extrait le port sur lequel tourne le conteneur
 if docker_ps_output:
-    # Match the mapped port (e.g., 0.0.0.0:8000->8000/tcp)
+    # Cherche le port mappé (ex. 0.0.0.0:8000->8000/tcp)
     match = re.findall(r":(\d{4,5})->", docker_ps_output)
     docker_port = match[0] if match else None
 else:
@@ -29,13 +29,13 @@ else:
 SERVICE_URL = f"http://localhost:{docker_port}" if docker_port else None
 
 ERROR_DOCKER_PORT = f"""
-❌ ERROR: We did not find a running docker container for '{image_name}'.
-Verify:
-  1. Your docker container is running (e.g., make docker_run_local)
-  2. The docker image is correctly named using $GAR_IMAGE:dev
+❌ ERREUR : Aucun conteneur docker en cours d'exécution trouvé pour '{image_name}'.
+Vérifiez :
+  1. Que votre conteneur docker est lancé (ex. make docker_run_local)
+  2. Que l'image docker est correctement nommée avec $GAR_IMAGE:dev
 """
 
-ERROR_PARAMS = "❌ TODO: You must define 'test_params' to run predict tests!"
+ERROR_PARAMS = "❌ TODO: Vous devez définir 'test_params' pour lancer les tests de predict !"
 
 
 @pytest.mark.asyncio
@@ -78,7 +78,7 @@ async def test_predict_has_key():
     assert test_params, ERROR_PARAMS
     async with AsyncClient(base_url=SERVICE_URL, timeout=10.0) as ac:
         response = await ac.get("/predict", params=test_params)
-    assert response.json().get(EXPECTED_PREDICT_KEY, False), f"Key '{EXPECTED_PREDICT_KEY}' not found in response"
+    assert response.json().get(EXPECTED_PREDICT_KEY, False), f"Clé '{EXPECTED_PREDICT_KEY}' introuvable dans la réponse"
 
 
 @pytest.mark.asyncio

@@ -7,60 +7,60 @@ from google.cloud import bigquery
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Clean raw data by:
-    - assigning correct dtypes to each column
-    - removing buggy or irrelevant transactions
+    Nettoie les données brutes en :
+    - assignant les dtypes corrects à chaque colonne
+    - supprimant les transactions buguées ou non pertinentes
     """
-    # TODO: Implement clean_data
-    # Compress raw_data by setting types to DTYPES_RAW
+    # TODO: Implémenter clean_data
+    # Compresse raw_data en assignant les types de DTYPES_RAW
     # df = df.astype(DTYPES_RAW)
 
-    # # Remove buggy data
+    # # Supprime les données buguées
     # df = df.drop_duplicates()
     # df = df.dropna(how='any', axis=0)
 
-    # print("✅ Data cleaned")
+    # print("✅ Données nettoyées")
     # return df
 
-    raise NotImplementedError("clean_data is not implemented yet. See TODO.")
+    raise NotImplementedError("clean_data n'est pas encore implémenté. Voir TODO.")
 
 
 def get_data_with_cache(gcp_project: str, query: str, cache_path: Path, data_has_header=True) -> pd.DataFrame:
     """
-    Retrieve `query` data from BigQuery, or from `cache_path` if the file exists.
-    Store at `cache_path` if retrieved from BigQuery for future use.
+    Récupère les données de `query` depuis BigQuery, ou depuis `cache_path` si le fichier existe.
+    Stocke dans `cache_path` si récupéré depuis BigQuery, pour une utilisation future.
     """
     if cache_path.is_file():
-        print(Fore.BLUE + "\nLoad data from local CSV..." + Style.RESET_ALL)
+        print(Fore.BLUE + "\nChargement des données depuis le CSV local..." + Style.RESET_ALL)
         df = pd.read_csv(cache_path, header="infer" if data_has_header else None)
     else:
-        print(Fore.BLUE + "\nLoad data from BigQuery server..." + Style.RESET_ALL)
+        print(Fore.BLUE + "\nChargement des données depuis le serveur BigQuery..." + Style.RESET_ALL)
         client = bigquery.Client(project=gcp_project)
         query_job = client.query(query)
         result = query_job.result()
         df = result.to_dataframe()
 
-        # Store as CSV if the BQ query returned at least one valid line
+        # Stocke en CSV si la requête BQ a retourné au moins une ligne valide
         if df.shape[0] > 1:
             # 💡 Astuce de pro : on s'assure que le dossier parent existe avant de sauvegarder !
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(cache_path, header=data_has_header, index=False)
 
-    print(f"✅ Data loaded, with shape {df.shape}")
+    print(f"✅ Données chargées, avec la forme {df.shape}")
 
     return df
 
 
 def load_data_to_bq(data: pd.DataFrame, gcp_project: str, bq_dataset: str, table: str, truncate: bool) -> None:
     """
-    - Save the DataFrame to BigQuery
-    - Empty the table beforehand if `truncate` is True, append otherwise
+    - Sauvegarde le DataFrame dans BigQuery
+    - Vide la table au préalable si `truncate` vaut True, sinon ajoute à la suite
     """
     assert isinstance(data, pd.DataFrame)
     full_table_name = f"{gcp_project}.{bq_dataset}.{table}"
-    print(Fore.BLUE + f"\nSave data to BigQuery @ {full_table_name}...:" + Style.RESET_ALL)
+    print(Fore.BLUE + f"\nSauvegarde des données dans BigQuery @ {full_table_name}...:" + Style.RESET_ALL)
 
-    # Fix column names to BigQuery accepted format (cannot start with a number)
+    # Corrige les noms de colonnes au format accepté par BigQuery (ne peut pas commencer par un chiffre)
     data.columns = [
         f"_{column}" if not str(column)[0].isalpha() and not str(column)[0] == "_" else str(column)
         for column in data.columns
@@ -68,14 +68,14 @@ def load_data_to_bq(data: pd.DataFrame, gcp_project: str, bq_dataset: str, table
 
     client = bigquery.Client()
 
-    # Define write mode and schema
+    # Définit le mode d'écriture et le schéma
     write_mode = "WRITE_TRUNCATE" if truncate else "WRITE_APPEND"
     job_config = bigquery.LoadJobConfig(write_disposition=write_mode)
 
-    print(f"\n{'Write' if truncate else 'Append'} {full_table_name} ({data.shape[0]} rows)")
+    print(f"\n{'Écriture de' if truncate else 'Ajout à'} {full_table_name} ({data.shape[0]} lignes)")
 
-    # Load data
+    # Charge les données
     job = client.load_table_from_dataframe(data, full_table_name, job_config=job_config)
-    job.result()  # wait for the job to complete
+    job.result()  # attend la fin du job
 
-    print(f"✅ Data saved to bigquery, with shape {data.shape}")
+    print(f"✅ Données sauvegardées dans bigquery, avec la forme {data.shape}")

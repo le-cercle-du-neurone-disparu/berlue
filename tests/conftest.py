@@ -2,17 +2,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# TODO: Import your project's specific constants or types if needed
+# TODO: Importer les constantes ou types spécifiques à votre projet si nécessaire
 # from berlue.params import *
 
 
 @pytest.fixture(scope="session")
 def fixture_mock_raw_data() -> pd.DataFrame:
     """
-    Provides a mock raw DataFrame for testing.
-    scope="session" ensures this runs only once per test suite execution.
+    Fournit un DataFrame brut factice pour les tests.
+    scope="session" garantit que ceci ne s'exécute qu'une fois par suite de tests.
     """
-    # TODO: Replace with your own mock data generation or load a small local CSV
+    # TODO: Remplacer par votre propre génération de données factices ou charger un petit CSV local
     data = {"feature_1": np.random.rand(10), "feature_2": np.random.rand(10), "target": np.random.randint(0, 2, 10)}
     return pd.DataFrame(data)
 
@@ -20,9 +20,9 @@ def fixture_mock_raw_data() -> pd.DataFrame:
 @pytest.fixture(scope="session")
 def fixture_mock_cleaned_data() -> pd.DataFrame:
     """
-    Provides a mock cleaned DataFrame for testing model training or predictions.
+    Fournit un DataFrame nettoyé factice pour tester l'entraînement du modèle ou les prédictions.
     """
-    # TODO: Adapt to your project's expected cleaned data format
+    # TODO: Adapter au format de données nettoyées attendu par votre projet
     data = {
         "feature_1_scaled": np.random.rand(10),
         "feature_2_scaled": np.random.rand(10),

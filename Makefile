@@ -26,26 +26,26 @@ help: ## Affiche ce menu d'aide
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<commande>\033[0m\n\nCommandes disponibles :\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # ==============================================================================
-# 🧹 PROJECT CLEANING & SETUP
+# 🧹 NETTOYAGE & SETUP DU PROJET
 # ==============================================================================
 
-reinstall_package: ## Force uninstall and reinstall the package with dev dependencies
-	@echo "🔄 Reinstalling package..."
+reinstall_package: ## Force la désinstallation et réinstallation du package avec les dépendances dev
+	@echo "🔄 Réinstallation du package..."
 	@pip uninstall -y berlue || :
 	@pip install -e ".[dev]"
-	@echo "✅ Package reinstalled successfully."
+	@echo "✅ Package réinstallé avec succès."
 
-init_data_folders: ## Create local directories for data and model outputs
-	@echo "📁 Creating local data folders..."
+init_data_folders: ## Crée les dossiers locaux pour les données et les sorties de modèle
+	@echo "📁 Création des dossiers de données locaux..."
 	@mkdir -p data/raw
 	@mkdir -p data/processed
 	@mkdir -p training_outputs/metrics
 	@mkdir -p training_outputs/models
 	@mkdir -p training_outputs/params
-	@echo "✅ Folders created. (Make sure they are in your .gitignore!)"
+	@echo "✅ Dossiers créés. (Assurez-vous qu'ils sont dans votre .gitignore !)"
 
-clean: ## Clean Python cache, build files, and hidden OS files
-	@echo "🧹 Cleaning up project..."
+clean: ## Nettoie le cache Python, les fichiers de build et les fichiers cachés de l'OS
+	@echo "🧹 Nettoyage du projet..."
 	@find . -type d -name "__pycache__" -exec rm -rf {} +
 	@find . -type d -name ".ipynb_checkpoints" -exec rm -rf {} +
 	@find . -type f -name "*.pyc" -delete
@@ -53,4 +53,4 @@ clean: ## Clean Python cache, build files, and hidden OS files
 	@find . -type f -name "*Zone.Identifier" -delete
 	@find . -type f -name ".DS_Store" -delete
 	@rm -rf build/ dist/ *.egg-info/ *.dist-info/
-	@echo "✅ Cleaned up successfully."
+	@echo "✅ Nettoyage terminé avec succès."
