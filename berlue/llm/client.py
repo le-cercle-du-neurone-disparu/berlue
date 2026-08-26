@@ -8,23 +8,36 @@ from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
 class OllamaClient:
     """Client minimal pour générer une réponse depuis le modèle local via le SDK Python officiel."""
 
-    def __init__(self, host: str = OLLAMA_HOST, model: str = OLLAMA_MODEL):
+    def __init__(self, host: str = OLLAMA_HOST, model: str = OLLAMA_MODEL, timeout: float = 120.0):
         self.host = host
         self.model = model
-        # Instanciation du client officiel qui va gérer la connexion
-        self.client = Client(host=self.host)
+        # Instanciation du client officiel avec gestion du timeout
+        self.client = Client(host=self.host, timeout=timeout)
 
     def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE) -> str:
         """Génère une réponse pour `prompt` à la température donnée."""
         try:
             # Appel natif via la librairie officielle
             response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": temperature})
-            # La librairie renvoie un dictionnaire, on extrait le texte généré
-            return response.get("response", "")
 
         except Exception as e:
-            print(f"❌ Erreur lors de la génération avec Ollama : {e}")
-            raise RuntimeError(f"Échec de la génération Ollama : {e}") from e
+            # Vérification robuste pour détecter un timeout (ex: httpx.TimeoutException)
+            if "timeout" in str(type(e).__name__).lower() or "timeout" in str(e).lower():
+                print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
+                raise TimeoutError(f"Le serveur Ollama a expiré (Timeout) : {e}") from e
+
+            # Autres erreurs réseau/librairie (serveur éteint, crash, etc.)
+            print(f"❌ Erreur lors de la communication avec Ollama : {e}")
+            raise RuntimeError(f"Échec de la communication Ollama : {e}") from e
+
+        # Extraction de la réponse (sera None si la clé vaut None ou n'existe pas)
+        resp_text = response.get("response")
+
+        # Vérification stricte : si c'est None ou une chaîne vide ("")
+        if not resp_text:
+            raise RuntimeError(f"Ollama a généré une réponse vide ou nulle (modèle: {self.model}).")
+
+        return resp_text
 
     def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> list[str]:
         """
