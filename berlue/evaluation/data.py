@@ -101,6 +101,7 @@ def split_train_test(examples: list[dict], test_size: float = 0.2, seed: int = 0
     train_q_set = set(train_questions)
 
     # Reconstruction des datasets finaux
+
     train_examples = []
     test_examples = []
 
