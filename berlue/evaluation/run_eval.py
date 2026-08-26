@@ -12,6 +12,10 @@ Params utilisés indirectement (`berlue.params`, via `evaluation.data` et
 """
 
 from berlue.api.schemas import ConfusionMatrix, Metrics
+
+# Import des fonctions locales
+from berlue.evaluation.data import load_labeled_examples, split_train_test
+from berlue.evaluation.metrics import build_confusion_matrix
 from berlue.nli_baseline.predict import NliBaseline
 
 
@@ -19,19 +23,34 @@ def evaluate_baseline(baseline: NliBaseline | None = None) -> ConfusionMatrix:
     """Évalue la baseline NLI seule sur le jeu de test (HaluEval + TruthfulQA,
     partie non utilisée par `nli_baseline.train.train_baseline`) et retourne sa
     matrice de confusion.
-
-    TODO(evaluation) :
-    1. _, test_examples = evaluation.data.split_train_test(evaluation.data.load_labeled_examples())
-    2. Pour chaque exemple : baseline.predict(question, answer) -> Verdict.
-    3. evaluation.metrics.build_confusion_matrix(ground_truth, predictions).
     """
+    # Instanciation de la baseline si non fournie (Lazy loading)
     baseline = baseline or NliBaseline()
-    # TODO(evaluation)
-    # return ConfusionMatrix(
-    #     ground_truth_true=ConfusionRow(predicted_true=50, predicted_undecided=15, predicted_false=10),
-    #     ground_truth_false=ConfusionRow(predicted_true=8, predicted_undecided=7, predicted_false=10),
-    # )
-    raise NotImplementedError
+
+    # 1. Récupérer uniquement le jeu de test
+    examples = load_labeled_examples()
+    _, test_examples = split_train_test(examples)
+
+    # Préparation des listes pour la matrice
+    ground_truths = []
+    predictions = []
+
+    print(f"🔍 Évaluation NLI Baseline sur {len(test_examples)} exemples...")
+
+    # 2. Boucler sur les exemples pour prédire
+    for ex in test_examples:
+        # La prédiction est un Verdict (ex: Verdict.SUPPORTED)
+        pred = baseline.predict(question=ex["question"], answer=ex["answer"])
+
+        # On sauvegarde les résultats
+        predictions.append(pred)
+        ground_truths.append(ex["ground_truth_label"])  # True ou False
+
+    # 3. Construction et retour de la matrice de confusion
+    matrix = build_confusion_matrix(ground_truths, predictions)
+    print("✅ Évaluation terminée.")
+
+    return matrix
 
 
 def run_evaluation(pipeline, baseline: NliBaseline | None = None) -> Metrics:
@@ -65,4 +84,5 @@ if __name__ == "__main__":
     # Par défaut on n'évalue que la baseline NLI : le pipeline complet (RAG +
     # SelfCheckGPT) n'existe pas encore. Utiliser run_evaluation(pipeline=...) une
     # fois disponible pour comparer les deux.
-    evaluate_baseline()
+    matrix = evaluate_baseline()
+    print(matrix)

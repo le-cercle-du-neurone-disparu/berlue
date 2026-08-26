@@ -57,12 +57,16 @@ VECTOR_DB_PATH = os.environ.get("BERLUE_VECTOR_DB_PATH", "./data/index/fever_fai
 
 # --- NLI léger ---
 NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
-NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./data/models/nli_tfidf_logreg.joblib")
+NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./models/nli_tfidf_logreg.joblib")
 
 # --- Données ---
 FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/raw/fever")
-HALUEVAL_DATA_PATH = os.environ.get("BERLUE_HALUEVAL_DATA_PATH", "./data/raw/halueval")
-TRUTHFULQA_DATA_PATH = os.environ.get("BERLUE_TRUTHFULQA_DATA_PATH", "./data/raw/truthfulqa")
+HALUEVAL_DATA_PATH = os.environ.get(
+    "BERLUE_HALUEVAL_DATA_PATH", "https://raw.githubusercontent.com/RUCAIBox/HaluEval/main/data/qa_data.json"
+)
+TRUTHFULQA_DATA_PATH = os.environ.get(
+    "BERLUE_TRUTHFULQA_DATA_PATH", "https://raw.githubusercontent.com/sylinrl/TruthfulQA/main/TruthfulQA.csv"
+)
 
 # EVAL_DATASETS : quel(s) jeu(x) de données labellisés utiliser pour l'évaluation
 # offline (entraînement du baseline NLI + jeu de test, cf. evaluation/data.py) —
