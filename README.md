@@ -1,10 +1,10 @@
-# 🚀 MLOps Boilerplate Template
+# 🚀 Template Boilerplate MLOps
 
-A robust, framework-agnostic template to jumpstart your Machine Learning projects with best practices in software engineering, CI/CD, and GCP deployment.
+Un template robuste et agnostique au framework pour démarrer rapidement vos projets Machine Learning avec les bonnes pratiques d'ingénierie logicielle, de CI/CD et de déploiement GCP.
 
-## 🛠️ 1. Local Environment Setup
+## 🛠️ 1. Configuration de l'environnement local
 
-Automatically set up your Python virtual environment using `pyenv` and install the package with all dependencies:
+Configure automatiquement votre environnement virtuel Python avec `pyenv` et installe le package avec toutes ses dépendances :
 
 ```bash
 make local_setup
@@ -12,55 +12,55 @@ make local_setup
 
 ---
 
-## ☁️ 2. Cloud Infrastructure (GCP VM)
+## ☁️ 2. Infrastructure Cloud (VM GCP)
 
-To train your model on a powerful cloud machine, provision your Google Cloud Platform VM directly from your local terminal:
+Pour entraîner votre modèle sur une machine cloud puissante, provisionnez votre VM Google Cloud Platform directement depuis votre terminal local :
 
-1. Create the VM and assign the Service Account:
+1. Créez la VM et assignez le compte de service :
 ```bash
 make vm_create
 ```
 
-2. Send and execute the environment setup script (`setup_vm.sh`) on the VM:
+2. Envoyez et exécutez le script de configuration de l'environnement (`setup_vm.sh`) sur la VM :
 ```bash
 make vm_setup
 ```
 
-3. Connect to your new VM:
+3. Connectez-vous à votre nouvelle VM :
 ```bash
 make vm_connect
 ```
 
-*(Note: Once connected to the VM via SSH, you will clone your repository there and run `make local_setup` to prepare your training environment, just like you did locally).*
+*(Note : une fois connecté à la VM via SSH, vous y clonerez votre dépôt et lancerez `make local_setup` pour préparer votre environnement d'entraînement, tout comme en local).*
 
-### 🛑 Resource Management (Avoid extra billing)
-**Crucial:** Don't forget to stop your VM when you are done working for the day to save CPU costs!
+### 🛑 Gestion des ressources (éviter une facturation superflue)
+**Crucial :** n'oubliez pas d'arrêter votre VM quand vous avez fini de travailler pour la journée, pour économiser les coûts CPU !
 
 ```bash
-# Stop the VM (saves money, keeps your files)
+# Arrête la VM (économise de l'argent, conserve vos fichiers)
 make vm_stop
 
-# Resume work the next day
+# Reprend le travail le jour suivant
 make vm_start
 
-# When the project is entirely finished, delete the VM permanently
+# Quand le projet est entièrement terminé, supprime la VM définitivement
 make vm_delete
 ```
 
 ---
 
-## 🧠 3. Development Workflow (ML Logic)
+## 🧠 3. Workflow de développement (logique ML)
 
-The core logic of your project lives in the newly renamed package folder. Follow these steps to build your pipeline:
+La logique métier de votre projet vit dans le dossier du package fraîchement renommé. Suivez ces étapes pour construire votre pipeline :
 
-1. **`params.py`**: Configure your data types, columns, and constants.
-2. **`ml_logic/data.py`**: Implement `clean_data()` to preprocess your raw data.
-3. **`ml_logic/preprocessor.py`**: Build your sklearn/custom pipelines.
-4. **`ml_logic/model.py`**: Implement `build_model()`, `train_model()`, and `evaluate_model()`.
-5. **`ml_logic/registry.py`**: Implement model lifecycle management and **MLflow** integration to track your experiments and metrics.
+1. **`params.py`** : configurez vos types de données, colonnes et constantes.
+2. **`ml_logic/data.py`** : implémentez `clean_data()` pour prétraiter vos données brutes.
+3. **`ml_logic/preprocessor.py`** : construisez vos pipelines sklearn/custom.
+4. **`ml_logic/model.py`** : implémentez `build_model()`, `train_model()` et `evaluate_model()`.
+5. **`ml_logic/registry.py`** : implémentez la gestion du cycle de vie du modèle et l'intégration **MLflow** pour suivre vos expériences et métriques.
 
-### Step-by-Step Execution
-Once your logic is implemented, run your pipeline steps independently via the Makefile:
+### Exécution étape par étape
+Une fois votre logique implémentée, lancez les étapes de votre pipeline indépendamment via le Makefile :
 
 ```bash
 make run_preprocess
@@ -68,12 +68,12 @@ make run_train
 make run_evaluate
 make run_pred
 
-# Or run the entire pipeline at once:
+# Ou lancez tout le pipeline d'un coup :
 make run_all
 ```
 
 ### 🤖 Orchestration (Prefect)
-To automate, monitor, and schedule your entire MLOps pipeline, implement your tasks in `interface/workflow.py` and run the orchestrator:
+Pour automatiser, surveiller et planifier tout votre pipeline MLOps, implémentez vos tâches dans `interface/workflow.py` et lancez l'orchestrateur :
 
 ```bash
 make run_workflow
@@ -81,39 +81,39 @@ make run_workflow
 
 ---
 
-## 🌐 4. Serving & API
+## 🌐 4. Mise en service & API
 
-The deployment of your API follows a strict 3-step validation process (Fail-Fast methodology):
+Le déploiement de votre API suit un processus de validation strict en 3 étapes (méthodologie Fail-Fast) :
 
-### Step 1: Local Native Development
-Implement your FastAPI endpoints in `api/fast.py`. Run the API natively on your machine for fast iteration and live-reloading:
+### Étape 1 : Développement natif local
+Implémentez vos endpoints FastAPI dans `api/fast.py`. Lancez l'API nativement sur votre machine pour une itération rapide et un rechargement à chaud :
 ```bash
 make run_api
 ```
-*Verify your code logic:*
+*Vérifiez la logique de votre code :*
 ```bash
 make test_api_local
 ```
 
-### Step 2: Local Docker Verification
-Once the native API works, ensure it runs correctly inside its isolated container. This catches missing dependencies before deploying to the cloud.
+### Étape 2 : Vérification Docker locale
+Une fois l'API native fonctionnelle, assurez-vous qu'elle tourne correctement dans son conteneur isolé. Cela permet de détecter les dépendances manquantes avant le déploiement dans le cloud.
 ```bash
 make docker_build_local
 make docker_run_local
 ```
-*Verify your containerized API:*
+*Vérifiez votre API conteneurisée :*
 ```bash
 make test_api_docker
 ```
 
-### Step 3: Cloud Production Deployment
-When the local container is validated, build the production image (which uses `pip install .` for a lighter footprint) and deploy it to GCP Cloud Run.
+### Étape 3 : Déploiement en production Cloud
+Une fois le conteneur local validé, construisez l'image de production (qui utilise `pip install .` pour un poids plus léger) et déployez-la sur GCP Cloud Run.
 ```bash
 make docker_build_prod
 make docker_push
 make cloudrun_deploy
 ```
-*Verify your live production endpoint:*
+*Vérifiez votre endpoint de production en direct :*
 ```bash
 make test_api_cloud
 ```

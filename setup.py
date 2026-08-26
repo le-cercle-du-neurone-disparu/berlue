@@ -3,8 +3,9 @@ from setuptools import find_packages, setup
 
 def load_requirements(filename: str) -> list:
     """
-    Load requirements from a file, ignoring empty lines, comments (#...,
-    inline or full-line) and '-r' directives (to avoid recursive loops).
+    Charge les requirements depuis un fichier, en ignorant les lignes vides, les
+    commentaires (#..., en ligne ou pleine ligne) et les directives '-r' (pour
+    éviter les boucles récursives).
     """
     if not os.path.exists(filename):
         return []
@@ -22,16 +23,16 @@ def load_requirements(filename: str) -> list:
 setup(
     name='berlue',
     version="0.0.1",
-    description="MLOps template project",
-    author="Your Name", # TODO: Update author name
+    description="Projet template MLOps",
+    author="Your Name", # TODO: Mettre à jour le nom de l'auteur
 
-    # Automatically find packages but exclude the tests folder from production
+    # Trouve automatiquement les packages mais exclut le dossier tests de la production
     packages=find_packages(exclude=["tests", "tests.*"]),
 
-    # Core production dependencies
+    # Dépendances de production principales
     install_requires=load_requirements("requirements.txt"),
 
-    # Optional development dependencies
+    # Dépendances de développement optionnelles
     extras_require={
         "dev": load_requirements("requirements_dev.txt")
     },

@@ -95,16 +95,16 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 LOCAL_DATA_PATH = os.path.join(PROJECT_ROOT, "data")
 LOCAL_REGISTRY_PATH = os.path.join(PROJECT_ROOT, "models")
 
-##################  DATA SCHEMA (TODO)  #################
-# TODO: Define the exact column names of the raw dataset (required for BigQuery schema or CSV parsing).
+##################  SCHEMA DES DONNEES (TODO)  #################
+# TODO: Définir les noms exacts des colonnes du dataset brut (requis pour le schéma BigQuery ou le parsing CSV).
 # COLUMN_NAMES_RAW = ['feature_1', 'feature_2', 'target_variable']
 
-# TODO: Enforce raw data types to optimize memory usage (e.g., use float32 instead of float64).
+# TODO: Imposer les dtypes des données brutes pour optimiser l'usage mémoire (ex. float32 au lieu de float64).
 # DTYPES_RAW = {
 #     "feature_1": "float32",
 #     "feature_2": "int8",
 #     "target_variable": "int8"
 # }
 
-# TODO: Define the final data type for the matrices after preprocessing.
+# TODO: Définir le type de données final pour les matrices après prétraitement.
 # DTYPES_PROCESSED = np.float32

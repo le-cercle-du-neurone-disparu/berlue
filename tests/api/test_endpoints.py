@@ -1,10 +1,10 @@
 import pytest
 from httpx import AsyncClient
 
-# TODO: Fill these parameters with dummy data matching your API input schemas
+# TODO: Remplir ces paramètres avec des données factices correspondant aux schémas d'entrée de votre API
 test_params = {}
 
-# TODO: Define the expected key returned by your /predict endpoint
+# TODO: Définir la clé attendue retournée par votre endpoint /predict
 EXPECTED_PREDICT_KEY = "prediction"
 
 
@@ -27,14 +27,14 @@ async def test_root_returns_greeting():
 
 
 # ==============================================================================
-# PREDICT ENDPOINT TESTS
+# TESTS DE L'ENDPOINT PREDICT
 # ==============================================================================
 
 
 @pytest.mark.asyncio
 async def test_predict_is_up():
-    # FAIL FAST : Explose si l'utilisateur n'a pas rempli ses paramètres de test
-    assert test_params, "❌ TODO: You must define 'test_params' to run predict tests!"
+    # FAIL FAST : explose si l'utilisateur n'a pas rempli ses paramètres de test
+    assert test_params, "❌ TODO: Vous devez définir 'test_params' pour lancer les tests de predict !"
 
     from berlue.api.fast import app
 
@@ -45,7 +45,7 @@ async def test_predict_is_up():
 
 @pytest.mark.asyncio
 async def test_predict_is_dict():
-    assert test_params, "❌ TODO: You must define 'test_params' to run predict tests!"
+    assert test_params, "❌ TODO: Vous devez définir 'test_params' pour lancer les tests de predict !"
 
     from berlue.api.fast import app
 
@@ -57,19 +57,19 @@ async def test_predict_is_dict():
 
 @pytest.mark.asyncio
 async def test_predict_has_expected_key():
-    assert test_params, "❌ TODO: You must define 'test_params' to run predict tests!"
+    assert test_params, "❌ TODO: Vous devez définir 'test_params' pour lancer les tests de predict !"
 
     from berlue.api.fast import app
 
     async with AsyncClient(app=app, base_url="http://test") as ac:
         response = await ac.get("/predict", params=test_params)
 
-    assert response.json().get(EXPECTED_PREDICT_KEY, False), f"Key '{EXPECTED_PREDICT_KEY}' not found in response"
+    assert response.json().get(EXPECTED_PREDICT_KEY, False), f"Clé '{EXPECTED_PREDICT_KEY}' introuvable dans la réponse"
 
 
 @pytest.mark.asyncio
 async def test_predict_val_is_float():
-    assert test_params, "❌ TODO: You must define 'test_params' to run predict tests!"
+    assert test_params, "❌ TODO: Vous devez définir 'test_params' pour lancer les tests de predict !"
 
     from berlue.api.fast import app
 

@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🐙 GITHUB / PULL REQUEST COMMANDS
+# 🐙 COMMANDES GITHUB / PULL REQUEST
 # ==============================================================================
 # Nécessite `gh` (GitHub CLI) authentifié : gh auth status
 

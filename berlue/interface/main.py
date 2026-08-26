@@ -6,7 +6,7 @@ from berlue.ml_logic.registry import mlflow_run
 
 def preprocess() -> None:
     pass
-    # print("✅ preprocess() done \n")
+    # print("✅ preprocess() terminé \n")
 
 
 @mlflow_run
@@ -19,15 +19,15 @@ def train(
     patience,
 ) -> float:
     """
-    - Download processed data from your BQ table (or from cache if it exists)
-    - Train on the preprocessed dataset (which should be ordered by date)
-    - Store training results and model weights
+    - Télécharge les données traitées depuis votre table BQ (ou depuis le cache si il existe)
+    - Entraîne sur le dataset prétraité (qui doit être ordonné par date)
+    - Stocke les résultats d'entraînement et les poids du modèle
 
-    Return XXX as a float
+    Retourne XXX en float
     """
 
     # print(Fore.MAGENTA + "\n⭐️ Use case: train" + Style.RESET_ALL)
-    # print(Fore.BLUE + "\nLoading preprocessed validation data..." + Style.RESET_ALL)
+    # print(Fore.BLUE + "\nChargement des données de validation prétraitées..." + Style.RESET_ALL)
     pass
 
 
@@ -38,15 +38,15 @@ def evaluate(
     stage: str = "Production",
 ) -> float:
     """
-    Evaluate the performance of the latest production model on processed data
-    Return XXX as a float
+    Évalue la performance du dernier modèle de production sur les données traitées
+    Retourne XXX en float
     """
     # print(Fore.MAGENTA + "\n⭐️ Use case: evaluate" + Style.RESET_ALL)
 
     # model = load_model(stage=stage)
     # assert model is not None
 
-    # Query your BigQuery processed table and get data_processed using `get_data_with_cache`
+    # Interroge votre table BigQuery traitée et récupère data_processed via `get_data_with_cache`
     # query = f""""""
 
     # data_processed_cache_path = Path(f"{LOCAL_DATA_PATH}/processed/processed_{min_date}_{max_date}_{DATA_SIZE}.csv")
@@ -58,7 +58,7 @@ def evaluate(
     # )
 
     # if data_processed.shape[0] == 0:
-    #     print("❌ No data to evaluate on")
+    #     print("❌ Aucune donnée à évaluer")
     #     return None
 
     # data_processed = data_processed.to_numpy()
@@ -70,28 +70,28 @@ def evaluate(
     # XXX = metrics_dict["XXX"]
 
     # params = dict(
-    #     context="evaluate", # Package behavior
+    #     context="evaluate", # Comportement du package
     #     training_set_size=DATA_SIZE,
     #     row_count=len(X_new)
     # )
 
     # save_results(params=params, metrics=metrics_dict)
 
-    # print("✅ evaluate() done \n")
+    # print("✅ evaluate() terminé \n")
 
     # return XXX
 
 
 def pred(X_pred: pd.DataFrame = None) -> np.ndarray:
     """
-    Make a prediction using the latest trained model
+    Effectue une prédiction avec le dernier modèle entraîné
     """
 
     # print("\n⭐️ Use case: predict")
 
     # if X_pred is None:
     #     X_pred = pd.DataFrame(dict(
-    #     # your params
+    #     # vos paramètres
     # ))
 
     # model = load_model()
@@ -100,7 +100,7 @@ def pred(X_pred: pd.DataFrame = None) -> np.ndarray:
     # X_processed = preprocess_features(X_pred)
     # y_pred = model.predict(X_processed)
 
-    # print("\n✅ prediction done: ", y_pred, y_pred.shape, "\n")
+    # print("\n✅ prédiction terminée : ", y_pred, y_pred.shape, "\n")
     # return y_pred
     pass
 

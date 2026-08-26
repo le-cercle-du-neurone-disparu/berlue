@@ -5,21 +5,21 @@ from berlue.api.schemas import LLMConfig
 
 class MockBerluePipeline:
     """
-    Fake pipeline used for frontend development.
-    Simulates the behavior of the real ML model.
+    Faux pipeline utilisé pour le développement frontend.
+    Simule le comportement du vrai modèle ML.
     """
 
     def get_available_llms(self) -> list[str]:
         """
-        Returns a mock list of available LLMs (tags Ollama réels, pullables).
+        Retourne une liste factice de LLM disponibles (tags Ollama réels, pullables).
         """
         return ["qwen2.5:0.5b", "qwen2.5:1.5b", "llama3.2:1b", "gemma3:1b"]
 
     def predict(self, question: str, llm_config: LLMConfig) -> dict:
         """
-        Simulates generating an answer and finding a hallucination.
+        Simule la génération d'une réponse et la détection d'une hallucination.
         """
-        # We return a dictionary that exactly matches the PredictOutput schema
+        # On retourne un dictionnaire qui correspond exactement au schéma PredictOutput
         return {
             "question": question,
             "llm_used": {"name": llm_config.name, "temperature": llm_config.temperature},
@@ -44,12 +44,12 @@ class MockBerluePipeline:
 
     def evaluate_dataset(self, dataset_name: str, n_samples: int, llm_config: LLMConfig) -> dict:
         """
-        Simulates running a full benchmark.
+        Simule l'exécution d'un benchmark complet.
         """
-        # We return a dictionary that exactly matches the Metrics schema (2 matrices
+        # On retourne un dictionnaire qui correspond exactement au schéma Metrics (2 matrices
         # de confusion 2x3 : baseline vs berlue, sur 75 assertions vraies + 25 fausses)
-        # The llm_config is passed here if you ever need to simulate different metrics
-        # based on the model or temperature chosen!
+        # Le llm_config est passé ici au cas où vous voudriez simuler des métriques différentes
+        # selon le modèle ou la température choisis !
         return {
             "baseline": {
                 "ground_truth_true": {"predicted_true": 50, "predicted_undecided": 15, "predicted_false": 10},
