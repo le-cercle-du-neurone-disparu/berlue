@@ -23,7 +23,7 @@ def load_labeled_examples(
 ) -> list[dict]:
     """Charge des exemples labellisés depuis les jeux listés dans `datasets`."""
 
-    # Validation stricte des noms de datasets
+    # Validation des noms de datasets
     for ds in datasets:
         if ds not in KNOWN_DATASETS:
             raise ValueError(f"❌ Dataset inconnu : '{ds}'. Les options valides sont : {KNOWN_DATASETS}")
@@ -51,7 +51,7 @@ def load_labeled_examples(
         df_he_combined = pd.concat([df_true, df_false], ignore_index=True)
         df_he_combined["source"] = "halueval"
 
-        # Ajout à notre liste globale
+        # Ajout à la liste globale
         all_examples.extend(df_he_combined.to_dict(orient="records"))
 
     # ==========================================
@@ -78,7 +78,7 @@ def load_labeled_examples(
         df_tqa_combined = pd.concat([df_true_tqa, df_false_tqa], ignore_index=True)
         df_tqa_combined["source"] = "truthfulqa"
 
-        # Ajout à notre liste globale
+        # Ajout à la liste globale
         all_examples.extend(df_tqa_combined.to_dict(orient="records"))
 
     print(f"✅ Chargement terminé : {len(all_examples)} exemples normalisés au total.")
@@ -86,11 +86,29 @@ def load_labeled_examples(
 
 
 def split_train_test(examples: list[dict], test_size: float = 0.2, seed: int = 0) -> tuple[list[dict], list[dict]]:
-    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation."""
+    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation,
+    en évitant le data leakage : on sépare par question unique pour qu'une même
+    question ne se retrouve pas à la fois dans le train et dans le test.
+    """
 
-    # train_test_split de Scikit-Learn s'occupe de bien mélanger (shuffle)
-    # la liste de dictionnaires avant de la séparer, garantissant une bonne répartition.
-    train_examples, test_examples = train_test_split(examples, test_size=test_size, random_state=seed)
+    # Filtre les questions en double pour ne retorner que des questions différentes
+    unique_questions = list(set(ex["question"] for ex in examples))
 
-    print(f"🔀 Split effectué : {len(train_examples)} (train) / {len(test_examples)} (test).")
+    # Split sur les questions uniques (et non pas sur les lignes)
+    train_questions, test_questions = train_test_split(unique_questions, test_size=test_size, random_state=seed)
+
+    # Conversion de la liste en set pour une meilleure performance (O(1))
+    train_q_set = set(train_questions)
+
+    # Reconstruction des datasets finaux
+    train_examples = []
+    test_examples = []
+
+    for ex in examples:
+        if ex["question"] in train_q_set:
+            train_examples.append(ex)
+        else:
+            test_examples.append(ex)
+
+    print(f"🔀 Split sans leakage (par question) : {len(train_examples)} (train) / {len(test_examples)} (test).")
     return train_examples, test_examples

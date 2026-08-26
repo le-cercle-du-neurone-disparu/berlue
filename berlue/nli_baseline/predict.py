@@ -21,7 +21,7 @@ class NliBaseline:
     def __init__(self, model_path: str = NLI_BASELINE_PATH):
         self.model_path = model_path
 
-        # Vérification claire et nette de l'existence du modèle
+        # Vérification de l'existence du modèle
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(
                 f"Le modèle NLI n'a pas été trouvé au chemin : '{self.model_path}'.\n"
@@ -29,7 +29,7 @@ class NliBaseline:
                 "(ex: `python -m berlue.train` ou `make train_baseline`)."
             )
 
-        # Chargement du Pipeline scikit-learn (qui contient le TfidfVectorizer et la LogReg)
+        # Chargement du Pipeline scikit-learn
         self.pipeline = joblib.load(self.model_path)
 
     def predict(self, question: str, answer: str) -> Verdict:
@@ -37,7 +37,7 @@ class NliBaseline:
         pour une paire question/réponse — jamais `Verdict.NOT_ENOUGH_INFO` :
         HaluEval et TruthfulQA sont tous deux des labels binaires vrai/faux.
         """
-        # On doit utiliser exactement la même logique de concaténation qu'à l'entraînement
+        # Utilisation de la même logique de concaténation qu'à l'entraînement
         text_input = f"{question} {answer}"
 
         # Le modèle attend une liste de textes, on passe donc une liste à un élément.
