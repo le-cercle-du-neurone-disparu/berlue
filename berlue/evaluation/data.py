@@ -86,11 +86,29 @@ def load_labeled_examples(
 
 
 def split_train_test(examples: list[dict], test_size: float = 0.2, seed: int = 0) -> tuple[list[dict], list[dict]]:
-    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation."""
+    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation,
+    en évitant le data leakage : on sépare par question unique pour qu'une même
+    question ne se retrouve pas à la fois dans le train et dans le test.
+    """
 
-    # train_test_split de Scikit-Learn s'occupe de bien mélanger (shuffle)
-    # la liste de dictionnaires avant de la séparer, garantissant une bonne répartition.
-    train_examples, test_examples = train_test_split(examples, test_size=test_size, random_state=seed)
+    # 1. Isoler toutes les questions uniques
+    unique_questions = list(set(ex["question"] for ex in examples))
 
-    print(f"🔀 Split effectué : {len(train_examples)} (train) / {len(test_examples)} (test).")
+    # 2. Faire le split sur les questions (et non sur les lignes)
+    train_questions, test_questions = train_test_split(unique_questions, test_size=test_size, random_state=seed)
+
+    # Conversion de la liste en set pour une recherche ultra-rapide (O(1))
+    train_q_set = set(train_questions)
+
+    # 3. Reconstruire les jeux de données finaux
+    train_examples = []
+    test_examples = []
+
+    for ex in examples:
+        if ex["question"] in train_q_set:
+            train_examples.append(ex)
+        else:
+            test_examples.append(ex)
+
+    print(f"🔀 Split sans leakage (par question) : {len(train_examples)} (train) / {len(test_examples)} (test).")
     return train_examples, test_examples
