@@ -2,3 +2,17 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
 httpx==0.28.1
 ruff==0.16.4
+uvicorn==0.52.4
+pydantic==2.13.4
+numpy==2.5.2
+# downgrade nécessaire : mlflow==3.15.1 exige pandas<3 (dernière 2.x compatible)
+pandas==2.3.3
+colorama==0.4.6
+python-dateutil==2.9.0.post0
+pygeohash==3.3.2
+requests==2.34.2
+google-cloud-bigquery==3.44.0
+google-cloud-storage==3.13.1
+mlflow==3.15.1
+prefect==3.8.3
+ollama==0.6.2
