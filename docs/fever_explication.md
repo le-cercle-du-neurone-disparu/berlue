@@ -108,7 +108,7 @@ def load_fever_batch():
     for line in response.text.strip().split('\n'):
         if line:
             item = json.loads(line)
-            # Nettoyer et convertir
+            # Nettoyage et conversion
             batch.append({
                 'id': str(item.get('id', '')),
                 'claim': item.get('claim', ''),
