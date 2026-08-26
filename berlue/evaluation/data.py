@@ -5,7 +5,11 @@ baseline (`berlue.nli_baseline.train`) et pour évaluer le pipeline Berlue compl
 comparables.
 
 Params utilisés (`berlue.params`) : `EVAL_DATASETS`, `HALUEVAL_DATA_PATH`,
-`TRUTHFULQA_DATA_PATH`."""
+`TRUTHFULQA_DATA_PATH`.
+"""
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
 
 from berlue.params import EVAL_DATASETS, HALUEVAL_DATA_PATH, TRUTHFULQA_DATA_PATH
 
@@ -17,53 +21,76 @@ def load_labeled_examples(
     halueval_path: str = HALUEVAL_DATA_PATH,
     truthfulqa_path: str = TRUTHFULQA_DATA_PATH,
 ) -> list[dict]:
-    """Charge des exemples labellisés depuis les jeux listés dans `datasets` (parmi
-    `KNOWN_DATASETS`, cf. `params.EVAL_DATASETS` pour activer un seul dataset à la
-    fois via `.env`), en lisant les fichiers depuis `halueval_path`/`truthfulqa_path`
-    (défauts : `params.HALUEVAL_DATA_PATH`/`params.TRUTHFULQA_DATA_PATH`), normalisés
-    vers un même format
-    `{question, answer, ground_truth_label, source}` (`ground_truth_label` : `True`
-    = réponse correcte, `False` = réponse hallucinée/incorrecte — les deux datasets
-    sont binaires, pas de `Verdict.NOT_ENOUGH_INFO`).
+    """Charge des exemples labellisés depuis les jeux listés dans `datasets`."""
 
-    TODO(evaluation) :
-    - "halueval" (subset QA) : `pd.read_json(url, lines=True)` avec `url =
-      "https://raw.githubusercontent.com/RUCAIBox/HaluEval/main/data/qa_data.json"`,
-      colonnes `knowledge`/`question`/`right_answer`/`hallucinated_answer` —
-      "melter" `right_answer`/`hallucinated_answer` en une colonne `answer` +
-      `hallucinated` (bool). Cf. `docs/data-HaluEval.md`/`.ipynb` sur
-      `origin/docs-HaluEval`.
-    - "truthfulqa" : CSV
-      `https://raw.githubusercontent.com/sylinrl/TruthfulQA/main/TruthfulQA.csv`
-      (colonnes `Question`, `Best Answer`, `Correct Answers`, `Incorrect
-      Answers`) — schéma différent de HaluEval, à harmoniser vers le même format.
-    - Ne charger/concaténer que les datasets présents dans `datasets` ; lever une
-      erreur claire si `datasets` contient une valeur hors `KNOWN_DATASETS`.
-    """
-    # TODO(evaluation)
-    # return [
-    #     {
-    #         "question": "Quelle est la capitale de la France ?",
-    #         "answer": "Paris est la capitale de la France.",
-    #         "ground_truth_label": True,
-    #         "source": "halueval",
-    #     },
-    #     {
-    #         "question": "Est-ce que manger des carottes améliore la vue dans le noir ?",
-    #         "answer": "Oui, manger des carottes permet de voir dans le noir.",
-    #         "ground_truth_label": False,
-    #         "source": "truthfulqa",
-    #     },
-    # ]
-    raise NotImplementedError
+    # Validation stricte des noms de datasets
+    for ds in datasets:
+        if ds not in KNOWN_DATASETS:
+            raise ValueError(f"❌ Dataset inconnu : '{ds}'. Les options valides sont : {KNOWN_DATASETS}")
+
+    all_examples = []
+
+    # ==========================================
+    # 1. Traitement de HaluEval
+    # ==========================================
+    if "halueval" in datasets:
+        print(f"📥 Chargement de HaluEval depuis : {halueval_path}")
+        df_he = pd.read_json(halueval_path, lines=True)
+
+        # Extraction des exemples CORRECTS
+        df_true = df_he[["question", "right_answer"]].copy()
+        df_true.rename(columns={"right_answer": "answer"}, inplace=True)
+        df_true["ground_truth_label"] = True
+
+        # Extraction des exemples HALLUCINÉS
+        df_false = df_he[["question", "hallucinated_answer"]].copy()
+        df_false.rename(columns={"hallucinated_answer": "answer"}, inplace=True)
+        df_false["ground_truth_label"] = False
+
+        # Concaténation et ajout de la source
+        df_he_combined = pd.concat([df_true, df_false], ignore_index=True)
+        df_he_combined["source"] = "halueval"
+
+        # Ajout à notre liste globale
+        all_examples.extend(df_he_combined.to_dict(orient="records"))
+
+    # ==========================================
+    # 2. Traitement de TruthfulQA
+    # ==========================================
+    if "truthfulqa" in datasets:
+        print(f"📥 Chargement de TruthfulQA depuis : {truthfulqa_path}")
+        df_tqa = pd.read_csv(truthfulqa_path)
+
+        # Extraction des exemples CORRECTS
+        df_true_tqa = df_tqa[["Question", "Best Answer"]].copy()
+        df_true_tqa.rename(columns={"Question": "question", "Best Answer": "answer"}, inplace=True)
+        df_true_tqa["ground_truth_label"] = True
+
+        # Extraction des exemples INCORRECTS
+        # Les fausses réponses sont séparées par des ';', on extrait la première pour équilibrer
+        df_false_tqa = df_tqa[["Question", "Incorrect Answers"]].copy()
+        df_false_tqa["answer"] = df_false_tqa["Incorrect Answers"].astype(str).apply(lambda x: x.split(";")[0].strip())
+        df_false_tqa.drop(columns=["Incorrect Answers"], inplace=True)
+        df_false_tqa.rename(columns={"Question": "question"}, inplace=True)
+        df_false_tqa["ground_truth_label"] = False
+
+        # Concaténation et ajout de la source
+        df_tqa_combined = pd.concat([df_true_tqa, df_false_tqa], ignore_index=True)
+        df_tqa_combined["source"] = "truthfulqa"
+
+        # Ajout à notre liste globale
+        all_examples.extend(df_tqa_combined.to_dict(orient="records"))
+
+    print(f"✅ Chargement terminé : {len(all_examples)} exemples normalisés au total.")
+    return all_examples
 
 
 def split_train_test(examples: list[dict], test_size: float = 0.2, seed: int = 0) -> tuple[list[dict], list[dict]]:
-    """Sépare `examples` en (train, test) : train pour
-    `nli_baseline.train.train_baseline`, test pour
-    `evaluation.run_eval.evaluate_baseline` (et, plus tard, pour évaluer le
-    pipeline complet sur le même jeu de test, pour rester comparables)."""
-    # TODO(evaluation)
-    # train_examples, test_examples = examples[:-20], examples[-20:]  # proportions réelles via test_size
-    # return train_examples, test_examples
-    raise NotImplementedError
+    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation."""
+
+    # train_test_split de Scikit-Learn s'occupe de bien mélanger (shuffle)
+    # la liste de dictionnaires avant de la séparer, garantissant une bonne répartition.
+    train_examples, test_examples = train_test_split(examples, test_size=test_size, random_state=seed)
+
+    print(f"🔀 Split effectué : {len(train_examples)} (train) / {len(test_examples)} (test).")
+    return train_examples, test_examples
