@@ -26,14 +26,12 @@ def train_baseline(out_path: str = NLI_BASELINE_PATH, test_size: float = 0.2) ->
     examples = load_labeled_examples()
     train_examples, _test_examples = split_train_test(examples, test_size)
 
-    # 3. Vectoriser question+réponse.
-    # On concatène simplement la question et la réponse avec un espace.
-    # (Ajuste la syntaxe si 'train_examples' contient des dictionnaires et non des objets)
+    # Concaténation de la question et de la réponse avec un espace.
     x_train = [f"{ex['question']} {ex['answer']}" for ex in train_examples]
     y_train = [ex["ground_truth_label"] for ex in train_examples]
 
     print("🧠 Création et entraînement du pipeline NLI (TF-IDF + LogReg)...")
-    # L'utilisation d'un Pipeline permet d'encapsuler la vectorisation et la prédiction
+
     pipeline = Pipeline(
         [
             ("tfidf", TfidfVectorizer(max_features=10000)),  # Limite optionnelle pour éviter de faire exploser la RAM
@@ -43,10 +41,10 @@ def train_baseline(out_path: str = NLI_BASELINE_PATH, test_size: float = 0.2) ->
 
     pipeline.fit(x_train, y_train)
 
-    # 4. Sauvegarde
-    # On s'assure que le dossier parent existe avant de sauvegarder
+    # Vérification de l'existence du dossier parent avant sauvegarde
     os.makedirs(Path(out_path).parent, exist_ok=True)
 
+    # Sauvegarde
     joblib.dump(pipeline, out_path)
     print(f"✅ Modèle baseline sauvegardé avec succès dans : {out_path}")
 
