@@ -1,6 +1,7 @@
 """Wrapper autour du LLM local (Ollama) — seul point de contact avec Ollama."""
 
-from ollama import Client
+from httpx import TimeoutException
+from ollama import Client, ResponseError
 
 from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
 
@@ -20,13 +21,17 @@ class OllamaClient:
             # Appel natif via la librairie officielle
             response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": temperature})
 
-        except Exception as e:
-            # Vérification robuste pour détecter un timeout (ex: httpx.TimeoutException)
-            if "timeout" in str(type(e).__name__).lower() or "timeout" in str(e).lower():
-                print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
-                raise TimeoutError(f"Le serveur Ollama a expiré (Timeout) : {e}") from e
+        except TimeoutException as e:
+            # On attrape proprement le timeout du client HTTP sous-jacent
+            print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
+            raise TimeoutError("Le serveur Ollama a expiré (Timeout).") from e
 
-            # Autres erreurs réseau/librairie (serveur éteint, crash, etc.)
+        except ResponseError as e:
+            # On attrape l'exception native d'Ollama (ex: le modèle n'existe pas)
+            print(f"❌ Erreur API Ollama : {e.error}")
+            raise RuntimeError(f"Erreur interne Ollama : {e.error}") from e
+
+        except Exception as e:
             print(f"❌ Erreur lors de la communication avec Ollama : {e}")
             raise RuntimeError(f"Échec de la communication Ollama : {e}") from e
 
