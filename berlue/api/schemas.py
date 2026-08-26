@@ -1,21 +1,22 @@
 """
-Pydantic schemas for the FastAPI application.
+Schémas Pydantic pour l'application FastAPI.
 
-This module defines the data validation models for incoming requests (Inputs)
-and outgoing responses (Outputs). FastAPI uses these schemas to automatically
-validate data and generate the Swagger documentation.
+Ce module définit les modèles de validation des données pour les requêtes
+entrantes (Inputs) et les réponses sortantes (Outputs). FastAPI utilise ces
+schémas pour valider automatiquement les données et générer la documentation
+Swagger.
 """
 
 from pydantic import BaseModel
 
 # ==============================================================================
-# CORE ENTITIES
+# ENTITES DE BASE
 # ==============================================================================
 
 
 class LLMConfig(BaseModel):
     """
-    Standard configuration for an LLM model.
+    Configuration standard pour un modèle LLM.
     """
 
     name: str = "llama3"
@@ -23,26 +24,26 @@ class LLMConfig(BaseModel):
 
 
 # ==============================================================================
-# GENERAL ENDPOINT SCHEMAS
+# SCHEMAS DES ENDPOINTS GENERAUX
 # ==============================================================================
 
 
 class LLMListOutput(BaseModel):
     """
-    Response payload containing the list of available LLM models.
+    Payload de réponse contenant la liste des modèles LLM disponibles.
     """
 
     available_llms: list[str]
 
 
 # ==============================================================================
-# PREDICT ENDPOINT SCHEMAS
+# SCHEMAS DE L'ENDPOINT PREDICT
 # ==============================================================================
 
 
 class PredictInput(BaseModel):
     """
-    Request payload for the prediction endpoint.
+    Payload de requête pour l'endpoint de prédiction.
     """
 
     question: str
@@ -51,7 +52,7 @@ class PredictInput(BaseModel):
 
 class ClaimResult(BaseModel):
     """
-    Represents the evaluation of a single claim extracted from the LLM's answer.
+    Représente l'évaluation d'une seule assertion extraite de la réponse du LLM.
     """
 
     claim_text: str
@@ -63,8 +64,8 @@ class ClaimResult(BaseModel):
 
 class PredictOutput(BaseModel):
     """
-    Response payload for the prediction endpoint containing the LLM's answer
-    and the fact-checked claims.
+    Payload de réponse pour l'endpoint de prédiction, contenant la réponse du
+    LLM et les assertions vérifiées.
     """
 
     question: str
@@ -74,13 +75,13 @@ class PredictOutput(BaseModel):
 
 
 # ==============================================================================
-# EVALUATE ENDPOINT SCHEMAS
+# SCHEMAS DE L'ENDPOINT EVALUATE
 # ==============================================================================
 
 
 class EvaluateInput(BaseModel):
     """
-    Request payload to trigger an evaluation pipeline on a specific dataset.
+    Payload de requête pour déclencher un pipeline d'évaluation sur un dataset donné.
     """
 
     dataset_name: str
@@ -123,7 +124,7 @@ class Metrics(BaseModel):
 
 class EvaluateOutput(BaseModel):
     """
-    Response payload returning the final results of the evaluation pipeline.
+    Payload de réponse retournant les résultats finaux du pipeline d'évaluation.
     """
 
     dataset: str

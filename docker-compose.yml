@@ -7,11 +7,11 @@ services:
     environment:
       - PORT=8000
       - PYTHONWARNINGS=ignore
-      # - TF_CPP_MIN_LOG_LEVEL=2  # Uncomment if you use TensorFlow to hide C++ warnings
-    stdin_open: true # Enables interactive mode (equivalent to -i)
-    tty: true        # Allocates a pseudo-TTY (equivalent to -t)
+      # - TF_CPP_MIN_LOG_LEVEL=2  # Décommenter si vous utilisez TensorFlow pour masquer les warnings C++
+    stdin_open: true # Active le mode interactif (équivalent à -i)
+    tty: true        # Alloue un pseudo-TTY (équivalent à -t)
     volumes:
-      # Mounts your local code inside the container for live-reloading
+      # Monte votre code local dans le conteneur pour le rechargement à chaud
       - ./berlue:/api/berlue
-    # Starts the API with auto-reload activated
+    # Démarre l'API avec le rechargement automatique activé
     command: sh -c "exec uvicorn berlue.api.fast:app --host 0.0.0.0 --port 8000 --reload"
