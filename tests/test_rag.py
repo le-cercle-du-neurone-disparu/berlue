@@ -6,6 +6,7 @@ from berlue.core.schemas import Claim, RagVerdict, Verdict
 from berlue.rag.retriever import RagRetriever
 
 
+@pytest.mark.functional  # a besoin d'un index FAISS + embeddings réels (RagRetriever)
 @pytest.mark.skip(reason="TODO: à activer une fois verify_claim() implémenté")
 def test_verify_claim_returns_rag_verdict():
     """verify_claim() doit renvoyer un RagVerdict valide ; evidence=None ne doit pas planter."""

@@ -10,3 +10,23 @@ target-version = "py314"
 # une rigueur que le projet n'a pas encore.
 select = ["E", "F", "I", "UP", "B"]
 ignore = []
+
+[tool.pytest.ini_options]
+# À la racine (pas dans tests/pytest.ini) : c'est le seul emplacement que pytest
+# trouve de façon fiable quel que soit le chemin passé en ligne de commande (ex.
+# `pytest` seul depuis la racine trouvait pyproject.toml en priorité et ignorait
+# silencieusement tests/pytest.ini, désactivant marqueurs et options).
+testpaths = ["tests"]
+# -v: Verbeux (affiche les noms des tests)
+# -x: Fail fast (s'arrête à la première erreur)
+# -s: Ne capture pas stdout (autorise les print)
+# --color=yes: Force la sortie colorée
+# --tb=short: Format de traceback court pour des logs plus lisibles
+# -W ignore::DeprecationWarning: Ignore les warnings verbeux des librairies tierces comme pandas
+addopts = "-v -x -s --color=yes --tb=short -W ignore::DeprecationWarning"
+# Tests non marqués = rapides, aucune dépendance externe (in-memory, tournent sur
+# le runner GitHub). Marquer @pytest.mark.functional tout test qui a besoin d'une
+# infra réelle (fichier .env rempli, Docker, GCP, un vrai modèle entraîné...).
+markers = [
+    "functional: nécessite une infra réelle (.env rempli, Docker, GCP, modèle entraîné...) — pas dans la lane CI rapide",
+]

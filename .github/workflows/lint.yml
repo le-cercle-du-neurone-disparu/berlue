@@ -1,4 +1,4 @@
-name: Lint
+name: CI
 
 on:
   push:
@@ -20,3 +20,18 @@ jobs:
 
       - name: lint
         run: make lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Installe le package et ses dépendances (prod + dev)
+        run: pip install -e ".[dev]"
+
+      - name: Lance les tests rapides (sans infra externe)
+        run: make test_fast
