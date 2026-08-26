@@ -64,6 +64,13 @@ FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/raw/fever")
 HALUEVAL_DATA_PATH = os.environ.get("BERLUE_HALUEVAL_DATA_PATH", "./data/raw/halueval")
 TRUTHFULQA_DATA_PATH = os.environ.get("BERLUE_TRUTHFULQA_DATA_PATH", "./data/raw/truthfulqa")
 
+# EVAL_DATASETS : quel(s) jeu(x) de données labellisés utiliser pour l'évaluation
+# offline (entraînement du baseline NLI + jeu de test, cf. evaluation/data.py) —
+# "halueval", "truthfulqa", ou les deux. Pratique pour itérer sur un seul dataset
+# à la fois sans toucher au code. Défaut : les deux.
+_EVAL_DATASETS_RAW = os.environ.get("BERLUE_EVAL_DATASETS", "halueval,truthfulqa")
+EVAL_DATASETS = [d.strip() for d in _EVAL_DATASETS_RAW.split(",") if d.strip()]
+
 # --- MLOps ---
 MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
 

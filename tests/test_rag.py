@@ -1,7 +1,4 @@
-"""Test de contrat pour `berlue.rag.retriever.verify_claim` -> `RagVerdict`.
-
-À activer par la première personne qui construit dessus, pas par son auteur.
-"""
+"""Test de contrat pour `berlue.rag.retriever.verify_claim` -> `RagVerdict`."""
 
 import pytest
 
