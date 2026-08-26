@@ -9,9 +9,9 @@ from enum import StrEnum
 
 
 class Verdict(StrEnum):
-    SOUTENUE = "soutenue"
-    CONTREDITE = "contredite"
-    PAS_ASSEZ_DINFO = "pas_assez_dinfo"
+    SUPPORTED = "supported"
+    CONTRADICTED = "contradicted"
+    NOT_ENOUGH_INFO = "not_enough_info"
 
 
 @dataclass

@@ -1,7 +1,4 @@
-"""Test de contrat pour `berlue.fusion.fuse` -> `FusedVerdict`.
-
-À activer par la première personne qui construit dessus, pas par son auteur.
-"""
+"""Test de contrat pour `berlue.fusion.fuse` -> `FusedVerdict`."""
 
 import pytest
 
@@ -15,7 +12,7 @@ def test_fuse_returns_fused_verdict():
     claim = Claim(id="c1", text="La Terre est ronde.", source_answer="...")
     selfcheck_score = SelfCheckScore(claim_id="c1", divergence_score=0.1, confidence=0.9)
 
-    rag_verdict = RagVerdict(claim_id="c1", verdict=Verdict.SOUTENUE, confidence=0.8)
+    rag_verdict = RagVerdict(claim_id="c1", verdict=Verdict.SUPPORTED, confidence=0.8)
     result = fuse(claim, rag_verdict, selfcheck_score)
     assert isinstance(result, FusedVerdict)
     assert result.claim_id == "c1"
