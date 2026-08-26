@@ -1,9 +1,9 @@
 """Wrapper autour du LLM local (Ollama) — seul point de contact avec Ollama."""
 
-from typing import List
 from ollama import Client
 
 from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
+
 
 class OllamaClient:
     """Client minimal pour générer une réponse depuis le modèle local via le SDK Python officiel."""
@@ -32,7 +32,7 @@ class OllamaClient:
             print(f"❌ Erreur lors de la génération avec Ollama : {e}")
             raise RuntimeError(f"Échec de la génération Ollama : {e}") from e
 
-    def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> List[str]:
+    def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> list[str]:
         """
         Génère `k` réponses indépendantes au même prompt, chacune à une température
         choisie dans `[temperature_min, temperature_max]`.
@@ -50,7 +50,7 @@ class OllamaClient:
         responses = []
         for temp in temperatures:
             print(f"🔄 Génération en cours (Température: {temp:.2f})...")
-
+            # On réutilise notre méthode unitaire
             resp = self.generate(prompt, temperature=temp)
             responses.append(resp)
 
@@ -62,6 +62,7 @@ class OllamaClient:
 # ==============================================================================
 if __name__ == "__main__":
     import sys
+
     from ollama import Client as OllamaNativeClient
 
     host_url = "http://127.0.0.1:11434"
@@ -71,9 +72,15 @@ if __name__ == "__main__":
     try:
         temp_client = OllamaNativeClient(host=host_url)
         response = temp_client.list()
+
         # Selon la version du package, response est un objet ou un dictionnaire
-        available_models = getattr(response, "models", []) if hasattr(response, "models") else response.get("models", [])
-    except Exception as e:
+        # (Réécrit sur plusieurs lignes pour respecter la limite des 120 caractères)
+        if hasattr(response, "models"):
+            available_models = getattr(response, "models", [])
+        else:
+            available_models = response.get("models", [])
+
+    except Exception:
         print("❌ Erreur : Impossible de contacter le serveur Ollama.")
         print("💡 Assure-toi qu'il est lancé (via `make ollama_setup` ou `ollama serve`).")
         sys.exit(1)
@@ -111,5 +118,5 @@ if __name__ == "__main__":
     print("--- TEST 2 : generate_many() ---")
     reponses_multi = client.generate_many(question, k=3, temperature_min=0.2, temperature_max=0.8)
 
-    for i, rep in enumerate(reponses_multi):
-        print(f"🤖 [Rép {i+1}] : {rep.strip()}")
+    for idx, rep in enumerate(reponses_multi):
+        print(f"🤖 [Rép {idx+1}] : {rep.strip()}")
