@@ -4,7 +4,11 @@ import json
 from pathlib import Path
 
 from berlue.core.schemas import Claim
-from berlue.rag.retriever import RagRetriever
+from berlue.pipeline.hurlu_berlu import HurluBerlu
+
+# ## FEVER_LABEL_TO_VERDICT : pour comparer le label attendu (string FEVER) au verdict
+# ## retourné (enum Verdict), qui n'utilisent pas le même vocabulaire.
+from berlue.rag.retriever import FEVER_LABEL_TO_VERDICT, RagRetriever
 
 
 def load_sample_claims(fever_path: str, n_samples: int = 10) -> list[tuple[Claim, str]]:
@@ -63,11 +67,16 @@ def test_retriever():
             print(f"Verdict RAG : {verdict.verdict}")
             print(f"Confiance : {verdict.confidence:.2%}")
 
-            print("Preuves trouvées :")
-            for j, ev in enumerate(verdict.evidences[:3], 1):
-                print(f"  {j}. {ev.label} (dist={ev.distance:.3f}) : {ev.text[:60]}...")
+            # ## RagVerdict.evidence est une seule Evidence (contrat core.schemas), pas une liste.
+            if verdict.evidence:
+                ev = verdict.evidence
+                print(f"Preuve citée ({ev.source}, score={ev.similarity_score:.3f}) : {ev.text[:60]}...")
+            else:
+                print("Aucune preuve citée.")
 
-            is_correct = verdict.verdict == expected_label
+            # ## expected_label est une string FEVER, verdict.verdict un Verdict (enum) : on
+            # ## passe par le même mapping que retriever.py pour comparer les deux.
+            is_correct = verdict.verdict == FEVER_LABEL_TO_VERDICT[expected_label]
             status = "✅" if is_correct else "❌"
             print(f"Résultat : {status} {'Correct' if is_correct else 'Incorrect'}")
             if is_correct:
@@ -87,5 +96,45 @@ def test_retriever():
     print("=" * 60)
 
 
+def test_retriever_with_llm(question: str = "Où est né Nikolaj Coster-Waldau ?"):
+    """Test manuel : pose une question au LLM, extrait ses affirmations (HurluBerlu), les vérifie via le RAG."""
+    print("=" * 60)
+    print("🔍 TEST DU RAG RETRIEVER SUR UNE VRAIE RÉPONSE LLM")
+    print("=" * 60)
+
+    try:
+        print("\n1️⃣ Génération de la réponse LLM...")
+        pipeline = HurluBerlu()
+        result = pipeline.generate_response(question)
+        print(f"❓ Question : {question}")
+        print(f"🤖 Réponse : {result.raw_answer}")
+
+        print("\n2️⃣ Extraction des affirmations...")
+        result = pipeline.extract_claims(result)
+        print(f"✅ {len(result.claims)} affirmation(s) extraite(s)")
+
+        print("\n3️⃣ Initialisation du retriever...")
+        retriever = RagRetriever()
+
+        print("\n4️⃣ Vérification RAG de chaque affirmation...\n")
+        for i, claim in enumerate(result.claims, 1):
+            print(f"--- Affirmation #{i} ---")
+            print(f"Texte : {claim.text}")
+            verdict = retriever.verify_claim(claim)
+            print(f"Verdict RAG : {verdict.verdict}")
+            print(f"Confiance : {verdict.confidence:.2%}")
+            if verdict.evidence:
+                ev = verdict.evidence
+                print(f"Preuve citée ({ev.source}, score={ev.similarity_score:.3f}) : {ev.text[:60]}...")
+            else:
+                print("Aucune preuve citée.")
+            print()
+
+    except Exception as e:
+        print(f"❌ Erreur : {e}")
+        print("💡 Ollama doit tourner en local (`make ollama_setup` ou `ollama serve`).")
+
+
 if __name__ == "__main__":
     test_retriever()
+    test_retriever_with_llm()

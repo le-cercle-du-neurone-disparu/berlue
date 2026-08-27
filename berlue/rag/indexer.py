@@ -10,7 +10,7 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from berlue.rag.params import FEVER_DATA_PATH, RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
+from berlue.params import FEVER_DATA_PATH, RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
 
 
 def load_fever_data(fever_path: str) -> pd.DataFrame:

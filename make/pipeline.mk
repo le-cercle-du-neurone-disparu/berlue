@@ -5,6 +5,10 @@
 # Surchargeable sur la ligne de commande : `make run_train MODEL_TARGET=gcs`.
 MODEL_TARGET ?= local
 
+# Nombre de lignes récupérées par download_fever_data_small (le fichier complet fait
+# ~145k lignes) — surchargeable : `make download_fever_data_small FEVER_SAMPLE_LINES=50000`.
+FEVER_SAMPLE_LINES ?= 2000
+
 run_preprocess: ## Lance l'étape de prétraitement
 	python -c 'from berlue.interface.main import preprocess; preprocess()'
 
@@ -24,6 +28,34 @@ train_baseline: ## Entraîne le classifieur NLI léger (baseline) et sauvegarde 
 
 evaluate_baseline: ## Évalue la baseline NLI seule sur le jeu de test HaluEval/TruthfulQA
 	python -m berlue.evaluation.run_eval
+
+download_fever_data_small: ## Télécharge un extrait FEVER pour un test rapide (FEVER_SAMPLE_LINES=2000 par défaut), fever.jsonl pointe dessus
+	@echo "⬇️  Téléchargement d'un extrait FEVER ($(FEVER_SAMPLE_LINES) lignes)..."
+	@mkdir -p data/fever/raw
+	@curl -sL https://fever.ai/download/fever/train.jsonl | head -n $(FEVER_SAMPLE_LINES) > data/fever/raw/fever_small.jsonl
+	@ln -sf fever_small.jsonl data/fever/raw/fever.jsonl
+	@echo "✅ $$(wc -l < data/fever/raw/fever_small.jsonl) exemples dans data/fever/raw/fever_small.jsonl (fever.jsonl -> fever_small.jsonl)"
+
+download_fever_data_full: ## Télécharge le corpus FEVER complet (~145k lignes), fever.jsonl pointe dessus
+	@echo "⬇️  Téléchargement du corpus FEVER complet..."
+	@mkdir -p data/fever/raw
+	@curl -sL https://fever.ai/download/fever/train.jsonl > data/fever/raw/fever_full.jsonl
+	@ln -sf fever_full.jsonl data/fever/raw/fever.jsonl
+	@echo "✅ $$(wc -l < data/fever/raw/fever_full.jsonl) exemples dans data/fever/raw/fever_full.jsonl (fever.jsonl -> fever_full.jsonl)"
+
+build_fever_index: ## Construit l'index FAISS du RAG inversé (data/fever/raw/fever.jsonl -> data/fever/faiss/)
+	@if [ ! -f data/fever/raw/fever.jsonl ]; then \
+		echo "❌ data/fever/raw/fever.jsonl introuvable — lance d'abord make download_fever_data_small (ou _full)."; \
+		exit 1; \
+	fi
+	BERLUE_FEVER_DATA_PATH=data/fever/raw/fever.jsonl python -m berlue.rag.indexer
+
+test_fever_rag: ## Lance le script de test manuel du RAG inversé (berlue/rag/test_rag.py, nécessite build_fever_index au préalable)
+	@if [ ! -f data/fever/faiss/index.faiss ]; then \
+		echo "❌ data/fever/faiss/index.faiss introuvable — lance d'abord make build_fever_index."; \
+		exit 1; \
+	fi
+	python -m berlue.rag.test_rag
 
 run_api_local: ## Lance l'application FastAPI en local avec rechargement à chaud
 	@echo "🚀 Démarrage de FastAPI en local..."
