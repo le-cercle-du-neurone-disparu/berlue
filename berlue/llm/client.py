@@ -67,3 +67,28 @@ class OllamaClient:
             responses.append(resp)
 
         return responses
+
+
+if __name__ == "__main__":
+    # Usage direct du client (pas un test — cf. make llm_generate/llm_generate_many,
+    # docs/llm.md ; les tests vivent dans tests/test_llm_client.py).
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Génère une ou plusieurs réponses via OllamaClient.")
+    parser.add_argument("prompt", nargs="?", default="Pourquoi le ciel est bleu ?", help="Prompt envoyé au LLM.")
+    parser.add_argument("--k", type=int, default=1, help="Nombre de générations indépendantes (défaut : 1).")
+    parser.add_argument("--temperature", type=float, default=BASE_TEMPERATURE, help="Température (ignoré si --k > 1).")
+    parser.add_argument("--temperature-min", type=float, default=0.2, help="Borne basse de température (si --k > 1).")
+    parser.add_argument("--temperature-max", type=float, default=0.8, help="Borne haute de température (si --k > 1).")
+    args = parser.parse_args()
+
+    client = OllamaClient()
+
+    if args.k <= 1:
+        print(client.generate(prompt=args.prompt, temperature=args.temperature).strip())
+    else:
+        responses = client.generate_many(
+            args.prompt, k=args.k, temperature_min=args.temperature_min, temperature_max=args.temperature_max
+        )
+        for i, response in enumerate(responses, 1):
+            print(f"{i}. {response.strip()}")
