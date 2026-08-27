@@ -13,3 +13,6 @@ test_functional: ## Lance les tests fonctionnels (besoin d'une infra locale rée
 
 test_gcp: ## Lance uniquement les tests qui vérifient un vrai environnement GCP (test/staging/prod)
 	pytest -m gcp
+
+test_llm_functional: ## Lance les tests fonctionnels du client Ollama (vrai serveur requis, cf. docs/ollama-setup.md)
+	pytest tests/test_llm_client.py -m functional -v
