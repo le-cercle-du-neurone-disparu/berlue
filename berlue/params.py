@@ -51,9 +51,9 @@ SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_M
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- Embeddings + RAG inversé ---
-EMBEDDING_MODEL = os.environ.get("BERLUE_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
-VECTOR_DB_BACKEND = os.environ.get("BERLUE_VECTOR_DB_BACKEND", "faiss")
-VECTOR_DB_PATH = os.environ.get("BERLUE_VECTOR_DB_PATH", "./data/index/fever_faiss")
+RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
+RAG_INDEX_DIR = "data/fever/faiss"
+RAG_VECTOR_DB_PATH = "data/fever/faiss"
 
 # --- NLI léger ---
 NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
