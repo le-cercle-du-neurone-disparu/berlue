@@ -63,7 +63,7 @@ class RagRetriever:
     def verify_claim(self, claim: Claim) -> RagVerdict:
         """Vérifie une affirmation et retourne un verdict avec un score de confiance."""
 
-        evidences = self.retrieve(claim, top_k=1)
+        evidences = self.retrieve(claim, top_k=5)
 
         if not evidences:
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
@@ -71,7 +71,7 @@ class RagRetriever:
         best_evidence = evidences[0]
 
         # LOGIQUE DU RAG INVERSÉ : on mappe les labels FEVER sur le strEnum 'Verdict'
-        if best_evidence.similarity_score > 0.6:
+        if best_evidence.similarity_score > 0.8:
             fever_label = str(best_evidence._fever_label).upper()
 
             if fever_label == "SUPPORTS":

@@ -1,7 +1,7 @@
 import textwrap
 import uuid
 
-from berlue.core.schemas import Claim, PipelineResult
+from berlue.core.schemas import Claim, FusedVerdict, PipelineResult
 from berlue.llm.client import OllamaClient
 from berlue.rag.retriever import RagRetriever
 from berlue.selfcheck.sampler import sample_responses
@@ -22,14 +22,16 @@ class HurluBerlu:
 
         prompt = textwrap.dedent(f"""\
             Tu es un expert en analyse de données factuelles. Ta tâche est de décomposer
-            le texte suivant en une liste d'affirmations courtes, atomiques et indépendantes.
+            le texte suivant en une liste d'assertions courtes, atomiques et indépendantes.
 
             Règles strictes :
-            1. Chaque affirmation ne doit contenir qu'une seule idée ou un fait.
-            2. Chaque affirmation doit avoir du sens toute seule hors contexte
+            1. Chaque assertion ne doit contenir qu'une seule idée ou un fait.
+            2. Chaque assertion doit avoir du sens toute seule hors contexte
                (remplace les pronoms comme 'il', 'elle', 'ce' par le sujet explicite).
             3. Ne rajoute aucun texte avant ou après ta liste.
             4. Tu dois répondre UNIQUEMENT par une liste à puces (commençant par '- ').
+
+            Ne te sens pas obligé de produire pluisuers assertions s'il n'y en a qu'une dans le texte à analyser.
 
             Texte à analyser :
             {answer_text}
@@ -37,7 +39,6 @@ class HurluBerlu:
             Affirmations :
         """)
 
-        # Plus besoin de passer le client, on utilise self.client directement !
         raw_response = self.client.generate(prompt=prompt, temperature=0.0)
 
         claims = []
@@ -98,7 +99,72 @@ class HurluBerlu:
         return result
 
     # ÉTAPE 6
-    # TODO Fusionner scores Self Check et RAG
+    def fuse_results(
+        self, result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck: float = 0.3
+    ) -> PipelineResult:
+        """
+        Dernière étape : combine les scores RAG et SelfCheckGPT pour statuer sur chaque affirmation.
+        Utilise le pattern Passe-Plat.
+        """
+        print("\n🧬 [Fusion] Début de la synthèse des résultats...")
+
+        # Pour retrouver les résultats en O(1) sans faire des boucles imbriquées
+        rag_dict = {v.claim_id: v for v in result.rag_scores}
+        sc_dict = {s.claim_id: s for s in result.selfcheck_scores}
+
+        for claim in result.claims:
+            rag = rag_dict.get(claim.id)
+            sc = sc_dict.get(claim.id)
+
+            # 1. Calcul de la cohérence interne (l'inverse de la divergence)
+            # Si le score de divergence est 0.1, la cohérence est 0.9 (très sûr)
+            coherence = 1.0 - sc.divergence_score if sc else 0.5
+
+            # 2. Application de l'arbre de décision
+            if rag and rag.verdict != Verdict.NOT_ENOUGH_INFO:
+                # CAS A : Le RAG a trouvé une preuve tranchée dans la base de données
+                final_verdict = rag.verdict
+
+                # Le score est un mix : le RAG pèse 70%, la certitude du LLM pèse 30%
+                final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
+
+                if final_verdict == Verdict.SUPPORTED:
+                    explanation = "L'affirmation est factuellement prouvée par la base de données."
+                else:
+                    explanation = "L'affirmation est formellement contredite par la base de données."
+
+                evidence = rag.evidence
+
+            else:
+                # CAS B : Le RAG n'a rien trouvé. On s'en remet au comportement du LLM.
+                if coherence < 0.5:
+                    # Le LLM s'est contredit dans les samples. C'est une hallucination !
+                    final_verdict = Verdict.CONTRADICTED
+                    final_conf = 1.0 - coherence  # Plus il est incohérent, plus on est sûr que c'est faux
+                    explanation = "Hallucination probable détectée : le LLM s'est contredit lui-même."
+                else:
+                    # Le LLM est sûr de lui, mais on n'a pas de preuve.
+                    final_verdict = Verdict.NOT_ENOUGH_INFO
+                    final_conf = coherence
+                    explanation = "L'affirmation semble cohérente, mais manque de sources dans la base."
+
+                evidence = None
+
+            # Petite sécurité pour être sûr que la confiance reste entre 0.0 et 1.0
+            final_conf = min(max(final_conf, 0.0), 1.0)
+
+            # 3. Création de l'objet final
+            fused = FusedVerdict(
+                claim_id=claim.id,
+                claim_text=claim.text,
+                verdict=final_verdict,
+                confidence=final_conf,
+                evidence=evidence,
+                explanation=explanation,
+            )
+            result.fused_verdicts.append(fused)
+
+        return result
 
 
 if __name__ == "__main__":
@@ -109,11 +175,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Démo du pipeline HurluBerlu, étape par étape.")
     parser.add_argument(
         "--until",
-        choices=["generate", "extract", "samples", "selfcheck", "rag"],
-        default="rag",  # Le défaut va jusqu'au bout
-        help="S'arrête après cette étape (défaut : rag).",
+        choices=["generate", "extract", "samples", "selfcheck", "rag", "fusion"],
+        default="fusion",  # Le défaut va jusqu'au bout, c'est à dire la fusion !
+        help="S'arrête après cette étape (défaut : fusion).",
     )
-    parser.add_argument("--question", default="Pourquoi l'eau mouille ?", help="Question posée au LLM.")
+    # parser.add_argument("--question", default="Pourquoi l'eau mouille ?", help="Question posée au LLM.")
+    parser.add_argument("--question", default="Has Ryan Gosling visited Africa ?", help="Question posée au LLM.")
     args = parser.parse_args()
 
     print("🚀 Démarrage du pipeline HurluBerlu...")
@@ -146,16 +213,15 @@ if __name__ == "__main__":
     final_result = pipeline.evaluate_selfcheck(result)
 
     # --- Étape 5 ---
-    # Si on n'a PAS demandé de s'arrêter à selfcheck, on continue vers le RAG
-    if args.until != "selfcheck":
+    if args.until not in ["selfcheck"]:
         final_result = pipeline.evaluate_rag(final_result)
 
-    # TODO : implémenter fusion
-    # if args.until not in ["selfcheck", "rag"]:
-    #     final_result = pipeline.fuse_results(final_result)
+    # --- Étape 6 : La Fusion ---
+    if args.until == "fusion":
+        final_result = pipeline.fuse_results(final_result)
 
     # ==========================================
-    # AFFICHAGE DU BILAN FINAL (SelfCheck + RAG)
+    # AFFICHAGE DU BILAN FINAL
     # ==========================================
     print("\n✅ Traitement terminé ! Voici le bilan de l'évaluation :")
     print("=" * 70)
@@ -167,11 +233,12 @@ if __name__ == "__main__":
 
     scores_dict = {score.claim_id: score for score in final_result.selfcheck_scores}
     rag_dict = {verdict.claim_id: verdict for verdict in final_result.rag_scores}
+    fused_dict = {fused.claim_id: fused for fused in final_result.fused_verdicts}
 
     for i, claim in enumerate(final_result.claims, 1):
         print(f"\n   {i}. {claim.text}")
 
-        # 1. Affichage SelfCheck (toujours présent au stade du bilan)
+        # 1. Affichage SelfCheck
         score = scores_dict.get(claim.id)
         if score:
             alert = "🔴 HALLUCINATION" if score.divergence_score > 0.5 else "🟢 COHÉRENT"
@@ -179,7 +246,7 @@ if __name__ == "__main__":
         else:
             print("      ↳ 🧠 [SelfCheck] : ⚠️ Aucun score.")
 
-        # 2. Affichage RAG (uniquement si la liste rag_scores n'est pas vide)
+        # 2. Affichage RAG
         if final_result.rag_scores:
             rag_verdict = rag_dict.get(claim.id)
             if rag_verdict:
@@ -199,5 +266,21 @@ if __name__ == "__main__":
                     print(f'          (Preuve: "{ev_text}")')
             else:
                 print("      ↳ 📚 [RAG]       : ⚠️ Aucun verdict.")
+
+        # 3. Affichage FUSION
+        if final_result.fused_verdicts:
+            fused = fused_dict.get(claim.id)
+            if fused:
+                if fused.verdict == Verdict.SUPPORTED:
+                    fused_alert = "🟢 VALIDÉ"
+                elif fused.verdict == Verdict.CONTRADICTED:
+                    fused_alert = "🔴 REJETÉ"
+                else:
+                    fused_alert = "⚪ INCERTAIN"
+
+                print(f"      ↳ ✨ [FUSION]    : {fused_alert} | Confiance globale : {fused.confidence:.2f}")
+                print(f"          (Explication: {fused.explanation})")
+            else:
+                print("      ↳ ✨ [FUSION]    : ⚠️ Aucun verdict final.")
 
     print("\n" + "=" * 70)

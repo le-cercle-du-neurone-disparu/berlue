@@ -44,7 +44,8 @@ MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000"
 
 # --- LLM (Ollama) ---
 OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "qwen2.5:0.5b")
+# OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "qwen2.5:0.5b")
+OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "llama3.2:3b")
 SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "2"))
 SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.7"))
 SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
@@ -77,10 +78,6 @@ EVAL_DATASETS = [d.strip() for d in _EVAL_DATASETS_RAW.split(",") if d.strip()]
 
 # --- MLOps ---
 MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
-
-# --- Fusion des scores ---
-FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.6"))
-FUSION_WEIGHT_SELFCHECK = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK", "0.4"))
 
 ##################  CONFIGURATION FIXE (décisions de mainteneur, pas des paramètres .env)  ##################
 # Mêmes valeurs pour tout le monde — cf. make/config.mk pour l'équivalent côté Make
