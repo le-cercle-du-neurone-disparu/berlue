@@ -91,18 +91,49 @@ class HurluBerlu:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    # --until permet de lancer le pipeline étape par étape (cf. make/pipeline.mk
+    # pipeline_generate/pipeline_extract/pipeline_samples/pipeline_selfcheck) —
+    # pratique pour itérer sans attendre les étapes suivantes (SelfCheckGPT
+    # notamment, qui refait K appels LLM).
+    parser = argparse.ArgumentParser(description="Démo du pipeline HurluBerlu, étape par étape.")
+    parser.add_argument(
+        "--until",
+        choices=["generate", "extract", "samples", "selfcheck"],
+        default="selfcheck",
+        help="S'arrête après cette étape (défaut : selfcheck, le pipeline complet disponible aujourd'hui).",
+    )
+    parser.add_argument("--question", default="Pourquoi l'eau mouille ?", help="Question posée au LLM.")
+    args = parser.parse_args()
+
     print("🚀 Démarrage du pipeline HurluBerlu...")
 
     pipeline = HurluBerlu()
 
-    question_test = "Pourquoi l'eau mouille ?"
-    print(f"\n❓ Question posée : {question_test}")
+    print(f"\n❓ Question posée : {args.question}")
 
     # Le passage de relais
-    etape1 = pipeline.generate_response(question_test)
-    etape2 = pipeline.extract_claims(etape1)
-    etape3 = pipeline.generate_samples(etape2)
-    final_result = pipeline.evaluate_selfcheck(etape3)
+    result = pipeline.generate_response(args.question)
+    if args.until == "generate":
+        print(f"\n🔹 RÉPONSE BRUTE :\n{result.raw_answer}")
+        raise SystemExit
+
+    result = pipeline.extract_claims(result)
+    if args.until == "extract":
+        print(f"\n🔹 {len(result.claims)} AFFIRMATION(S) EXTRAITE(S) :")
+        for i, claim in enumerate(result.claims, 1):
+            print(f"   {i}. {claim.text}")
+        raise SystemExit
+
+    result = pipeline.generate_samples(result)
+    if args.until == "samples":
+        print(f"\n🔹 {len(result.samples)} ÉCHANTILLON(S) GÉNÉRÉ(S) :")
+        for i, sample in enumerate(result.samples, 1):
+            print(f"   {i}. {sample.strip()}")
+        raise SystemExit
+
+    final_result = pipeline.evaluate_selfcheck(result)
 
     # TODO : implémenter RAG
     # final_result = pipeline.evaluate_rag(final_result)
