@@ -134,9 +134,7 @@ def test_generate_returns_a_real_answer_from_ollama():
 def test_generate_many_returns_k_real_answers_from_ollama():
     client = OllamaClient(model=OLLAMA_MODEL)
 
-    results = client.generate_many(
-        "Réponds uniquement par le mot 'ok'.", k=2, temperature_min=0.3, temperature_max=0.9
-    )
+    results = client.generate_many("Réponds uniquement par le mot 'ok'.", k=2, temperature_min=0.3, temperature_max=0.9)
 
     assert len(results) == 2
     assert all(isinstance(r, str) and r.strip() for r in results)
