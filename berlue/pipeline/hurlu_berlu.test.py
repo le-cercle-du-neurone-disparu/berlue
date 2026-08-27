@@ -110,7 +110,7 @@ class HurluBerlu:
                     verdict=Verdict.NOT_ENOUGH_INFO,
                     confidence=0.5,
                     evidence=rag_score.evidence if rag_score else None,
-                    explanation="⚠️ Informations insuffisantes pour une évaluation complète."
+                    explanation="⚠️ Informations insuffisantes pour une évaluation complète.",
                 )
                 result.fused_verdicts.append(fused)
                 continue
@@ -120,14 +120,14 @@ class HurluBerlu:
 
             if rag_score.verdict == Verdict.SUPPORTED and selfcheck_score.divergence_score < 0.3:
                 verdict = Verdict.SUPPORTED
-                confidence = (rag_score.confidence * rag_weight +
-                             (1 - selfcheck_score.divergence_score) * selfcheck_weight)
+                confidence = (
+                    rag_score.confidence * rag_weight + (1 - selfcheck_score.divergence_score) * selfcheck_weight
+                )
                 explanation = "✅ Affirmation cohérente avec les documents et stable entre les échantillons."
 
             elif rag_score.verdict == Verdict.CONTRADICTED or selfcheck_score.divergence_score > 0.7:
                 verdict = Verdict.CONTRADICTED
-                confidence = (rag_score.confidence * rag_weight +
-                             selfcheck_score.divergence_score * selfcheck_weight)
+                confidence = rag_score.confidence * rag_weight + selfcheck_score.divergence_score * selfcheck_weight
 
                 if rag_score.verdict == Verdict.CONTRADICTED and selfcheck_score.divergence_score > 0.7:
                     explanation = "❌ Contradiction dans les documents ET incohérence entre les échantillons."
@@ -153,7 +153,7 @@ class HurluBerlu:
                 verdict=verdict,
                 confidence=min(confidence, 1.0),
                 evidence=rag_score.evidence,
-                explanation=explanation
+                explanation=explanation,
             )
 
             result.fused_verdicts.append(fused)
@@ -216,11 +216,10 @@ if __name__ == "__main__":
             else:
                 rag_emoji = "⚠️"
 
-            print(f"      ↳ RAG: {rag_emoji} {rag_score.verdict.value} | "
-                  f"Confiance: {rag_score.confidence:.2f}")
+            print(f"      ↳ RAG: {rag_emoji} {rag_score.verdict.value} | Confiance: {rag_score.confidence:.2f}")
 
             if rag_score.evidence:
-                print(f"      ↳ Preuve: \"{rag_score.evidence.text[:80]}...\"")
+                print(f'      ↳ Preuve: "{rag_score.evidence.text[:80]}..."')
                 print(f"      ↳ Source: {rag_score.evidence.source}")
 
         # Verdict Fusionné
@@ -234,8 +233,7 @@ if __name__ == "__main__":
             else:
                 fused_emoji = "⚠️"
 
-            print(f"      ↳ {fused_emoji} VERDICT FINAL: {fused.verdict.value} "
-                  f"(confiance: {fused.confidence:.2f})")
+            print(f"      ↳ {fused_emoji} VERDICT FINAL: {fused.verdict.value} (confiance: {fused.confidence:.2f})")
             print(f"      ↳ {fused.explanation}")
 
     print("\n" + "=" * 60)
