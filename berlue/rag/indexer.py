@@ -1,17 +1,88 @@
-"""Indexation du corpus FEVER en base vectorielle (FAISS par défaut). À lancer une
-fois avant la démo, pas à chaque run de l'app."""
+"""Indexation du corpus FEVER en base vectorielle (FAISS). À lancer une fois avant la démo."""
+
+import json
+import pickle
+from pathlib import Path
+
+import faiss
+import numpy as np
+import pandas as pd
+from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
 
 from berlue.params import EMBEDDING_MODEL, FEVER_DATA_PATH, VECTOR_DB_PATH
+
+
+def load_fever_data(fever_path: str) -> pd.DataFrame:
+    """Charge le dataset FEVER depuis un fichier JSONL."""
+    data = []
+    with open(fever_path, "r") as f:
+        for line in f:
+            if line.strip():
+                data.append(json.loads(line))
+    df = pd.DataFrame(data)
+    print(f"✅ Chargé {len(df)} exemples depuis {fever_path}")
+    return df
 
 
 def build_index(
     fever_path: str = FEVER_DATA_PATH,
     out_path: str = VECTOR_DB_PATH,
     embedding_model: str = EMBEDDING_MODEL,
+    batch_size: int = 32,
 ) -> None:
     """Construit l'index vectoriel du corpus FEVER et le sauvegarde sur disque."""
-    # TODO(rag)
-    raise NotImplementedError
+    # 1. Charger les données
+    df = load_fever_data('data/raw/fever.jsonl')
+
+    # 2. Filtrer : ne garder que les exemples avec preuves
+    filtered = df[
+        df["label"].isin(["SUPPORTS", "REFUTES"]) &
+        (df["id"] != -1)
+    ]
+    print(f"🔍 {len(filtered)} exemples avec preuves conservés")
+
+    # 3. Charger le modèle d'embedding
+    model = SentenceTransformer(embedding_model)
+    print(f"🤖 Modèle d'embedding : {embedding_model}")
+
+    # 4. Générer les embeddings en batch
+    claims = filtered["claim"].tolist()
+    labels = filtered["label"].tolist()
+    evidence_ids = filtered["id"].tolist()
+    evidence_urls = filtered["evidence"].tolist()
+
+    embeddings = []
+    for i in tqdm(range(0, len(claims), batch_size), desc="Génération des embeddings"):
+        batch = claims[i:i+batch_size]
+        emb = model.encode(batch, convert_to_numpy=True)
+        embeddings.append(emb)
+
+    embeddings = np.vstack(embeddings)
+    print(f"📊 Embeddings générés : {embeddings.shape}")
+
+    # 5. Créer l'index FAISS
+    dim = embeddings.shape[1]
+    index = faiss.IndexFlatL2(dim)
+    index.add(embeddings)
+    print(f"📁 Index FAISS créé avec {index.ntotal} vecteurs")
+
+    # 6. Sauvegarder l'index et les métadonnées
+    out_path = Path(out_path)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    faiss.write_index(index, str(out_path / "index.faiss"))
+
+    metadata = {
+        "claims": claims,
+        "labels": labels,
+        "evidence_ids": evidence_ids,
+        "evidence_urls": evidence_urls,
+    }
+    with open(out_path / "metadata.pkl", "wb") as f:
+        pickle.dump(metadata, f)
+
+    print(f"✅ Index sauvegardé dans {out_path}")
 
 
 if __name__ == "__main__":
