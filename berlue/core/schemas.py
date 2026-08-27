@@ -67,7 +67,19 @@ class FusedVerdict:
 class PipelineResult:
     """Résultat complet pour une question posée par l'utilisateur."""
 
+    # --- 1. L'entrée et la base ---
     question: str
     raw_answer: str
+
+    # --- 2. L'extraction ---
     claims: list[Claim] = field(default_factory=list)
+
+    # --- 3. Branche A : SelfCheckGPT (Cohérence interne) ---
+    samples: list[str] = field(default_factory=list)
+    selfcheck_scores: list[SelfCheckScore] = field(default_factory=list)
+
+    # --- 4. Branche B : RAG (Fidélité documentaire) ---
+    rag_scores: list[RagVerdict] = field(default_factory=list)
+
+    # --- 5. La Fusion Finale ---
     fused_verdicts: list[FusedVerdict] = field(default_factory=list)
