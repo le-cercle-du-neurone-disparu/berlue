@@ -63,5 +63,8 @@ pipeline_extract: ## Étapes 1-2 : génère la réponse puis extrait les affirma
 pipeline_samples: ## Étapes 1-3 : ajoute l'échantillonnage SelfCheckGPT (K appels LLM)
 	python -m berlue.pipeline.hurlu_berlu --until samples --question "$(QUESTION)"
 
-pipeline_selfcheck: ## Pipeline complet jusqu'à SelfCheckGPT (RAG et fusion pas encore implémentés)
+pipeline_selfcheck: ## Étapes 1-4 : ajoute le résultat SelfCheckGPT
+	python -m berlue.pipeline.hurlu_berlu --until selfcheck --question "$(QUESTION)"
+
+pipeline_selfcheck: ## Étapes 1-5 : ajoute le résultat du RAG
 	python -m berlue.pipeline.hurlu_berlu --question "$(QUESTION)"

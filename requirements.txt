@@ -17,4 +17,6 @@ scikit-learn==1.9.0
 joblib==1.5.3
 selfcheckgpt==0.1.7
 sentencepiece==0.2.2
-transformers==4.57.6
+transformers<5.0.0
+sentence-transformers<3.0.0
+faiss-cpu

@@ -1,5 +1,7 @@
 import os
+
 from setuptools import find_packages, setup
+
 
 def load_requirements(filename: str) -> list:
     """
@@ -10,7 +12,7 @@ def load_requirements(filename: str) -> list:
     if not os.path.exists(filename):
         return []
 
-    with open(filename, "r") as f:
+    with open(filename) as f:
         content = f.readlines()
 
     requirements = []
