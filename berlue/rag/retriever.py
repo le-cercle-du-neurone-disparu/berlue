@@ -135,3 +135,11 @@ class RagRetriever:
             confidence=confidence,
             evidence=evidence,
         )
+
+    def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
+        """Vérifie une liste d'affirmations, une par une."""
+        verdicts = []
+        for i, claim in enumerate(claims, 1):
+            print(f"   - Vérification RAG de l'affirmation {i}/{len(claims)}...")
+            verdicts.append(self.verify_claim(claim))
+        return verdicts
