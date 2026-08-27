@@ -59,6 +59,7 @@ training_outputs/
 *.h5
 *.pkl
 *.model
+*.joblib
 # Dossiers locaux créés par MLflow ou Prefect
 mlruns/
 .prefect/
