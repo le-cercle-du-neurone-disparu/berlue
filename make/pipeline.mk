@@ -19,6 +19,12 @@ run_pred: ## Lance l'étape de prédiction (MODEL_TARGET=local|gcs|mlflow, défa
 
 run_all: run_preprocess run_train run_evaluate run_pred ## Lance le pipeline complet (preprocess train evaluate pred)
 
+train_baseline: ## Entraîne le classifieur NLI léger (baseline) et sauvegarde le .joblib localement
+	python -m berlue.nli_baseline.train
+
+evaluate_baseline: ## Évalue la baseline NLI seule sur le jeu de test HaluEval/TruthfulQA
+	python -m berlue.evaluation.run_eval
+
 run_api_local: ## Lance l'application FastAPI en local avec rechargement à chaud
 	@echo "🚀 Démarrage de FastAPI en local..."
 	uvicorn berlue.api.fast:app --host 0.0.0.0 --port 8000 --reload

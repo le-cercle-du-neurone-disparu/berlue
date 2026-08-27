@@ -52,4 +52,8 @@ class NliBaseline:
 
 
 if __name__ == "__main__":
-    test = NliBaseline().predict()
+    result = NliBaseline().predict(
+        question="Quelle est la capitale de la France ?",
+        answer="Paris est la capitale de la France.",
+    )
+    print(result)
