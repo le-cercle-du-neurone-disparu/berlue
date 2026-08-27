@@ -6,7 +6,8 @@ Ne pas dupliquer ces classes ailleurs ; discuter en équipe avant d'y ajouter un
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-
+from dataclasses import dataclass
+from typing import List, Optional
 
 class Verdict(StrEnum):
     SUPPORTED = "supported"
@@ -83,3 +84,24 @@ class PipelineResult:
 
     # --- 5. La Fusion Finale ---
     fused_verdicts: list[FusedVerdict] = field(default_factory=list)
+
+@dataclass
+class Claim:
+    text: str
+    source_sentence: str  # la phrase complète dont l'affirmation est extraite
+
+
+@dataclass
+class Evidence:
+    text: str
+    label: str  # SUPPORTS, REFUTES, NOT ENOUGH INFO
+    distance: float
+    evidence_id: Optional[int]
+    evidence_url: Optional[str]
+
+
+@dataclass
+class RagVerdict:
+    verdict: str  # SUPPORTS, REFUTES, NOT ENOUGH INFO
+    confidence: float  # 0.0 à 1.0
+    evidences: List[Evidence]
