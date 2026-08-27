@@ -46,3 +46,22 @@ endif
 
 run_workflow: ## Lance le workflow d'orchestration Prefect
 	PREFECT__LOGGING__LEVEL=$(PREFECT_LOG_LEVEL) python -m berlue.interface.workflow
+
+# ==============================================================================
+# PIPELINE HURLUBERLU (nécessite Ollama en local, cf. docs/ollama-setup.md)
+# ==============================================================================
+
+# Surchargeable sur la ligne de commande : `make pipeline_extract QUESTION="..."`.
+QUESTION ?= Pourquoi l'eau mouille ?
+
+pipeline_generate: ## Étape 1 seule : génère la réponse brute du LLM
+	python -m berlue.pipeline.hurlu_berlu --until generate --question "$(QUESTION)"
+
+pipeline_extract: ## Étapes 1-2 : génère la réponse puis extrait les affirmations
+	python -m berlue.pipeline.hurlu_berlu --until extract --question "$(QUESTION)"
+
+pipeline_samples: ## Étapes 1-3 : ajoute l'échantillonnage SelfCheckGPT (K appels LLM)
+	python -m berlue.pipeline.hurlu_berlu --until samples --question "$(QUESTION)"
+
+pipeline_selfcheck: ## Pipeline complet jusqu'à SelfCheckGPT (RAG et fusion pas encore implémentés)
+	python -m berlue.pipeline.hurlu_berlu --question "$(QUESTION)"
