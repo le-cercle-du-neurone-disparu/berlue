@@ -123,7 +123,7 @@ class RagRetriever:
         closest = min(evidences, key=lambda x: x["distance"])
         try:
             source = closest["evidence_url"][0][0][2]
-        except (IndexError, TypeError):
+        except IndexError, TypeError:
             source = "FEVER"
         evidence = Evidence(text=closest["text"], source=source, similarity_score=1.0 / (1.0 + closest["distance"]))
 
