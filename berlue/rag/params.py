@@ -1,17 +1,10 @@
-import os
-from pathlib import Path
-
-# Chemins
-BASE_DIR = Path(__file__).parent.parent
-DATA_DIR = BASE_DIR / "data"
-
 # Données brutes
-RAW_DIR = DATA_DIR / "raw"
-FEVER_DATA_PATH = RAW_DIR / "fever.jsonl"
+# RAW_DIR = "data/fever/raw"
+# FEVER_DATA_PATH = "data/fever/raw/fever.jsonl"
 
-# Index vectoriel
-INDEX_DIR = DATA_DIR / "index"
-VECTOR_DB_PATH = INDEX_DIR / "fever_faiss"
+# # Index vectoriel
+# RAG_INDEX_DIR = "data/fever/faiss"
+# RAG_VECTOR_DB_PATH = "data/fever/faiss"
 
-# Modèles
-EMBEDDING_MODEL = "all-mpnet-base-v2"
+# # Modèles
+# EMBEDDING_MODEL = "all-mpnet-base-v2"

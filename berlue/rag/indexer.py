@@ -10,13 +10,13 @@ import pandas as pd
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from berlue.params import EMBEDDING_MODEL, FEVER_DATA_PATH, VECTOR_DB_PATH
+from berlue.rag.params import FEVER_DATA_PATH, RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
 
 
 def load_fever_data(fever_path: str) -> pd.DataFrame:
     """Charge le dataset FEVER depuis un fichier JSONL."""
     data = []
-    with open(fever_path, "r") as f:
+    with open(fever_path) as f:
         for line in f:
             if line.strip():
                 data.append(json.loads(line))
@@ -27,19 +27,16 @@ def load_fever_data(fever_path: str) -> pd.DataFrame:
 
 def build_index(
     fever_path: str = FEVER_DATA_PATH,
-    out_path: str = VECTOR_DB_PATH,
-    embedding_model: str = EMBEDDING_MODEL,
+    out_path: str = RAG_VECTOR_DB_PATH,
+    embedding_model: str = RAG_EMBEDDING_MODEL,
     batch_size: int = 32,
 ) -> None:
     """Construit l'index vectoriel du corpus FEVER et le sauvegarde sur disque."""
     # 1. Charger les données
-    df = load_fever_data('data/raw/fever.jsonl')
+    df = load_fever_data(fever_path)
 
     # 2. Filtrer : ne garder que les exemples avec preuves
-    filtered = df[
-        df["label"].isin(["SUPPORTS", "REFUTES"]) &
-        (df["id"] != -1)
-    ]
+    filtered = df[df["label"].isin(["SUPPORTS", "REFUTES"]) & (df["id"] != -1)]
     print(f"🔍 {len(filtered)} exemples avec preuves conservés")
 
     # 3. Charger le modèle d'embedding
@@ -54,7 +51,7 @@ def build_index(
 
     embeddings = []
     for i in tqdm(range(0, len(claims), batch_size), desc="Génération des embeddings"):
-        batch = claims[i:i+batch_size]
+        batch = claims[i : i + batch_size]
         emb = model.encode(batch, convert_to_numpy=True)
         embeddings.append(emb)
 

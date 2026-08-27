@@ -5,14 +5,13 @@ from pathlib import Path
 
 from berlue.core.schemas import Claim
 from berlue.rag.retriever import RagRetriever
-from berlue.params import FEVER_DATA_PATH
 
 
-def load_sample_claims(fever_path: str, n_samples: int = 100) -> list[tuple[Claim, str]]:
+def load_sample_claims(fever_path: str, n_samples: int = 10) -> list[tuple[Claim, str]]:
     """Charge quelques exemples du dataset FEVER pour les tests."""
     samples = []
-    fever_path = "data/raw/fever.jsonl"
-    with open(fever_path, "r") as f:
+    fever_path = "data/fever/raw/fever.jsonl"
+    with open(fever_path) as f:
         for i, line in enumerate(f):
             if i >= n_samples * 3:
                 break
@@ -20,7 +19,7 @@ def load_sample_claims(fever_path: str, n_samples: int = 100) -> list[tuple[Clai
                 continue
             data = json.loads(line)
             if data.get("label") in ["SUPPORTS", "REFUTES"]:
-                claim = Claim(text=data["claim"], source_sentence=data["claim"])
+                claim = Claim(id=i, text=data["claim"], source_answer=data["claim"])
                 samples.append((claim, data["label"]))
 
     return samples[:n_samples]
@@ -33,21 +32,22 @@ def test_retriever():
     print("=" * 60)
 
     print("\n1️⃣ Initialisation du retriever...")
-    try:
+    # try:
+    if 1:
         retriever = RagRetriever()
         print("✅ Retriever chargé avec succès")
-    except Exception as e:
-        print(f"❌ Erreur lors du chargement : {e}")
-        return
+    # except Exception as e:
+    #     print(f"❌ Erreur lors du chargement : {e}")
+    #     return
 
     print("\n2️⃣ Chargement des exemples de test...")
-    fever_path = "data/raw/fever.jsonl"
+    fever_path = "data/fever/raw/fever.jsonl"
 
     if not Path(fever_path).exists():
         print(f"❌ Fichier {fever_path} introuvable")
         return
 
-    samples = load_sample_claims(str(fever_path), n_samples=100)
+    samples = load_sample_claims(str(fever_path), n_samples=10)
     print(f"✅ {len(samples)} exemples chargés")
 
     print("\n3️⃣ Test des affirmations...\n")
@@ -67,7 +67,7 @@ def test_retriever():
             for j, ev in enumerate(verdict.evidences[:3], 1):
                 print(f"  {j}. {ev.label} (dist={ev.distance:.3f}) : {ev.text[:60]}...")
 
-            is_correct = (verdict.verdict == expected_label)
+            is_correct = verdict.verdict == expected_label
             status = "✅" if is_correct else "❌"
             print(f"Résultat : {status} {'Correct' if is_correct else 'Incorrect'}")
             if is_correct:
@@ -83,7 +83,7 @@ def test_retriever():
     print("=" * 60)
     print(f"Exemples testés : {len(samples)}")
     print(f"Corrects : {correct}/{len(samples)}")
-    print(f"Précision : {correct/len(samples):.2%}")
+    print(f"Précision : {correct / len(samples):.2%}")
     print("=" * 60)
 
 

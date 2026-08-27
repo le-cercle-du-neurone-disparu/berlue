@@ -4,17 +4,16 @@ import pickle
 from pathlib import Path
 
 import faiss
-import numpy as np
 from sentence_transformers import SentenceTransformer
 
 from berlue.core.schemas import Claim, Evidence, RagVerdict
-from berlue.params import EMBEDDING_MODEL, VECTOR_DB_PATH
+from berlue.params import RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
 
 
 class RagRetriever:
     """Charge l'index FEVER (construit par `indexer.build_index`) et vérifie des affirmations."""
 
-    def __init__(self, index_path: str = VECTOR_DB_PATH, embedding_model: str = EMBEDDING_MODEL):
+    def __init__(self, index_path: str = RAG_VECTOR_DB_PATH, embedding_model: str = RAG_EMBEDDING_MODEL):
         self.index_path = Path(index_path)
 
         # 1. Charger l'index FAISS
@@ -40,7 +39,9 @@ class RagRetriever:
 
         # 3. Construire les objets Evidence
         evidences = []
-        for dist, idx in zip(distances[0], indices[0]):
+        for i in range(len(distances[0])):
+            dist = distances[0][i]
+            idx = indices[0][i]
             if idx < len(self.metadata["claims"]):
                 evidences.append(
                     Evidence(
@@ -51,7 +52,6 @@ class RagRetriever:
                         evidence_url=self.metadata["evidence_urls"][idx],
                     )
                 )
-
         return evidences
 
     def verify_claim(self, claim: Claim) -> RagVerdict:
@@ -66,29 +66,21 @@ class RagRetriever:
         evidences = self.retrieve(claim, top_k=5)
 
         if not evidences:
-            return RagVerdict(
-                verdict="NOT ENOUGH INFO",
-                confidence=0.0,
-                evidences=[]
-            )
+            return RagVerdict(verdict="NOT ENOUGH INFO", confidence=0.0, evidences=[])
         threshold = 0.2
         relevant = [ev for ev in evidences if ev.distance < threshold]
 
-    # Si plus de preuves après filtrage, on continue avec celles-ci
+        # Si plus de preuves après filtrage, on continue avec celles-ci
         if relevant:
             evidences = relevant
         else:
-        # Si toutes les preuves sont trop éloignées, on garde la plus proche
-        # ou on retourne NOT ENOUGH INFO
+            # Si toutes les preuves sont trop éloignées, on garde la plus proche
+            # ou on retourne NOT ENOUGH INFO
             closest = min(evidences, key=lambda x: x.distance)
             if closest.distance < 1.0:  # seuil large de secours
                 evidences = [closest]
             else:
-                return RagVerdict(
-                    verdict="NOT ENOUGH INFO",
-                    confidence=0.0,
-                    evidences=evidences
-            )
+                return RagVerdict(verdict="NOT ENOUGH INFO", confidence=0.0, evidences=evidences)
 
         # Compter les labels
         label_counts = {"SUPPORTS": 0, "REFUTES": 0, "NOT ENOUGH INFO": 0}
@@ -108,8 +100,4 @@ class RagRetriever:
         distance_penalty = min(1.0, 1.0 / (1.0 + avg_distance / 10))
         confidence = confidence * distance_penalty
 
-        return RagVerdict(
-            verdict=majority_label,
-            confidence=confidence,
-            evidences=evidences
-        )
+        return RagVerdict(verdict=majority_label, confidence=confidence, evidences=evidences)
