@@ -7,6 +7,7 @@ from berlue.rag.retriever import RagRetriever
 from berlue.selfcheck.sampler import sample_responses
 from berlue.selfcheck.scorer import compute_divergence
 
+
 class HurluBerlu:
     """Pipeline principal sans état (Stateless)."""
 
