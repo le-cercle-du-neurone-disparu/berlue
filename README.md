@@ -1,23 +1,60 @@
-# 🚀 Template Boilerplate MLOps
+# Berlue
 
-Un template robuste et agnostique au framework pour démarrer rapidement vos projets Machine Learning avec les bonnes pratiques d'ingénierie logicielle, de CI/CD et de déploiement GCP.
+Détecteur d'hallucinations LLM : pose une question à un LLM local (Ollama),
+découpe sa réponse en affirmations atomiques, puis vérifie chacune par deux
+voies indépendantes avant de fusionner leur verdict.
 
-## 🛠️ 1. Configuration de l'environnement local
+1. Le LLM génère une réponse à la question posée.
+2. La réponse est découpée en affirmations atomiques.
+3. Chaque affirmation est vérifiée par deux voies indépendantes :
+   - **SelfCheckGPT** (`berlue/selfcheck/`) — zero-resource, ne vérifie rien
+     contre une source externe : le LLM se contredit-il sur plusieurs
+     tirages de la même question ?
+   - **RAG inversé** (`berlue/rag/`) — cherche des preuves dans le corpus
+     FEVER (embeddings + FAISS) et vote sur les labels des plus proches
+     voisins.
+4. **Fusion** (`HurluBerlu.fuse_results`) combine les deux en un verdict
+   (`supported` / `contradicted` / `not_enough_info`) par affirmation.
 
-Configure automatiquement votre environnement virtuel Python avec `pyenv` et installe le package avec toutes ses dépendances :
+L'orchestrateur de ce pipeline est `berlue/pipeline/hurlu_berlu.py` — voir
+`docs/pipeline/hurlu_berlu.md` pour le lancer étape par étape.
+
+Une baseline plus simple (`berlue/nli_baseline/`, TF-IDF + régression
+logistique, sans RAG) sert de point de comparaison en évaluation offline —
+voir `docs/evaluation/baseline.md`.
+
+## Démarrage rapide
 
 ```bash
-make local_setup
+make local_setup   # environnement virtuel (pyenv) + dépendances
+make ollama_setup  # installe et démarre Ollama en local
 ```
 
----
+Puis, étape par étape (voir `docs/pipeline/hurlu_berlu.md` pour le détail) :
 
-## 🌐 2. Mise en service & API
+```bash
+make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
+```
 
-Le déploiement de votre API suit un processus de validation strict en 3 étapes (méthodologie Fail-Fast) :
+## Documentation
+
+| | |
+|---|---|
+| **Pipeline** (comment tourne chaque brique de Berlue) | [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) (orchestrateur) · [`llm.md`](docs/pipeline/llm.md) · [`extraction.md`](docs/pipeline/extraction.md) · [`selfcheck.md`](docs/pipeline/selfcheck.md) · [`rag.md`](docs/pipeline/rag.md) · [`fusion.md`](docs/pipeline/fusion.md) |
+| **Evaluation** (mesurer Berlue face à une baseline) | [`baseline.md`](docs/evaluation/baseline.md) |
+| **Datasets** | [`fever.md`](docs/datasets/fever.md) · [`halueval.md`](docs/datasets/halueval.md) · [`truthfulqa.md`](docs/datasets/truthfulqa.md) |
+| **Setup** (préparer sa machine) | [`local-setup.md`](docs/setup/local-setup.md) · [`ollama-setup.md`](docs/setup/ollama-setup.md) |
+| **Deploy** (déploiement cloud) | [`gcp-deployment.md`](docs/deploy/gcp-deployment.md) |
+| **Repo** (gestion du dépôt pour l'équipe) | [`github-config.md`](docs/repo/github-config.md) · [`webhook-slack.md`](docs/repo/webhook-slack.md) |
+| **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) |
+| **Historique Etude Dataset** | [`historique-etude-data/`](historique-etude-data/) — matériel de travail, pas la doc de référence |
+
+## Mise en service & API
+
+Le déploiement de l'API suit un processus de validation strict en 3 étapes (méthodologie Fail-Fast) :
 
 ### Étape 1 : Développement natif local
-Implémentez vos endpoints FastAPI dans `api/fast.py`. Lancez l'API nativement sur votre machine pour une itération rapide et un rechargement à chaud :
+Implémentez vos endpoints FastAPI dans `berlue/api/fast.py`. Lancez l'API nativement sur votre machine pour une itération rapide et un rechargement à chaud :
 ```bash
 make run_api
 ```
@@ -40,6 +77,6 @@ make test_functional
 ### Étape 3 : Déploiement Cloud (test → staging → prod)
 Une fois le conteneur local validé, construisez l'image de production (qui utilise `pip install .` pour un poids plus léger) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement.
 
-Voir `docs/gcp-deployment.md` pour toutes les commandes (authentification, build/push, déploiement par environnement) ainsi que l'architecture multi-projets, la gestion d'accès par personne, et comment tout supprimer (`make gcp_destroy`).
+Voir `docs/deploy/gcp-deployment.md` pour toutes les commandes (authentification, build/push, déploiement par environnement) ainsi que l'architecture multi-projets, la gestion d'accès par personne, et comment tout supprimer (`make gcp_destroy`).
 
-*Vérifiez votre endpoint en direct* : test d'intégration dédié à venir (cf. `README.tests.md`).
+*Vérifiez votre endpoint en direct* : `make cloudrun_url CLOUDRUN_ENV=...` récupère l'URL de l'environnement (`docs/deploy/gcp-deployment.md`).

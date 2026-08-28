@@ -3,13 +3,15 @@
 Classifieur léger (TF-IDF + régression logistique) servant de point de
 comparaison au pipeline Berlue complet (RAG inversé + SelfCheckGPT) dans
 l'évaluation offline — voir `berlue/nli_baseline/` et `berlue/evaluation/`.
+Pour les datasets eux-mêmes (format, labels), voir
+`docs/datasets/halueval.md` et `docs/datasets/truthfulqa.md`.
 
 ## Prérequis
 
 - Dépendances installées : `pip install -r requirements.txt -r requirements_dev.txt`
 - Accès réseau : `evaluation/data.py::load_labeled_examples` télécharge
-  HaluEval et TruthfulQA depuis GitHub raw à chaque appel, pas de cache local
-  pour l'instant.
+  HaluEval et TruthfulQA depuis GitHub raw à chaque appel (pas de cache
+  local).
 
 ## Entraîner
 
