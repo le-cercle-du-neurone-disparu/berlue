@@ -50,6 +50,9 @@ SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_M
 SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
+# --- EXTRACTION ---
+EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "qwen2.5:0.5b")
+
 # --- Embeddings + RAG inversé ---
 RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
 RAG_INDEX_DIR = "data/fever/faiss"
