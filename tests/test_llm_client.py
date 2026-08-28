@@ -1,6 +1,6 @@
 """Tests pour `berlue.llm.client.OllamaClient` — unitaires (client Ollama
 interne mocké, pas de réseau) et fonctionnels (`@pytest.mark.functional`, vrai
-serveur Ollama requis, cf. docs/ollama-setup.md)."""
+serveur Ollama requis, cf. docs/setup/ollama-setup.md)."""
 
 import pytest
 from httpx import TimeoutException
