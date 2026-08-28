@@ -4,7 +4,7 @@ Classifieur léger (TF-IDF + régression logistique) servant de point de
 comparaison au pipeline Berlue complet (RAG inversé + SelfCheckGPT) dans
 l'évaluation offline — voir `berlue/nli_baseline/` et `berlue/evaluation/`.
 Pour les datasets eux-mêmes (format, labels), voir
-`docs/datasets/halueval.md` et `docs/datasets/truthfulqa.md`.
+[`halueval.md`](../datasets/halueval.md) et [`truthfulqa.md`](../datasets/truthfulqa.md).
 
 ## Prérequis
 

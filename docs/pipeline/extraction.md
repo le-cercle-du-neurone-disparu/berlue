@@ -4,9 +4,9 @@ Découpe la réponse brute du LLM en affirmations atomiques et indépendantes
 (`Claim`, une par fait vérifiable) — voir
 `berlue/pipeline/hurlu_berlu.py::HurluBerlu._do_llm_extraction`. Chaque
 affirmation devient ensuite l'unité vérifiée par SelfCheckGPT et le RAG
-inversé (`docs/pipeline/selfcheck.md`, `docs/pipeline/rag.md`).
+inversé ([`selfcheck.md`](selfcheck.md), [`rag.md`](rag.md)).
 
-Un appel LLM (même client que `docs/pipeline/llm.md`, prompt dédié demandant
+Un appel LLM (même client que [`llm.md`](llm.md), prompt dédié demandant
 une liste à puces, une affirmation par ligne, pronoms résolus) génère le
 texte brut ; celui-ci est ensuite parsé ligne par ligne (les lignes qui ne
 commencent pas par `- ` sont ignorées).
@@ -17,7 +17,7 @@ commencent pas par `- ` sont ignorées).
 make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
 ```
 
-Équivalent direct (voir `docs/pipeline/hurlu_berlu.md` pour les autres
+Équivalent direct (voir [`hurlu_berlu.md`](hurlu_berlu.md) pour les autres
 étapes) :
 
 ```bash

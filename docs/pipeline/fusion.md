@@ -1,10 +1,10 @@
 # Fusion
 
-Combine le verdict RAG (`docs/pipeline/rag.md`, `RagVerdict`) et le score
-SelfCheckGPT (`docs/pipeline/selfcheck.md`, `SelfCheckScore`) d'une même
+Combine le verdict RAG ([`rag.md`](rag.md), `RagVerdict`) et le score
+SelfCheckGPT ([`selfcheck.md`](selfcheck.md), `SelfCheckScore`) d'une même
 affirmation en un seul verdict final (`FusedVerdict`) — voir
 `berlue/pipeline/hurlu_berlu.py::HurluBerlu.fuse_results`, dernière étape de
-l'orchestrateur (`docs/pipeline/hurlu_berlu.md`).
+l'orchestrateur ([`hurlu_berlu.md`](hurlu_berlu.md)).
 
 ## Logique
 
@@ -35,4 +35,4 @@ l'orchestrateur :
 python -m berlue.pipeline.hurlu_berlu --until fusion --question "..."
 ```
 
-Voir `docs/pipeline/hurlu_berlu.md`.
+Voir [`hurlu_berlu.md`](hurlu_berlu.md).

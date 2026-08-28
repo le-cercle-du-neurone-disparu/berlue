@@ -2,14 +2,14 @@
 
 Détecte l'incohérence du LLM avec lui-même — zero-resource, ne vérifie rien
 contre une source externe (contrairement au RAG inversé,
-`docs/pipeline/rag.md`) : un LLM qui hallucine tend à varier davantage d'un
+[`rag.md`](rag.md)) : un LLM qui hallucine tend à varier davantage d'un
 tirage à l'autre sur les détails inventés qu'un LLM qui rapporte un fait
 qu'il connaît. Deux étapes, `berlue/selfcheck/` :
 
 - **`sampler.py::sample_responses`** — regénère la question K fois
   (`SELFCHECK_K`, défaut 5), à des températures espacées entre
   `SELFCHECK_TEMPERATURE_MIN` et `SELFCHECK_TEMPERATURE_MAX` (défaut
-  0.7–1.3), via le même `OllamaClient` que `docs/pipeline/llm.md`.
+  0.7–1.3), via le même `OllamaClient` que [`llm.md`](llm.md).
 - **`scorer.py::compute_divergence`** — pour chaque affirmation, mesure sa
   divergence par rapport aux K échantillons avec le modèle NLI du package
   `selfcheckgpt` (chargé une fois, gardé en mémoire pour les appels
@@ -23,7 +23,7 @@ make pipeline_samples    # échantillonnage seul (K appels LLM)
 make pipeline_selfcheck  # + score de divergence par affirmation
 ```
 
-Équivalent direct (voir `docs/pipeline/hurlu_berlu.md` pour les autres
+Équivalent direct (voir [`hurlu_berlu.md`](hurlu_berlu.md) pour les autres
 étapes) :
 
 ```bash
