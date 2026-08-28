@@ -1,6 +1,9 @@
-# berlue/mocks/mock_pipeline.py
-
-from berlue.api.schemas import LLMConfig
+from berlue.api.schemas import (
+    ClaimResult,
+    LLMConfig,
+    PredictInput,
+    PredictOutput,
+)
 
 
 class MockBerluePipeline:
@@ -15,32 +18,33 @@ class MockBerluePipeline:
         """
         return ["qwen2.5:0.5b", "qwen2.5:1.5b", "llama3.2:1b", "gemma3:1b"]
 
-    def predict(self, question: str, llm_config: LLMConfig) -> dict:
+    def predict(self, payload: PredictInput) -> PredictOutput:
         """
         Simule la génération d'une réponse et la détection d'une hallucination.
+        Adapté pour utiliser les modèles Pydantic.
         """
-        # On retourne un dictionnaire qui correspond exactement au schéma PredictOutput
-        return {
-            "question": question,
-            "llm_used": {"name": llm_config.name, "temperature": llm_config.temperature},
-            "full_llm_answer": "Le ciel est vert. C'est dû à la réfraction.",
-            "claims": [
-                {
-                    "claim_text": "Le ciel est vert.",
-                    "status": "red",
-                    "fusion_score": 0.88,
-                    "evidence_source": "FEVER_corpus",
-                    "evidence_text": "Le ciel est bleu pendant la journée.",
-                },
-                {
-                    "claim_text": "C'est dû à la réfraction.",
-                    "status": "green",
-                    "fusion_score": 0.15,
-                    "evidence_source": "SelfCheckGPT",
-                    "evidence_text": "Aucune contradiction détectée.",
-                },
+        # On retourne directement un objet PredictOutput (FastAPI va adorer)
+        return PredictOutput(
+            question=payload.question,
+            llm_used=payload.llm,
+            full_llm_answer="Le ciel est vert. C'est dû à la réfraction.",
+            claims=[
+                ClaimResult(
+                    claim_text="Le ciel est vert.",
+                    status="red",
+                    fusion_score=0.88,
+                    evidence_source="FEVER_corpus",
+                    evidence_text="Le ciel est bleu pendant la journée.",
+                ),
+                ClaimResult(
+                    claim_text="C'est dû à la réfraction.",
+                    status="green",
+                    fusion_score=0.15,
+                    evidence_source="SelfCheckGPT",
+                    evidence_text="Aucune contradiction détectée.",
+                ),
             ],
-        }
+        )
 
     def evaluate_dataset(self, dataset_name: str, n_samples: int, llm_config: LLMConfig) -> dict:
         """

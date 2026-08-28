@@ -9,25 +9,31 @@ from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
 class OllamaClient:
     """Client minimal pour générer une réponse depuis le modèle local via le SDK Python officiel."""
 
-    def __init__(self, host: str = OLLAMA_HOST, model: str = OLLAMA_MODEL, timeout: float = 120.0):
+    def __init__(
+        self,
+        host: str = OLLAMA_HOST,
+        model: str = OLLAMA_MODEL,
+        timeout: float = 120.0,
+        temperature: float = BASE_TEMPERATURE,
+    ):
         self.host = host
         self.model = model
-        # Instanciation du client officiel avec gestion du timeout
+        self.temperature = temperature
         self.client = Client(host=self.host, timeout=timeout)
 
     def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE) -> str:
         """Génère une réponse pour `prompt` à la température donnée."""
+
+        final_temp = temperature if temperature is not None else self.temperature
+
         try:
-            # Appel natif via la librairie officielle
-            response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": temperature})
+            response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": final_temp})
 
         except TimeoutException as e:
-            # On attrape proprement le timeout du client HTTP sous-jacent
             print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
             raise TimeoutError("Le serveur Ollama a expiré (Timeout).") from e
 
         except ResponseError as e:
-            # On attrape l'exception native d'Ollama (ex: le modèle n'existe pas)
             print(f"❌ Erreur API Ollama : {e.error}")
             raise RuntimeError(f"Erreur interne Ollama : {e.error}") from e
 
@@ -35,10 +41,8 @@ class OllamaClient:
             print(f"❌ Erreur lors de la communication avec Ollama : {e}")
             raise RuntimeError(f"Échec de la communication Ollama : {e}") from e
 
-        # Extraction de la réponse (sera None si la clé vaut None ou n'existe pas)
         resp_text = response.get("response")
 
-        # Vérification stricte : si c'est None ou une chaîne vide ("")
         if not resp_text:
             raise RuntimeError(f"Ollama a généré une réponse vide ou nulle (modèle: {self.model}).")
 
@@ -69,26 +73,66 @@ class OllamaClient:
         return responses
 
 
+# ==============================================================================
+# TESTS LOCAUX
+# ==============================================================================
 if __name__ == "__main__":
-    # Usage direct du client (pas un test — cf. make llm_generate/llm_generate_many,
-    # docs/llm.md ; les tests vivent dans tests/test_llm_client.py).
-    import argparse
+    import sys
 
-    parser = argparse.ArgumentParser(description="Génère une ou plusieurs réponses via OllamaClient.")
-    parser.add_argument("prompt", nargs="?", default="Pourquoi le ciel est bleu ?", help="Prompt envoyé au LLM.")
-    parser.add_argument("--k", type=int, default=1, help="Nombre de générations indépendantes (défaut : 1).")
-    parser.add_argument("--temperature", type=float, default=BASE_TEMPERATURE, help="Température (ignoré si --k > 1).")
-    parser.add_argument("--temperature-min", type=float, default=0.2, help="Borne basse de température (si --k > 1).")
-    parser.add_argument("--temperature-max", type=float, default=0.8, help="Borne haute de température (si --k > 1).")
-    args = parser.parse_args()
+    from ollama import Client as OllamaNativeClient
 
-    client = OllamaClient()
+    host_url = "http://127.0.0.1:11434"
+    print("🔍 Recherche du serveur Ollama local...")
 
-    if args.k <= 1:
-        print(client.generate(prompt=args.prompt, temperature=args.temperature).strip())
+    # 1. Vérifier que le serveur tourne et récupérer la liste des modèles
+    try:
+        temp_client = OllamaNativeClient(host=host_url)
+        response = temp_client.list()
+
+        # Selon la version du package, response est un objet ou un dictionnaire
+        # (Réécrit sur plusieurs lignes pour respecter la limite des 120 caractères)
+        if hasattr(response, "models"):
+            available_models = getattr(response, "models", [])
+        else:
+            available_models = response.get("models", [])
+
+    except Exception:
+        print("❌ Erreur : Impossible de contacter le serveur Ollama.")
+        print("💡 Assure-toi qu'il est lancé (via `make ollama_setup` ou `ollama serve`).")
+        sys.exit(1)
+
+    # 2. Vérifier qu'au moins un modèle est téléchargé
+    if not available_models:
+        print("❌ Erreur : Le serveur tourne, mais AUCUN modèle n'est installé.")
+        print("💡 Lance `ollama pull qwen2.5:0.5b` dans ton terminal d'abord.")
+        sys.exit(1)
+
+    # 3. Récupérer le nom du modèle de façon robuste
+    first_model = available_models[0]
+    if hasattr(first_model, "model"):
+        # Versions récentes (objet Pydantic)
+        auto_model = first_model.model
+    elif isinstance(first_model, dict):
+        # Anciennes versions (dictionnaire)
+        auto_model = first_model.get("model", first_model.get("name"))
     else:
-        responses = client.generate_many(
-            args.prompt, k=args.k, temperature_min=args.temperature_min, temperature_max=args.temperature_max
-        )
-        for i, response in enumerate(responses, 1):
-            print(f"{i}. {response.strip()}")
+        # Fallback de dernier recours
+        auto_model = str(first_model)
+
+    print(f"✅ Serveur OK ! Modèle sélectionné automatiquement : {auto_model}")
+    print("🚀 Initialisation du client...\n")
+
+    # 4. Lancer les tests avec ce modèle auto-détecté
+    client = OllamaClient(host=host_url, model=auto_model)
+
+    question = "Pourquoi l'eau mouille-t-elle ? Réponds en une courte phrase."
+
+    print("--- TEST 1 : generate() ---")
+    reponse = client.generate(prompt=question, temperature=0.3)
+    print(f"🤖 [Temp 0.3] : {reponse.strip()}\n")
+
+    print("--- TEST 2 : generate_many() ---")
+    reponses_multi = client.generate_many(question, k=3, temperature_min=0.2, temperature_max=0.8)
+
+    for idx, rep in enumerate(reponses_multi):
+        print(f"🤖 [Rép {idx + 1}] : {rep.strip()}")
