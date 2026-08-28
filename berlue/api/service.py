@@ -51,62 +51,6 @@ class BerlueService:
             question=payload.question, llm_used=payload.llm, full_llm_answer=res.raw_answer, claims=claims_output
         )
 
-    # TODO : implémenter la sauvegarde et le chargement des vraies données
-    def evaluate_dataset(
-        self,
-        dataset_name: str,
-        n_samples: int,
-        llm_config,  # Type LLMConfig
-        retriever=None,
-        extractor=None,
-    ) -> dict:
-        """
-
-        Évalue le pipeline sur un dataset.
-
-        TODO: Implémenter la vraie boucle d'évaluation.
-
-        Pour l'instant, retourne des métriques simulées pour éviter un TimeOut de l'API.
-
-        """
-
-        print(f"📊 Lancement de l'évaluation sur {dataset_name} ({n_samples} samples)...")
-
-        # Simulation d'une amélioration grâce au RAG (Berlue fait moins de faux positifs que la baseline)
-
-        # 1. On calcule des moitiés approximatives pour la vérité terrain
-
-        half = n_samples // 2
-
-        # 2. On génère le dictionnaire compatible avec le modèle Pydantic `Metrics`
-
-        return {
-            "baseline": {
-                "ground_truth_true": {
-                    "predicted_true": int(half * 0.7),
-                    "predicted_undecided": int(half * 0.2),
-                    "predicted_false": int(half * 0.1),
-                },
-                "ground_truth_false": {
-                    "predicted_true": int(half * 0.4),  # La baseline se fait souvent avoir (Hallucinations)
-                    "predicted_undecided": int(half * 0.2),
-                    "predicted_false": int(half * 0.4),
-                },
-            },
-            "berlue": {
-                "ground_truth_true": {
-                    "predicted_true": int(half * 0.8),
-                    "predicted_undecided": int(half * 0.15),
-                    "predicted_false": int(half * 0.05),
-                },
-                "ground_truth_false": {
-                    "predicted_true": int(half * 0.1),  # Berlue détecte bien les mensonges !
-                    "predicted_undecided": int(half * 0.1),
-                    "predicted_false": int(half * 0.8),
-                },
-            },
-        }
-
     def get_available_llms(self) -> list[str]:
         """
         Récupère la liste réelle des modèles installés dans l'Ollama local.

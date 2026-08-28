@@ -4,14 +4,12 @@ from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from berlue.api.schemas import (
-    EvaluateInput,
-    EvaluateOutput,
     LLMListOutput,
     PredictInput,
     PredictOutput,
 )
 from berlue.llm.client import OllamaClient
-from berlue.params import USE_MOCK
+from berlue.params import EXTRACT_MODEL, USE_MOCK
 
 
 # ==========================================
@@ -30,7 +28,7 @@ async def lifespan(app: FastAPI):
         from berlue.rag.retriever import RagRetriever
 
         app.state.retriever = RagRetriever()
-        app.state.extractor = OllamaClient(model="ton_modele_extract")
+        app.state.extractor = OllamaClient(model=EXTRACT_MODEL)
 
         app.state.service = BerlueService()
 
@@ -111,33 +109,3 @@ def predict_endpoint(payload: PredictInput):
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e
-
-
-@app.post("/evaluate", response_model=EvaluateOutput)
-def evaluate_endpoint(payload: EvaluateInput):
-    """
-    Lance une évaluation complète du système Berlue sur un dataset.
-    """
-    try:
-        if USE_MOCK:
-            metrics_dict = app.state.service.evaluate_dataset(
-                dataset_name=payload.dataset_name, n_samples=payload.sample_size, llm_config=payload.llm_to_test
-            )
-        else:
-            # Le vrai service a besoin de ses outils !
-            metrics_dict = app.state.service.evaluate_dataset(
-                dataset_name=payload.dataset_name,
-                n_samples=payload.sample_size,
-                llm_config=payload.llm_to_test,
-                retriever=app.state.retriever,
-                extractor=app.state.extractor,
-            )
-
-        return {
-            "dataset": payload.dataset_name,
-            "samples_evaluated": payload.sample_size,
-            "metrics": metrics_dict,
-            "status": "success",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erreur d'évaluation : {str(e)}") from e
