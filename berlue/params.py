@@ -63,7 +63,7 @@ NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
 NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./models/nli_tfidf_logreg.joblib")
 
 # --- Données ---
-FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/raw/fever")
+FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/fever/raw/fever.jsonl")
 HALUEVAL_DATA_PATH = os.environ.get(
     "BERLUE_HALUEVAL_DATA_PATH", "https://raw.githubusercontent.com/RUCAIBox/HaluEval/main/data/qa_data.json"
 )

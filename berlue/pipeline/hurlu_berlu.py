@@ -26,7 +26,7 @@ class HurluBerlu:
 
     # ÉTAPE 1
     def generate_response(
-        self, question: str, length_constraint: str = "Réponds de manière claire et concise, en 3 à 5 phrases maximum."
+        self, question: str, length_constraint: str = "Réponds de manière claire et concise, en 1 phrase."
     ) -> PipelineResult:
         """Génère la réponse de base avec une limite de longueur."""
 
