@@ -2,13 +2,13 @@ from berlue.core.schemas import PipelineResult, Verdict
 from berlue.extraction import do_extraction
 from berlue.fusion import do_fusion
 from berlue.llm.client import OllamaClient
+from berlue.params import OLLAMA_MODEL
 from berlue.rag.retriever import RagRetriever
 from berlue.selfcheck.sampler import sample_responses
 from berlue.selfcheck.scorer import compute_divergence
 
-
 class HurluBerlu:
-    """Pipeline principal sans état (Stateless) pour la vérification RAG."""
+    """Pipeline principal sans état (Stateless)."""
 
     def __init__(
         self,
@@ -95,12 +95,14 @@ if __name__ == "__main__":
         default="fusion",  # Le défaut va jusqu'au bout, c'est à dire la fusion !
         help="S'arrête après cette étape (défaut : fusion).",
     )
-    # parser.add_argument("--question", default="Pourquoi l'eau mouille ?", help="Question posée au LLM.")
     parser.add_argument("--question", default="Has Ryan Gosling visited Africa ?", help="Question posée au LLM.")
     args = parser.parse_args()
 
+    parser.add_argument("--model", type=str, default=OLLAMA_MODEL, help="Le modèle LLM à utiliser")
+    args = parser.parse_args()
+
     print("🚀 Démarrage du pipeline HurluBerlu...")
-    pipeline = HurluBerlu()
+    pipeline = HurluBerlu(llm_client=OllamaClient(model=args.model))
     print(f"\n❓ Question posée : {args.question}")
 
     # --- Étape 1 ---

@@ -92,8 +92,14 @@ pipeline_generate: ## Étape 1 seule : génère la réponse brute du LLM
 pipeline_extract: ## Étapes 1-2 : génère la réponse puis extrait les affirmations
 	python -m berlue.pipeline.hurlu_berlu --until extract --question "$(QUESTION)"
 
-pipeline_samples: ## Étapes 1-3 : ajoute l'échantillonnage SelfCheckGPT (K appels LLM)
+pipeline_samples: ## Étapes 1-3 : ajoute l'extraction
 	python -m berlue.pipeline.hurlu_berlu --until samples --question "$(QUESTION)"
 
-pipeline_selfcheck: ## Étapes 1-4 : ajoute le score de divergence SelfCheckGPT
+pipeline_selfcheck: ## Étapes 1-4 : ajoute l'échantillonnage SelfCheckGPT (K appels LLM)
+	python -m berlue.pipeline.hurlu_berlu --until selfcheck --question "$(QUESTION)"
+
+pipeline_rag: ## Étapes 1-5 : ajoute le RAG
+	python -m berlue.pipeline.hurlu_berlu --until rag --question "$(QUESTION)"
+
+pipeline_fusion: ## Étapes 1-6 : ajoute le score de fusion
 	python -m berlue.pipeline.hurlu_berlu --question "$(QUESTION)"
