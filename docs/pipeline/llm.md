@@ -9,8 +9,12 @@ directement pour lister les modèles installés (`get_available_llms`), hors
 
 ## Prérequis
 
-- Ollama qui tourne en local avec un modèle disponible — cf.
-  `docs/setup/ollama-setup.md` (`make ollama_setup` puis `make ollama_check`).
+Ollama qui tourne en local avec un modèle disponible — `docs/setup/ollama-setup.md` :
+
+```bash
+make ollama_setup
+make ollama_check
+```
 
 ## Utiliser directement
 

@@ -8,7 +8,12 @@ Pour les datasets eux-mêmes (format, labels), voir
 
 ## Prérequis
 
-- Dépendances installées : `pip install -r requirements.txt -r requirements_dev.txt`
+Dépendances installées :
+
+```bash
+pip install -r requirements.txt -r requirements_dev.txt
+```
+
 - Accès réseau : `evaluation/data.py::load_labeled_examples` télécharge
   HaluEval et TruthfulQA depuis GitHub raw à chaque appel (pas de cache
   local).

@@ -23,9 +23,13 @@ make pipeline_samples    # échantillonnage seul (K appels LLM)
 make pipeline_selfcheck  # + score de divergence par affirmation
 ```
 
-Équivalent direct : `python -m berlue.pipeline.hurlu_berlu --until samples`
-ou `--until selfcheck` — voir `docs/pipeline/hurlu_berlu.md` pour les autres
-étapes.
+Équivalent direct (voir `docs/pipeline/hurlu_berlu.md` pour les autres
+étapes) :
+
+```bash
+python -m berlue.pipeline.hurlu_berlu --until samples
+python -m berlue.pipeline.hurlu_berlu --until selfcheck
+```
 
 Réduire `SELFCHECK_K` accélère nettement l'itération en dev :
 

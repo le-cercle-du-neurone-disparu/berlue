@@ -2,7 +2,13 @@
 
 ### Pré-requis
 
-- **Python** : `ruff` est dans `requirements_dev.txt`, installé via `make local_setup` (ou `pip install -e ".[dev]"`).
+- **Python** : `ruff` est dans `requirements_dev.txt`, installé via :
+
+  ```bash
+  make local_setup
+  # ou directement :
+  pip install -e ".[dev]"
+  ```
 - **Shell** : `shellcheck` est un outil externe, pas installable via pip :
   ```bash
   # Debian / Ubuntu / WSL2

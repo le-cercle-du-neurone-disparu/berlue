@@ -17,9 +17,12 @@ commencent pas par `- ` sont ignorées).
 make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
 ```
 
-Équivalent direct : `python -m berlue.pipeline.hurlu_berlu --until extract
---question "..."` — voir `docs/pipeline/hurlu_berlu.md` pour les autres
-étapes.
+Équivalent direct (voir `docs/pipeline/hurlu_berlu.md` pour les autres
+étapes) :
+
+```bash
+python -m berlue.pipeline.hurlu_berlu --until extract --question "Pourquoi la mer est salée ?"
+```
 
 ## Lancer les tests liés
 

@@ -74,7 +74,11 @@ make cloudrun_deploy CLOUDRUN_ENV=staging
 make cloudrun_deploy CLOUDRUN_ENV=prod
 ```
 
-`make cloudrun_url CLOUDRUN_ENV=...` pour récupérer l'URL de chaque environnement.
+Récupérer l'URL de chaque environnement :
+
+```bash
+make cloudrun_url CLOUDRUN_ENV=...
+```
 
 Accès public par défaut, contrôlé par environnement dans `make/config.mk` :
 

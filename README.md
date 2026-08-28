@@ -75,8 +75,10 @@ make test_functional
 ```
 
 ### Étape 3 : Déploiement Cloud (test → staging → prod)
-Une fois le conteneur local validé, construisez l'image de production (qui utilise `pip install .` pour un poids plus léger) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement.
+Une fois le conteneur local validé, construisez l'image de production (plus légère, sans les dépendances de dev) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement — toutes les commandes (authentification, build/push, déploiement par environnement, architecture multi-projets, gestion d'accès, tout supprimer) : `docs/deploy/gcp-deployment.md`.
 
-Voir `docs/deploy/gcp-deployment.md` pour toutes les commandes (authentification, build/push, déploiement par environnement) ainsi que l'architecture multi-projets, la gestion d'accès par personne, et comment tout supprimer (`make gcp_destroy`).
+*Vérifiez votre endpoint en direct* (`docs/deploy/gcp-deployment.md`) :
 
-*Vérifiez votre endpoint en direct* : `make cloudrun_url CLOUDRUN_ENV=...` récupère l'URL de l'environnement (`docs/deploy/gcp-deployment.md`).
+```bash
+make cloudrun_url CLOUDRUN_ENV=...
+```
