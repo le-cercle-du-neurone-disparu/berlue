@@ -40,12 +40,12 @@ make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
 
 | | |
 |---|---|
+| **Setup** (préparer sa machine) | [`local-setup.md`](docs/setup/local-setup.md) · [`ollama-setup.md`](docs/setup/ollama-setup.md) |
+| **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) |
 | **Pipeline** (comment tourne chaque brique de Berlue) | [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) (orchestrateur) · [`llm.md`](docs/pipeline/llm.md) · [`extraction.md`](docs/pipeline/extraction.md) · [`selfcheck.md`](docs/pipeline/selfcheck.md) · [`rag.md`](docs/pipeline/rag.md) · [`fusion.md`](docs/pipeline/fusion.md) |
 | **Evaluation** (mesurer Berlue face à une baseline) | [`baseline.md`](docs/evaluation/baseline.md) |
-| **Setup** (préparer sa machine) | [`local-setup.md`](docs/setup/local-setup.md) · [`ollama-setup.md`](docs/setup/ollama-setup.md) |
 | **Deploy** (déploiement cloud) | [`gcp-deployment.md`](docs/deploy/gcp-deployment.md) |
 | **Repo** (gestion du dépôt pour l'équipe) | [`github-config.md`](docs/repo/github-config.md) · [`webhook-slack.md`](docs/repo/webhook-slack.md) |
-| **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) |
 | **Datasets** (aperçu rapide) | [`fever.md`](docs/datasets/fever.md) · [`halueval.md`](docs/datasets/halueval.md) · [`truthfulqa.md`](docs/datasets/truthfulqa.md) |
 | **Historique Etude Dataset** | [`historique-etude-data/`](historique-etude-data/) — matériel de travail, pas la doc de référence |
 
