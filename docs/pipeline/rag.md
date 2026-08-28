@@ -7,8 +7,13 @@ d'où il vient), voir `docs/datasets/fever.md`.
 
 ## Prérequis
 
-- Dépendances installées : `make reinstall_package` (installe `faiss-cpu`,
-  `sentence-transformers`, `tqdm` entre autres, via `requirements.txt`)
+Dépendances installées (`faiss-cpu`, `sentence-transformers`, `tqdm` entre
+autres, via `requirements.txt`) :
+
+```bash
+make reinstall_package
+```
+
 - Accès réseau :
   - `download_fever_data_*` télécharge depuis `fever.ai`
   - `build_fever_index` télécharge le modèle d'embedding `all-mpnet-base-v2`
@@ -71,4 +76,4 @@ ce module.
 
 `tests/test_rag.py` contient les tests de contrat pytest de `verify_claim()`,
 marqués `@pytest.mark.functional` (besoin d'un index FAISS + embeddings réels
-via `RagRetriever`) — voir `make test_fever_rag` ci-dessus.
+via `RagRetriever`) — commande plus haut, section « Tester ».

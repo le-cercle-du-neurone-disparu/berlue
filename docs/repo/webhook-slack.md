@@ -7,8 +7,11 @@ automatiquement dans **`#batch-2327-berlue`** (titre de la PR, auteur, bouton ve
 PR).
 
 Côté repo, poser/retirer ce label se fait via `make/github.mk` :
-- `make gh_pr_toreview` → ajoute le label `toreview` sur la PR de la branche courante.
-- `make gh_pr_wip` → le retire (retour en WIP).
+
+```bash
+make gh_pr_toreview  # ajoute le label toreview sur la PR de la branche courante
+make gh_pr_wip       # le retire (retour en WIP)
+```
 
 ## Pourquoi une Slack App classique n'a pas fonctionné
 
@@ -89,7 +92,7 @@ partira pas — le secret sera vide dans ce run. Sans impact pour une équipe in
 - **Régénérer l'URL du webhook** (si compromise) : dans le flux de travail Slack,
   rouvrir le bloc déclencheur → il n'y a pas de rotation directe, il faut recréer le
   flux ou supprimer/recréer le déclencheur, puis mettre à jour le secret GitHub avec
-  la nouvelle URL (`gh secret set SLACK_WEBHOOK_URL -R le-cercle-du-neurone-disparu/berlue`).
+  la nouvelle URL (commande plus haut, section « Secret »).
 - **Ajouter une variable au message** (ex. les reviewers) : ajouter la clé côté
   déclencheur Slack, l'utiliser dans le message, puis ajouter la clé correspondante
   dans le `payload` du step GitHub Actions.

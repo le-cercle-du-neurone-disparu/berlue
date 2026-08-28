@@ -16,7 +16,12 @@ voir `docs/pipeline/llm.md`).
 
 ## Prérequis
 
-- Dépendances installées : `pip install -r requirements.txt -r requirements_dev.txt`
+Dépendances installées :
+
+```bash
+pip install -r requirements.txt -r requirements_dev.txt
+```
+
 - Ollama qui tourne en local avec un modèle disponible — `docs/setup/ollama-setup.md`.
 - Index FAISS du RAG construit — `docs/pipeline/rag.md`.
 
@@ -50,8 +55,13 @@ python -m berlue.pipeline.hurlu_berlu --until fusion --question "Pourquoi la mer
 (`--until` accepte `generate`, `extract`, `samples`, `selfcheck`, `rag`,
 `fusion` — défaut `fusion`, le pipeline complet.)
 
-Changer de modèle Ollama pour toute la chaîne (cf. `ollama list` pour les
-modèles déjà présents) :
+Modèles Ollama déjà présents :
+
+```bash
+ollama list
+```
+
+Changer de modèle pour toute la chaîne :
 
 ```bash
 BERLUE_OLLAMA_MODEL=qwen2.5:0.5b make pipeline_extract
