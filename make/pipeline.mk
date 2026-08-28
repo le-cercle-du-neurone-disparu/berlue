@@ -50,12 +50,12 @@ build_fever_index: ## Construit l'index FAISS du RAG inversé (data/fever/raw/fe
 	fi
 	BERLUE_FEVER_DATA_PATH=data/fever/raw/fever.jsonl python -m berlue.rag.indexer
 
-test_fever_rag: ## Lance le script de test manuel du RAG inversé (berlue/rag/test_rag.py, nécessite build_fever_index au préalable)
+test_fever_rag: ## Lance les tests pytest du RAG inversé (tests/test_rag.py, nécessite build_fever_index au préalable)
 	@if [ ! -f data/fever/faiss/index.faiss ]; then \
 		echo "❌ data/fever/faiss/index.faiss introuvable — lance d'abord make build_fever_index."; \
 		exit 1; \
 	fi
-	python -m berlue.rag.test_rag
+	pytest tests/test_rag.py -m functional
 
 run_api_local: ## Lance l'application FastAPI en local avec rechargement à chaud
 	@echo "🚀 Démarrage de FastAPI en local..."
