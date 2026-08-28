@@ -9,6 +9,8 @@ Swagger.
 
 from pydantic import BaseModel
 
+from berlue.params import BASE_TEMPERATURE, EVAL_DATASETS, OLLAMA_MODEL
+
 # ==============================================================================
 # ENTITES DE BASE
 # ==============================================================================
@@ -19,8 +21,8 @@ class LLMConfig(BaseModel):
     Configuration standard pour un modèle LLM.
     """
 
-    name: str = "llama3"
-    temperature: float = 0.7
+    name: str = OLLAMA_MODEL
+    temperature: float = BASE_TEMPERATURE
 
 
 # ==============================================================================
@@ -84,7 +86,7 @@ class EvaluateInput(BaseModel):
     Payload de requête pour déclencher un pipeline d'évaluation sur un dataset donné.
     """
 
-    dataset_name: str
+    dataset_name: str = EVAL_DATASETS[0]
     sample_size: int = 100
     llm_to_test: LLMConfig = LLMConfig()
 
