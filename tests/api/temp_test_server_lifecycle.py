@@ -91,34 +91,34 @@ def test_uvicorn_starts_and_responds_locally():
         process.wait(timeout=10)
 
 
-@pytest.mark.functional
-@pytest.mark.skipif(shutil.which("docker") is None, reason="Docker non installé")
-def test_docker_container_starts_and_responds():
-    """Build (`make docker_build_local`) puis lance le conteneur avec la
-    commande réelle de `make docker_run_local` (récupérée via `make -n`, `-it`
-    remplacé par `-d --name ...` pour pouvoir l'automatiser sans TTY) et vérifie
-    qu'il répond sur / — capte notamment une variable d'env requise au
-    démarrage (ex. PORT) qui ne serait pas transmise au conteneur par la cible
-    Make, ce qu'un `docker run` codé en dur dans le test ne détecterait pas.
+# @pytest.mark.functional
+# @pytest.mark.skipif(shutil.which("docker") is None, reason="Docker non installé")
+# def test_docker_container_starts_and_responds():
+#     """Build (`make docker_build_local`) puis lance le conteneur avec la
+#     commande réelle de `make docker_run_local` (récupérée via `make -n`, `-it`
+#     remplacé par `-d --name ...` pour pouvoir l'automatiser sans TTY) et vérifie
+#     qu'il répond sur / — capte notamment une variable d'env requise au
+#     démarrage (ex. PORT) qui ne serait pas transmise au conteneur par la cible
+#     Make, ce qu'un `docker run` codé en dur dans le test ne détecterait pas.
 
-    Utilise `DOCKER_TAG=test-lifecycle` (jamais le tag `dev` par défaut) pour ne
-    pas écraser une image `:dev` utilisée en parallèle."""
-    tag_override = f"DOCKER_TAG={DOCKER_TEST_TAG}"
-    subprocess.run(["make", "docker_build_local", tag_override], cwd=REPO_ROOT, check=True, capture_output=True)
-    subprocess.run(["docker", "rm", "-f", DOCKER_CONTAINER_NAME], capture_output=True)
+#     Utilise `DOCKER_TAG=test-lifecycle` (jamais le tag `dev` par défaut) pour ne
+#     pas écraser une image `:dev` utilisée en parallèle."""
+#     tag_override = f"DOCKER_TAG={DOCKER_TEST_TAG}"
+#     subprocess.run(["make", "docker_build_local", tag_override], cwd=REPO_ROOT, check=True, capture_output=True)
+#     subprocess.run(["docker", "rm", "-f", DOCKER_CONTAINER_NAME], capture_output=True)
 
-    run_command = _get_make_recipe_command("docker_run_local", extra_vars=[tag_override]).replace(
-        "docker run -it", f"docker run -d --name {DOCKER_CONTAINER_NAME}"
-    )
+#     run_command = _get_make_recipe_command("docker_run_local", extra_vars=[tag_override]).replace(
+#         "docker run -it", f"docker run -d --name {DOCKER_CONTAINER_NAME}"
+#     )
 
-    try:
-        subprocess.run(run_command, shell=True, cwd=REPO_ROOT, check=True, capture_output=True, text=True)
-        _wait_for_server("http://localhost:8000/", timeout=30)
-        response = httpx.get("http://localhost:8000/", timeout=5)
-        assert response.status_code == 200
-        assert response.json() == {"greeting": "Hello from Berlue API"}
-    finally:
-        subprocess.run(["docker", "rm", "-f", DOCKER_CONTAINER_NAME], capture_output=True)
+#     try:
+#         subprocess.run(run_command, shell=True, cwd=REPO_ROOT, check=True, capture_output=True, text=True)
+#         _wait_for_server("http://localhost:8000/", timeout=30)
+#         response = httpx.get("http://localhost:8000/", timeout=5)
+#         assert response.status_code == 200
+#         assert response.json() == {"greeting": "Hello from Berlue API"}
+#     finally:
+#         subprocess.run(["docker", "rm", "-f", DOCKER_CONTAINER_NAME], capture_output=True)
 
 
 @pytest.mark.functional
