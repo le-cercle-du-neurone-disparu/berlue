@@ -51,32 +51,23 @@ minutes sur le corpus complet.
 make test_fever_rag
 ```
 
-Lance `berlue/rag/test_rag.py` : charge l'index, prend 10 affirmations de
-`data/fever/raw/fever.jsonl`, affiche le verdict RAG et la preuve citée pour
-chacune, puis un résumé (corrects/testés). Échoue avec un message clair si
-l'index n'existe pas encore (`make build_fever_index` d'abord).
-
-## ⚠️ La précision affichée n'est pas un vrai score de qualité
-
-`test_rag.py` teste sur le même fichier que celui indexé par
-`build_fever_index` — chaque affirmation testée est donc quasi son propre
-plus proche voisin dans l'index, d'où une précision proche de 100% quel que
-soit le sous-ensemble. C'est une fuite de données, pas une mesure de
-performance réelle : ce script valide la plomberie (l'index se charge, le
-scoring tourne, le format de sortie est correct), pas la qualité du RAG. Un
-vrai split train/index vs test reste à faire.
+Lance `tests/test_rag.py` (tests pytest marqués `@pytest.mark.functional`) :
+vérifie que `verify_claim()` renvoie un `RagVerdict` valide pour une
+affirmation proche du corpus, et gère sans planter le cas où aucune preuve
+récupérée n'est assez proche (`NOT_ENOUGH_INFO`, `evidence=None`). Échoue avec
+un message clair si l'index n'existe pas encore (`make build_fever_index`
+d'abord).
 
 ## Pas de LLM impliqué
 
 `verify_claim()` n'utilise que `SentenceTransformer` (embeddings) et l'index
 FAISS — aucun appel à Ollama. Le `Claim` passé en entrée est soit construit à
-la main (comme dans `test_rag.py`), soit produit en amont par
+la main (comme dans `tests/test_rag.py`), soit produit en amont par
 `berlue/llm/` + l'extracteur d'affirmations dans le pipeline complet, pas par
 ce module.
 
 ## Tests automatisés
 
-`tests/test_rag.py` contient un test de contrat pytest
-(`test_verify_claim_returns_rag_verdict`), actuellement marqué
-`@pytest.mark.skip` — à reprendre plus tard avec de vrais tests (mocks/fixtures
-propres), pas avec le script manuel du dev en l'état.
+`tests/test_rag.py` contient les tests de contrat pytest de `verify_claim()`,
+marqués `@pytest.mark.functional` (besoin d'un index FAISS + embeddings réels
+via `RagRetriever`) — voir `make test_fever_rag` ci-dessus.
