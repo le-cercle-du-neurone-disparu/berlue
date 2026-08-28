@@ -1,90 +1,145 @@
 """Vérification d'une affirmation par recherche de preuves dans l'index FEVER (RAG inversé)."""
 
 import pickle
+from pathlib import Path
 
 import faiss
 from sentence_transformers import SentenceTransformer
 
 from berlue.core.schemas import Claim, Evidence, RagVerdict, Verdict
-from berlue.params import EMBEDDING_MODEL, VECTOR_DB_PATH
+from berlue.params import RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
+
+# Labels FEVER (str du dataset) -> Verdict (enum du contrat interne berlue.core.schemas).
+# "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
+# garde que SUPPORTS/REFUTES) ; gardé ici pour les retours anticipés de verify_claim.
+FEVER_LABEL_TO_VERDICT = {
+    "SUPPORTS": Verdict.SUPPORTED,
+    "REFUTES": Verdict.CONTRADICTED,
+    "NOT ENOUGH INFO": Verdict.NOT_ENOUGH_INFO,
+}
 
 
 class RagRetriever:
     """Charge l'index FEVER (construit par `indexer.build_index`) et vérifie des affirmations."""
 
-    def __init__(self, index_path: str = VECTOR_DB_PATH):
-        self.index_path = index_path
+    def __init__(self, index_path: str = RAG_VECTOR_DB_PATH, embedding_model: str = RAG_EMBEDDING_MODEL):
+        self.index_path = Path(index_path)
 
-        print("🔍 [RagRetriever] Chargement du modèle de langage...")
-        self.model = SentenceTransformer(EMBEDDING_MODEL)
+        # 1. Charger l'index FAISS
+        self.index = faiss.read_index(str(self.index_path / "index.faiss"))
 
-        print(f"🔍 [RagRetriever] Chargement de l'index FAISS depuis {index_path}...")
-        self.index = faiss.read_index(index_path)
+        # 2. Charger les métadonnées
+        with open(self.index_path / "metadata.pkl", "rb") as f:
+            self.metadata = pickle.load(f)
 
-        print("🔍 [RagRetriever] Chargement des métadonnées...")
-        with open(index_path + ".meta", "rb") as f_meta:
-            self.metadata = pickle.load(f_meta)
+        # 3. Charger le modèle d'embedding
+        self.model = SentenceTransformer(embedding_model)
 
-        print("✅ [RagRetriever] Prêt !")
+        print(f"✅ Index chargé : {self.index.ntotal} vecteurs")
+        print(f"✅ Métadonnées : {len(self.metadata['claims'])} exemples")
 
-    def retrieve(self, claim: Claim, top_k: int = 5) -> list[Evidence]:
+    def retrieve(self, claim: Claim, top_k: int = 5) -> list[dict]:
         """Recherche les `top_k` passages les plus proches de l'affirmation."""
+        # ## Renvoie des dicts bruts (text/label/distance/evidence_url), pas des Evidence :
+        # ## verify_claim (seul appelant, cf. grep) a besoin du label et de la distance de
+        # ## chaque candidat pour son vote majoritaire, des champs que Evidence (le contrat de
+        # ## core.schemas) n'a pas. Seule la preuve finalement citée devient une vraie Evidence.
+        # 1. Générer l'embedding de l'affirmation
+        claim_embedding = self.model.encode(claim.text, convert_to_numpy=True).reshape(1, -1)
 
-        # 1. On transforme le texte du Claim en vecteur mathématique (1, dimension)
-        claim_vector = self.model.encode([claim.text])
+        # 2. Recherche dans l'index
+        distances, indices = self.index.search(claim_embedding, top_k)
 
-        # 2. FAISS cherche les voisins les plus proches
-        # distances : la distance L2 (plus c'est proche de 0, plus ça se ressemble)
-        # indices : la position dans la liste de métadonnées
-        distances, indices = self.index.search(claim_vector, top_k)
-
+        # 3. Construire les résultats
         evidences = []
-        for dist, idx in zip(distances[0], indices[0], strict=True):
-            if idx == -1:  # FAISS renvoie -1 s'il n'y a pas assez de résultats
-                continue
-
-            doc_meta = self.metadata[idx]
-
-            # On convertit la distance L2 en un "score de similarité"
-            score = 1.0 / (1.0 + float(dist))
-
-            evidence = Evidence(
-                text=doc_meta["claim"],
-                source=f"FEVER_ID: {doc_meta['id']}",  # On utilise 'source' pour stocker l'origine
-                similarity_score=score,
-            )
-
-            evidence._fever_label = doc_meta["label"]
-
-            evidences.append(evidence)
-
+        for i in range(len(distances[0])):
+            dist = distances[0][i]
+            idx = indices[0][i]
+            if idx < len(self.metadata["claims"]):
+                evidences.append(
+                    {
+                        "text": self.metadata["claims"][idx],
+                        "label": self.metadata["labels"][idx],
+                        "distance": float(dist),
+                        "evidence_url": self.metadata["evidence_urls"][idx],
+                    }
+                )
         return evidences
 
     def verify_claim(self, claim: Claim) -> RagVerdict:
-        """Vérifie une affirmation et retourne un verdict avec un score de confiance."""
+        """
+        Vérifie une affirmation et retourne un verdict avec un score de confiance.
 
+        Stratégie de scoring :
+        - On récupère les 5 preuves les plus proches.
+        - On compte le nombre de SUPPORTS vs REFUTES parmi les plus proches.
+        - Score de confiance = proportion du label majoritaire / top_k.
+        """
         evidences = self.retrieve(claim, top_k=5)
 
+        # ## claim_id identifie l'affirmation évaluée pour l'appelant (fusion.py) ; evidence=None
+        # ## car rien n'a été trouvé, il n'y a donc aucune preuve à citer.
         if not evidences:
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+        threshold = 0.2
+        relevant = [ev for ev in evidences if ev["distance"] < threshold]
 
-        best_evidence = evidences[0]
-
-        # LOGIQUE DU RAG INVERSÉ : on mappe les labels FEVER sur le strEnum 'Verdict'
-        if best_evidence.similarity_score > 0.8:
-            fever_label = str(best_evidence._fever_label).upper()
-
-            if fever_label == "SUPPORTS":
-                final_verdict = Verdict.SUPPORTED
-            elif fever_label == "REFUTES":
-                final_verdict = Verdict.CONTRADICTED
-            else:
-                final_verdict = Verdict.NOT_ENOUGH_INFO
-
-            confidence = best_evidence.similarity_score
+        # Si plus de preuves après filtrage, on continue avec celles-ci
+        if relevant:
+            evidences = relevant
         else:
-            # Si le texte est trop éloigné, on n'a pas assez d'infos pour juger
-            final_verdict = Verdict.NOT_ENOUGH_INFO
-            confidence = 0.0
+            # Si toutes les preuves sont trop éloignées, on garde la plus proche
+            # ou on retourne NOT ENOUGH INFO
+            # ## evidences est une liste de dicts (retrieve() les construit ainsi, cf.
+            # ## plus haut), pas d'objets à attributs : x["distance"], pas x.distance.
+            closest = min(evidences, key=lambda x: x["distance"])
+            if closest["distance"] < 1.0:  # seuil large de secours
+                evidences = [closest]
+            else:
+                # ## Même chose ici : evidence=None plutôt que de citer une preuve trop éloignée
+                # ## pour être pertinente.
+                return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
 
-        return RagVerdict(claim_id=claim.id, verdict=final_verdict, confidence=confidence, evidence=best_evidence)
+        # Compter les labels
+        label_counts = {"SUPPORTS": 0, "REFUTES": 0, "NOT ENOUGH INFO": 0}
+        for ev in evidences:
+            label_counts[ev["label"]] += 1
+
+        # Déterminer le verdict majoritaire
+        majority_label = max(label_counts, key=label_counts.get)
+
+        # Score de confiance : proportion du label majoritaire
+        confidence = label_counts[majority_label] / len(evidences)
+
+        # Ajustement : si les preuves sont très éloignées, on baisse la confiance
+        # (les distances sont en L2, normalisées par la dimension)
+        avg_distance = sum(ev["distance"] for ev in evidences) / len(evidences)
+        # Plus la distance est grande, plus on réduit la confiance
+        distance_penalty = min(1.0, 1.0 / (1.0 + avg_distance / 10))
+        confidence = confidence * distance_penalty
+
+        # ## RagVerdict.evidence est singulier dans le contrat (cf. core/schemas.py) : on ne
+        # ## cite que la preuve la plus proche parmi celles retenues.
+        closest = min(evidences, key=lambda x: x["distance"])
+        try:
+            source = closest["evidence_url"][0][0][2]
+        except IndexError, TypeError:
+            source = "FEVER"
+        evidence = Evidence(text=closest["text"], source=source, similarity_score=1.0 / (1.0 + closest["distance"]))
+
+        # ## FEVER_LABEL_TO_VERDICT convertit le label FEVER (str) en Verdict (enum) attendu
+        # ## par fusion.py — les deux vocabulaires ne partagent pas les mêmes valeurs.
+        return RagVerdict(
+            claim_id=claim.id,
+            verdict=FEVER_LABEL_TO_VERDICT[majority_label],
+            confidence=confidence,
+            evidence=evidence,
+        )
+
+    def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
+        """Vérifie une liste d'affirmations, une par une."""
+        verdicts = []
+        for i, claim in enumerate(claims, 1):
+            print(f"   - Vérification RAG de l'affirmation {i}/{len(claims)}...")
+            verdicts.append(self.verify_claim(claim))
+        return verdicts

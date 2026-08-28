@@ -9,25 +9,31 @@ from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
 class OllamaClient:
     """Client minimal pour générer une réponse depuis le modèle local via le SDK Python officiel."""
 
-    def __init__(self, host: str = OLLAMA_HOST, model: str = OLLAMA_MODEL, timeout: float = 120.0):
+    def __init__(
+        self,
+        host: str = OLLAMA_HOST,
+        model: str = OLLAMA_MODEL,
+        timeout: float = 120.0,
+        temperature: float = BASE_TEMPERATURE,
+    ):
         self.host = host
         self.model = model
-        # Instanciation du client officiel avec gestion du timeout
+        self.temperature = temperature
         self.client = Client(host=self.host, timeout=timeout)
 
     def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE) -> str:
         """Génère une réponse pour `prompt` à la température donnée."""
+
+        final_temp = temperature if temperature is not None else self.temperature
+
         try:
-            # Appel natif via la librairie officielle
-            response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": temperature})
+            response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": final_temp})
 
         except TimeoutException as e:
-            # On attrape proprement le timeout du client HTTP sous-jacent
             print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
             raise TimeoutError("Le serveur Ollama a expiré (Timeout).") from e
 
         except ResponseError as e:
-            # On attrape l'exception native d'Ollama (ex: le modèle n'existe pas)
             print(f"❌ Erreur API Ollama : {e.error}")
             raise RuntimeError(f"Erreur interne Ollama : {e.error}") from e
 
@@ -35,10 +41,8 @@ class OllamaClient:
             print(f"❌ Erreur lors de la communication avec Ollama : {e}")
             raise RuntimeError(f"Échec de la communication Ollama : {e}") from e
 
-        # Extraction de la réponse (sera None si la clé vaut None ou n'existe pas)
         resp_text = response.get("response")
 
-        # Vérification stricte : si c'est None ou une chaîne vide ("")
         if not resp_text:
             raise RuntimeError(f"Ollama a généré une réponse vide ou nulle (modèle: {self.model}).")
 

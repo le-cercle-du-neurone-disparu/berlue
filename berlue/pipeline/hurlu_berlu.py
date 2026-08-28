@@ -1,7 +1,7 @@
 import textwrap
 import uuid
 
-from berlue.core.schemas import Claim, FusedVerdict, PipelineResult
+from berlue.core.schemas import Claim, FusedVerdict, PipelineResult, Verdict
 from berlue.llm.client import OllamaClient
 from berlue.rag.retriever import RagRetriever
 from berlue.selfcheck.sampler import sample_responses
@@ -11,8 +11,18 @@ from berlue.selfcheck.scorer import compute_divergence
 class HurluBerlu:
     """Pipeline principal sans état (Stateless) pour la vérification RAG."""
 
-    def __init__(self, llm_client: OllamaClient | None = None, retriever: RagRetriever | None = None):
-        self.client = llm_client or OllamaClient()
+    def __init__(
+        self,
+        llm_client: OllamaClient | None = None,
+        llm_extract: OllamaClient | None = None,
+        retriever: RagRetriever | None = None,
+    ):
+        # Le LLM principal (celui qui répond à la question et génère les samples)
+        self.llm_client = llm_client
+
+        # Le LLM outil (celui qui extrait les affirmations)
+        self.llm_extract = llm_extract or OllamaClient()
+
         self.retriever = retriever or RagRetriever()
 
     def _do_llm_extraction(self, answer_text: str) -> list[Claim]:
@@ -39,7 +49,7 @@ class HurluBerlu:
             Affirmations :
         """)
 
-        raw_response = self.client.generate(prompt=prompt, temperature=0.0)
+        raw_response = self.llm_client.generate(prompt=prompt, temperature=0.0)
 
         claims = []
         for line in raw_response.split("\n"):
@@ -59,7 +69,7 @@ class HurluBerlu:
 
         full_prompt = f"{question}\n\n[Instruction : {length_constraint}]"
 
-        answer = self.client.generate(prompt=full_prompt)
+        answer = self.llm_client.generate(prompt=full_prompt)
 
         return PipelineResult(question=question, raw_answer=answer)
 
@@ -73,7 +83,7 @@ class HurluBerlu:
     # ÉTAPE 3
     def generate_samples(self, result: PipelineResult) -> PipelineResult:
 
-        result.samples = sample_responses(question=result.question, client=self.client)
+        result.samples = sample_responses(question=result.question, client=self.llm_client)
         return result
 
     # ÉTAPE 4

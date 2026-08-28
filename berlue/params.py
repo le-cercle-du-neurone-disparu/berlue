@@ -44,17 +44,16 @@ MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000"
 
 # --- LLM (Ollama) ---
 OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
-# OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "qwen2.5:0.5b")
-OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "llama3.2:3b")  # "qwen2.5:0.5b"
 SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "2"))
 SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.7"))
 SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- Embeddings + RAG inversé ---
-EMBEDDING_MODEL = os.environ.get("BERLUE_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
+RAG_EMBEDDING_MODEL = os.environ.get("BERLUE_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 VECTOR_DB_BACKEND = os.environ.get("BERLUE_VECTOR_DB_BACKEND", "faiss")
-VECTOR_DB_PATH = os.environ.get("BERLUE_VECTOR_DB_PATH", "./data/index/fever_faiss")
+RAG_VECTOR_DB_PATH = os.environ.get("BERLUE_VECTOR_DB_PATH", "./data/index/fever_faiss")
 
 # --- NLI léger ---
 NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
