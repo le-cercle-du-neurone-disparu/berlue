@@ -9,7 +9,7 @@ directement pour lister les modèles installés (`get_available_llms`), hors
 
 ## Prérequis
 
-Ollama qui tourne en local avec un modèle disponible — `docs/setup/ollama-setup.md` :
+Ollama qui tourne en local avec un modèle disponible — [`ollama-setup.md`](../setup/ollama-setup.md) :
 
 ```bash
 make ollama_setup
@@ -28,8 +28,8 @@ codée dans le script — le script ne lit pas `sys.argv`, `PROMPT`/`K` sur
 `make llm_generate`/`llm_generate_many` n'ont donc aucun effet.
 
 Changer de modèle pour de vrai : `BERLUE_OLLAMA_MODEL` n'est lu que par
-`OllamaClient()` construit depuis du code (cf. `docs/pipeline/hurlu_berlu.md`,
-`docs/pipeline/selfcheck.md`), pas par ce script de smoke-test qui
+`OllamaClient()` construit depuis du code (cf. [`hurlu_berlu.md`](hurlu_berlu.md),
+[`selfcheck.md`](selfcheck.md)), pas par ce script de smoke-test qui
 auto-détecte son propre modèle.
 
 ## Lancer les tests liés

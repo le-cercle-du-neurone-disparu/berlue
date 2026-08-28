@@ -2,7 +2,7 @@
 
 Corpus de vérification de faits (Fact Extraction and VERification, Univ.
 Cambridge) — base de preuves du RAG inversé (`berlue/rag/`). Partie
-opérationnelle (télécharger, indexer, tester) : `docs/pipeline/rag.md`.
+opérationnelle (télécharger, indexer, tester) : [`rag.md`](../pipeline/rag.md).
 
 ## Ce que le projet en utilise
 
@@ -22,6 +22,7 @@ aucune preuve indexée n'est assez proche de l'affirmation testée.
 
 Exploration complète du dataset (structure détaillée, distribution des
 labels, statistiques, prétraitement, expérimentation baseline) :
-`historique-etude-data/fever_explication.md` et son notebook jumeau
-`historique-etude-data/fever_explication.ipynb` — matériel d'étude, pas la
-doc de référence de l'usage dans le repo.
+[`fever_explication.md`](../../historique-etude-data/fever_explication.md)
+et son notebook jumeau
+[`fever_explication.ipynb`](../../historique-etude-data/fever_explication.ipynb)
+— matériel d'étude, pas la doc de référence de l'usage dans le repo.

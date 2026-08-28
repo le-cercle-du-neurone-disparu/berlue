@@ -2,8 +2,8 @@
 
 Vérifie une affirmation en cherchant les claims FEVER les plus proches
 (embeddings + FAISS) et en votant sur leurs labels — voir `berlue/rag/` et
-`docs/dev/structure.md`. Pour le dataset FEVER lui-même (format, labels,
-d'où il vient), voir `docs/datasets/fever.md`.
+[`structure.md`](../dev/structure.md). Pour le dataset FEVER lui-même
+(format, labels, d'où il vient), voir [`fever.md`](../datasets/fever.md).
 
 ## Prérequis
 

@@ -30,7 +30,7 @@ API HTTP (FastAPI).
 ## `berlue/pipeline/`
 - **`hurlu_berlu.py`** : `HurluBerlu`, l'orchestrateur — chaîne génération,
   extraction, SelfCheckGPT, RAG et fusion en un pipeline complet (voir
-  `docs/pipeline/hurlu_berlu.md`).
+  [`hurlu_berlu.md`](../pipeline/hurlu_berlu.md)).
 
 ## `berlue/rag/`
 RAG inversé sur le corpus FEVER (vérifie une affirmation en cherchant des

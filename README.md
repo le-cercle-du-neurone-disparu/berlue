@@ -17,11 +17,11 @@ voies indépendantes avant de fusionner leur verdict.
    (`supported` / `contradicted` / `not_enough_info`) par affirmation.
 
 L'orchestrateur de ce pipeline est `berlue/pipeline/hurlu_berlu.py` — voir
-`docs/pipeline/hurlu_berlu.md` pour le lancer étape par étape.
+[`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) pour le lancer étape par étape.
 
 Une baseline plus simple (`berlue/nli_baseline/`, TF-IDF + régression
 logistique, sans RAG) sert de point de comparaison en évaluation offline —
-voir `docs/evaluation/baseline.md`.
+voir [`baseline.md`](docs/evaluation/baseline.md).
 
 ## Démarrage rapide
 
@@ -30,7 +30,7 @@ make local_setup   # environnement virtuel (pyenv) + dépendances
 make ollama_setup  # installe et démarre Ollama en local
 ```
 
-Puis, étape par étape (voir `docs/pipeline/hurlu_berlu.md` pour le détail) :
+Puis, étape par étape (voir [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) pour le détail) :
 
 ```bash
 make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
@@ -75,9 +75,9 @@ make test_functional
 ```
 
 ### Étape 3 : Déploiement Cloud (test → staging → prod)
-Une fois le conteneur local validé, construisez l'image de production (plus légère, sans les dépendances de dev) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement — toutes les commandes (authentification, build/push, déploiement par environnement, architecture multi-projets, gestion d'accès, tout supprimer) : `docs/deploy/gcp-deployment.md`.
+Une fois le conteneur local validé, construisez l'image de production (plus légère, sans les dépendances de dev) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement — toutes les commandes (authentification, build/push, déploiement par environnement, architecture multi-projets, gestion d'accès, tout supprimer) : [`gcp-deployment.md`](docs/deploy/gcp-deployment.md).
 
-*Vérifiez votre endpoint en direct* (`docs/deploy/gcp-deployment.md`) :
+*Vérifiez votre endpoint en direct* ([`gcp-deployment.md`](docs/deploy/gcp-deployment.md)) :
 
 ```bash
 make cloudrun_url CLOUDRUN_ENV=...

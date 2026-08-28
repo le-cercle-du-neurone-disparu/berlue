@@ -4,15 +4,15 @@ Chaîne les briques du pipeline pour une question donnée — voir
 `berlue/pipeline/hurlu_berlu.py` (classe `HurluBerlu`). Chaque étape a sa
 propre doc pour le détail :
 
-1. génération de la réponse — `docs/pipeline/llm.md`
-2. extraction des affirmations — `docs/pipeline/extraction.md`
-3. échantillonnage + score SelfCheckGPT — `docs/pipeline/selfcheck.md`
-4. vérification RAG — `docs/pipeline/rag.md`
-5. fusion des deux verdicts — `docs/pipeline/fusion.md`
+1. génération de la réponse — [`llm.md`](llm.md)
+2. extraction des affirmations — [`extraction.md`](extraction.md)
+3. échantillonnage + score SelfCheckGPT — [`selfcheck.md`](selfcheck.md)
+4. vérification RAG — [`rag.md`](rag.md)
+5. fusion des deux verdicts — [`fusion.md`](fusion.md)
 
 `HurluBerlu(llm_client=..., llm_extract=..., retriever=...)` accepte les
 trois outils en injection (chacun a un défaut si omis, sauf `llm_client` —
-voir `docs/pipeline/llm.md`).
+voir [`llm.md`](llm.md)).
 
 ## Prérequis
 
@@ -22,8 +22,8 @@ Dépendances installées :
 pip install -r requirements.txt -r requirements_dev.txt
 ```
 
-- Ollama qui tourne en local avec un modèle disponible — `docs/setup/ollama-setup.md`.
-- Index FAISS du RAG construit — `docs/pipeline/rag.md`.
+- Ollama qui tourne en local avec un modèle disponible — [`ollama-setup.md`](../setup/ollama-setup.md).
+- Index FAISS du RAG construit — [`rag.md`](rag.md).
 
 ## Lancer le pipeline, étape par étape
 
