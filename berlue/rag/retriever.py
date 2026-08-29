@@ -1,13 +1,15 @@
 """Vérification d'une affirmation par recherche de preuves dans l'index FEVER (RAG inversé)."""
 
+import json
 import pickle
+import re
 from pathlib import Path
 
 import faiss
 from sentence_transformers import SentenceTransformer
 
 from berlue.core.schemas import Claim, Evidence, RagVerdict, Verdict
-from berlue.params import RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
+from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
 
 # Labels FEVER (str du dataset) -> Verdict (enum du contrat interne berlue.core.schemas).
 # "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
@@ -20,19 +22,23 @@ FEVER_LABEL_TO_VERDICT = {
 
 
 class RagRetriever:
-    """Charge l'index FEVER (construit par `indexer.build_index`) et vérifie des affirmations."""
-
-    def __init__(self, index_path: str = RAG_VECTOR_DB_PATH, embedding_model: str = RAG_EMBEDDING_MODEL):
+    def __init__(
+        self,
+        llm_client,  # Injection de ton client Ollama
+        index_path: str = RAG_VECTOR_DB_PATH,
+        embedding_model: str = RAG_EMBEDDING_MODEL,
+    ):
+        self.llm_client = llm_client
         self.index_path = Path(index_path)
 
-        # 1. Charger l'index FAISS
+        # 1. Chargement de l'index FAISS
         self.index = faiss.read_index(str(self.index_path / "index.faiss"))
 
-        # 2. Charger les métadonnées
+        # 2. Chargement des métadonnées
         with open(self.index_path / "metadata.pkl", "rb") as f:
             self.metadata = pickle.load(f)
 
-        # 3. Charger le modèle d'embedding
+        # 3. Chargement du modèle d'embedding
         self.model = SentenceTransformer(embedding_model)
 
         print(f"✅ Index chargé : {self.index.ntotal} vecteurs")
@@ -44,13 +50,13 @@ class RagRetriever:
         # ## verify_claim (seul appelant, cf. grep) a besoin du label et de la distance de
         # ## chaque candidat pour son vote majoritaire, des champs que Evidence (le contrat de
         # ## core.schemas) n'a pas. Seule la preuve finalement citée devient une vraie Evidence.
-        # 1. Générer l'embedding de l'affirmation
+        # 1. Génération l'embedding de l'affirmation
         claim_embedding = self.model.encode(claim.text, convert_to_numpy=True).reshape(1, -1)
 
         # 2. Recherche dans l'index
         distances, indices = self.index.search(claim_embedding, top_k)
 
-        # 3. Construire les résultats
+        # 3. Construction les résultats
         evidences = []
         for i in range(len(distances[0])):
             dist = distances[0][i]
@@ -67,74 +73,63 @@ class RagRetriever:
         return evidences
 
     def verify_claim(self, claim: Claim) -> RagVerdict:
-        """
-        Vérifie une affirmation et retourne un verdict avec un score de confiance.
+        # 1. Récupération des preuves (le contexte)
+        evidences = self.retrieve(claim, top_k=3)  # Top 3 est souvent suffisant pour un LLM
 
-        Stratégie de scoring :
-        - On récupère les 5 preuves les plus proches.
-        - On compte le nombre de SUPPORTS vs REFUTES parmi les plus proches.
-        - Score de confiance = proportion du label majoritaire / top_k.
-        """
-        evidences = self.retrieve(claim, top_k=5)
-
-        # ## claim_id identifie l'affirmation évaluée pour l'appelant (fusion.py) ; evidence=None
-        # ## car rien n'a été trouvé, il n'y a donc aucune preuve à citer.
         if not evidences:
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
-        threshold = 0.2
-        relevant = [ev for ev in evidences if ev["distance"] < threshold]
 
-        # Si plus de preuves après filtrage, on continue avec celles-ci
-        if relevant:
-            evidences = relevant
-        else:
-            # Si toutes les preuves sont trop éloignées, on garde la plus proche
-            # ou on retourne NOT ENOUGH INFO
-            # ## evidences est une liste de dicts (retrieve() les construit ainsi, cf.
-            # ## plus haut), pas d'objets à attributs : x["distance"], pas x.distance.
-            closest = min(evidences, key=lambda x: x["distance"])
-            if closest["distance"] < 1.0:  # seuil large de secours
-                evidences = [closest]
-            else:
-                # ## Même chose ici : evidence=None plutôt que de citer une preuve trop éloignée
-                # ## pour être pertinente.
-                return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+        # 2. Préparation du contexte (on ajoute un index pour que le LLM puisse citer facilement)
+        context_texts = "\n".join([f"[Preuve {i}] {ev['text']}" for i, ev in enumerate(evidences)])
 
-        # Compter les labels
-        label_counts = {"SUPPORTS": 0, "REFUTES": 0, "NOT ENOUGH INFO": 0}
-        for ev in evidences:
-            label_counts[ev["label"]] += 1
+        # 3. Construction du prompt blindé anti-hallucination
+        prompt = RAG_SYSTEM_PROMPT.format(claim_text=claim.text, context_texts=context_texts)
 
-        # Déterminer le verdict majoritaire
-        majority_label = max(label_counts, key=label_counts.get)
-
-        # Score de confiance : proportion du label majoritaire
-        confidence = label_counts[majority_label] / len(evidences)
-
-        # Ajustement : si les preuves sont très éloignées, on baisse la confiance
-        # (les distances sont en L2, normalisées par la dimension)
-        avg_distance = sum(ev["distance"] for ev in evidences) / len(evidences)
-        # Plus la distance est grande, plus on réduit la confiance
-        distance_penalty = min(1.0, 1.0 / (1.0 + avg_distance / 10))
-        confidence = confidence * distance_penalty
-
-        # ## RagVerdict.evidence est singulier dans le contrat (cf. core/schemas.py) : on ne
-        # ## cite que la preuve la plus proche parmi celles retenues.
-        closest = min(evidences, key=lambda x: x["distance"])
+        # 4. Appel au LLM (via Ollama)
         try:
-            source = closest["evidence_url"][0][0][2]
-        except IndexError, TypeError:
-            source = "FEVER"
-        evidence = Evidence(text=closest["text"], source=source, similarity_score=1.0 / (1.0 + closest["distance"]))
+            response_text = self.llm_client.generate(prompt)
+            match = re.search(r"\{.*\}", response_text, re.DOTALL)
+            clean_json_str = match.group(0) if match else "{}"
+            llm_result = json.loads(clean_json_str)
 
-        # ## FEVER_LABEL_TO_VERDICT convertit le label FEVER (str) en Verdict (enum) attendu
-        # ## par fusion.py — les deux vocabulaires ne partagent pas les mêmes valeurs.
-        return RagVerdict(
-            claim_id=claim.id,
-            verdict=FEVER_LABEL_TO_VERDICT[majority_label],
-            confidence=confidence,
-            evidence=evidence,
-        )
+            verdict_str = llm_result.get("verdict", "NOT ENOUGH INFO")
+            confidence = float(llm_result.get("confidence", 0.0))
+            used_idx = llm_result.get("used_evidence_index")
+
+            # Si le LLM n'a pas assez d'infos, on ne renvoie AUCUNE preuve
+            if (
+                verdict_str == "NOT ENOUGH INFO"
+                or used_idx is None
+                or not isinstance(used_idx, int)
+                or used_idx >= len(evidences)
+            ):
+                final_evidence = None
+                verdict_str = "NOT ENOUGH INFO"
+                confidence = 0.0
+            else:
+                # On récupère LA preuve spécifique que le LLM a choisi
+                chosen_ev = evidences[used_idx]
+                final_evidence = Evidence(
+                    text=chosen_ev["text"],
+                    source=chosen_ev["evidence_url"][0][0][2] if chosen_ev.get("evidence_url") else "FEVER",
+                    similarity_score=confidence,
+                )
+
+            return RagVerdict(
+                claim_id=claim.id,
+                verdict=FEVER_LABEL_TO_VERDICT.get(verdict_str, Verdict.NOT_ENOUGH_INFO),
+                confidence=confidence,
+                evidence=final_evidence,
+            )
+
+        except json.JSONDecodeError as e:
+            # Si le JSON est trouvé mais mal formé (ex: virgule manquante)
+            print(f"⚠️ Erreur de parsing JSON sur l'affirmation {claim.id} : {e}")
+            print(f"Texte problématique : {clean_json_str}")
+            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+        except Exception as e:
+            print(f"⚠️ Erreur inattendue sur l'affirmation {claim.id} : {e}")
+            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
 
     def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
         """Vérifie une liste d'affirmations, une par une."""

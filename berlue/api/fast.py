@@ -9,7 +9,7 @@ from berlue.api.schemas import (
     PredictOutput,
 )
 from berlue.llm.client import OllamaClient
-from berlue.params import EXTRACT_MODEL, USE_MOCK
+from berlue.params import EXTRACT_MODEL, RAG_MODEL, USE_MOCK
 
 
 # ==========================================
@@ -27,8 +27,8 @@ async def lifespan(app: FastAPI):
         from berlue.api.service import BerlueService
         from berlue.rag.retriever import RagRetriever
 
-        app.state.retriever = RagRetriever()
-        app.state.extractor = OllamaClient(model=EXTRACT_MODEL)
+        app.state.retriever = RagRetriever(llm_client=OllamaClient(RAG_MODEL))
+        app.state.extractor = OllamaClient(model=EXTRACT_MODEL, temperature=0.0)
 
         app.state.service = BerlueService()
 
