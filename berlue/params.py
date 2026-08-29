@@ -1,5 +1,9 @@
 import os
 
+from berlue.prompts import EXTRACT_SYSTEM_PROMPT as _EXTRACT_SYSTEM_PROMPT
+from berlue.prompts import OLLAMA_SYSTEM_PROMPT as _OLLAMA_SYSTEM_PROMPT
+from berlue.prompts import RAG_SYSTEM_PROMPT as _RAG_SYSTEM_PROMPT
+
 ##################  VARIABLES (paramétrables via .env : diffèrent par personne/environnement)  ##################
 DATA_SIZE = os.environ.get("DATA_SIZE")
 
@@ -44,19 +48,25 @@ MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000"
 
 # --- LLM (Ollama) ---
 OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "qwen2.5:0.5b")
-SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
-SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.7"))
-SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
+OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "llama3.2:3b")
+OLLAMA_SYSTEM_PROMPT = _OLLAMA_SYSTEM_PROMPT
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- EXTRACTION ---
-EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "qwen2.5:0.5b")
+EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "llama3.2:3b")
+EXTRACT_SYSTEM_PROMPT = _EXTRACT_SYSTEM_PROMPT
+
+# --- SELFCHECK ---
+SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
+SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.7"))
+SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
 
 # --- Embeddings + RAG inversé ---
 RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
 RAG_INDEX_DIR = "data/fever/faiss"
 RAG_VECTOR_DB_PATH = "data/fever/faiss"
+RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.2:3b")  # phi3.5:latest
+RAG_SYSTEM_PROMPT = _RAG_SYSTEM_PROMPT
 
 # --- NLI léger ---
 NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")

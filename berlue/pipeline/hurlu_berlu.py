@@ -1,8 +1,8 @@
 from berlue.core.schemas import PipelineResult, Verdict
-from berlue.extraction import do_extraction
-from berlue.fusion import do_fusion
 from berlue.llm.client import OllamaClient
-from berlue.params import OLLAMA_MODEL
+from berlue.params import OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
+from berlue.pipeline.extraction import do_extraction
+from berlue.pipeline.fusion import do_fusion
 from berlue.rag.retriever import RagRetriever
 from berlue.selfcheck.sampler import sample_responses
 from berlue.selfcheck.scorer import compute_divergence
@@ -23,17 +23,20 @@ class HurluBerlu:
         # Le LLM outil (celui qui extrait les affirmations)
         self.llm_extract = llm_extract or llm_client
 
-        self.retriever = retriever or RagRetriever()
+        self.retriever = retriever
 
     # ÉTAPE 1
     def generate_response(
-        self, question: str, length_constraint: str = "Réponds de manière claire et concise, en 3 à 5 phrases maximum."
+        self,
+        question: str,
     ) -> PipelineResult:
-        """Génère la réponse de base avec une limite de longueur."""
+        """Génère la réponse de base à partir de la question de l'utilisateur."""
 
-        full_prompt = f"{question}\n\n[Instruction : {length_constraint}]"
+        # Formatage du prompt avec la question
+        prompt = OLLAMA_SYSTEM_PROMPT.format(question=question)
 
-        answer = self.llm_client.generate(prompt=full_prompt)
+        # Appel au LLM
+        answer = self.llm_client.generate(prompt=prompt)
 
         return PipelineResult(question=question, raw_answer=answer)
 
@@ -102,8 +105,14 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default=OLLAMA_MODEL, help="Le modèle LLM à utiliser")
     args = parser.parse_args()
 
+    parser.add_argument("--rag", type=str, default=RAG_MODEL, help="Le modèle LLM à utiliser")
+    args = parser.parse_args()
+
     print("🚀 Démarrage du pipeline HurluBerlu...")
-    pipeline = HurluBerlu(llm_client=OllamaClient(model=args.model))
+    pipeline = HurluBerlu(
+        llm_client=OllamaClient(model=args.model),
+        retriever=RagRetriever(llm_client=OllamaClient(model=args.rag, temperature=0.0)),
+    )
     print(f"\n❓ Question posée : {args.question}")
 
     # --- Étape 1 ---
