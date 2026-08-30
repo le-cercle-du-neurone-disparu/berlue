@@ -101,6 +101,13 @@ level_windows: dict[int, dict[str, float]] = {}
 
 def worker(worker_id: int):
     rng = random.Random(worker_id)
+    # Session dédiée au thread, réutilisée sur tous ses appels — requests.post()
+    # nu ouvre une connexion (+ TLS neuf en HTTPS) à chaque appel, invisible en
+    # local (localhost, pas de TLS) mais significatif contre une URL distante :
+    # observé en conditions réelles sur berlue-llm, latence à 4 threads très
+    # au-dessus du solo alors que 4 << NUM_PARALLEL (aucune contention GPU
+    # attendue à ce niveau).
+    session = requests.Session()
     while not stop_event.is_set():
         question = rng.choice(questions)
         prompt = f"{question}\n\n[Instruction: {INSTRUCTION}]"
@@ -110,7 +117,7 @@ def worker(worker_id: int):
             active_requests["n"] += 1
         start = time.monotonic()
         try:
-            resp = requests.post(
+            resp = session.post(
                 f"{OLLAMA_HOST}/api/generate",
                 json={"model": MODEL, "prompt": prompt, "stream": False, "options": {"num_predict": NUM_PREDICT}},
                 headers=HEADERS,
