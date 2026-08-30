@@ -117,6 +117,13 @@ make evaluate_model_generated_all DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8
 # surtout sur la première tranche d'un découpage — sur un seul appel qui
 # couvre tout le scope, le chargement n'est de toute façon payé qu'une fois.
 make evaluate_model_generated DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b START=0 END=50 WARMUP=true
+
+# CONCURRENCY : questions traitées en parallèle au sein de chaque étape
+# (génération, Berlue, juge), 1 par défaut (séquentiel) — à aligner sur le
+# OLLAMA_NUM_PARALLEL réel du serveur ciblé, cf.
+# docs/gcp/ollama-gpu-parallelism.md et execution-benchmark.md pour la
+# méthode et des chiffres mesurés.
+make evaluate_model_generated DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b CONCURRENCY=32
 ```
 
 **Baseline NLI** (classifie les réponses déjà générées par Berlue
