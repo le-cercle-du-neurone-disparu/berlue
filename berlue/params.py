@@ -35,6 +35,53 @@ assert MODEL_TARGET in ("local", "gcs", "mlflow"), (
     f"❌ MODEL_TARGET invalide : {MODEL_TARGET!r} (doit être local, gcs ou mlflow)"
 )
 
+# EVAL_RUN_TARGET : où le service d'évaluation s'exécute (local ou GCP, ex.
+# Cloud Run Job) — indépendant d'EVAL_STORE_TARGET (où sont stockés les
+# résultats), sauf contrainte dans un seul sens ci-dessous.
+EVAL_RUN_TARGET = os.environ.get("BERLUE_EVAL_RUN_TARGET", "local")
+assert EVAL_RUN_TARGET in ("local", "gcp"), (
+    f"❌ EVAL_RUN_TARGET invalide : {EVAL_RUN_TARGET!r} (doit être local ou gcp)"
+)
+
+# EVAL_STORE_TARGET : où sont stockés les résultats d'évaluation (cache de
+# prédictions + matrices finales) — indépendant d'où le calcul s'exécute
+# (contrairement à MODEL_TARGET/RUN_ENV). "gcp" = Firestore (résultats
+# individuels) + BigQuery (matrices), cf. docs/evaluation/storage.md.
+EVAL_STORE_TARGET = os.environ.get("BERLUE_EVAL_STORE_TARGET", "local")
+assert EVAL_STORE_TARGET in ("local", "gcp"), (
+    f"❌ EVAL_STORE_TARGET invalide : {EVAL_STORE_TARGET!r} (doit être local ou gcp)"
+)
+
+# EVAL_FIRESTORE_PROJECT/EVAL_BIGQUERY_PROJECT : projet GCP par service, pas
+# un seul GCP_PROJECT qui piloterait tout — une équipe de plusieurs devs,
+# chacun avec son propre projet, doit pouvoir pointer vers le cache déjà
+# rempli par un collègue sur l'un ou l'autre service indépendamment. Défaut :
+# son propre GCP_PROJECT (comportement inchangé si non précisé).
+EVAL_FIRESTORE_PROJECT = os.environ.get("BERLUE_EVAL_FIRESTORE_PROJECT", GCP_PROJECT)
+EVAL_BIGQUERY_PROJECT = os.environ.get("BERLUE_EVAL_BIGQUERY_PROJECT", GCP_PROJECT)
+
+# EVAL_SERVICE_ACCOUNT : identité utilisée pour s'authentifier auprès de
+# Firestore/BigQuery (GcpResultStore) — impersonation systématique du
+# service account dédié plutôt que la session gcloud CLI de la personne
+# directement, en local comme en exécution GCP. Mêmes droits partout : ce
+# qui tourne en local est borné aux mêmes permissions que ce qui tournera
+# une fois déployé, jamais plus large. Toujours dans son propre GCP_PROJECT
+# (jamais EVAL_FIRESTORE_PROJECT/EVAL_BIGQUERY_PROJECT, qui peuvent pointer
+# vers le projet d'un collègue) — nécessite `roles/iam.serviceAccountTokenCreator`
+# sur ce SA (cf. `make gcp_setup`, docs/gcp/auth.md).
+_EVAL_SERVICE_ACCOUNT_NAME = os.environ.get("BERLUE_EVAL_SERVICE_ACCOUNT_NAME", "sa-berlue")
+EVAL_SERVICE_ACCOUNT = os.environ.get("BERLUE_EVAL_SERVICE_ACCOUNT") or (
+    f"{_EVAL_SERVICE_ACCOUNT_NAME}@{GCP_PROJECT}.iam.gserviceaccount.com" if GCP_PROJECT else None
+)
+
+# Contrainte dans un seul sens : exécution GCP -> stockage GCP obligatoire
+# (pas de local persistant/partagé dans un container Cloud Run). L'inverse
+# est libre : exécution locale -> stockage local OU gcp au choix.
+assert not (EVAL_RUN_TARGET == "gcp" and EVAL_STORE_TARGET != "gcp"), (
+    "❌ EVAL_RUN_TARGET=gcp exige EVAL_STORE_TARGET=gcp "
+    f"(reçu EVAL_STORE_TARGET={EVAL_STORE_TARGET!r}) — pas de stockage local persistant en exécution GCP."
+)
+
 # MLflow : le serveur de tracking dépend de RUN_ENV.
 # TODO: pas encore de serveur MLflow partagé pour "gcp".
 _MLFLOW_TRACKING_URIS = {
@@ -62,6 +109,12 @@ SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
 SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.3"))
 SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.0"))
 
+# --- JUGE (évaluation d'une réponse générée contre les réponses de référence
+# du dataset) : modèle dédié, indépendant de OLLAMA_MODEL, pour comparer
+# plusieurs modèles sous test à juge constant. 7B minimum — en dessous, le
+# juge valide quasi systématiquement (cf. docs/evaluation/model-comparison-notes.md).
+JUDGE_MODEL = os.environ.get("BERLUE_JUDGE_MODEL", "llama3.1:8b")
+
 # --- Embeddings + RAG inversé ---
 RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
 RAG_INDEX_DIR = "data/fever/faiss"
@@ -75,12 +128,6 @@ NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./models/nli_tfi
 
 # --- Données ---
 FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/fever/raw/fever.jsonl")
-HALUEVAL_DATA_PATH = os.environ.get(
-    "BERLUE_HALUEVAL_DATA_PATH", "https://raw.githubusercontent.com/RUCAIBox/HaluEval/main/data/qa_data.json"
-)
-TRUTHFULQA_DATA_PATH = os.environ.get(
-    "BERLUE_TRUTHFULQA_DATA_PATH", "https://raw.githubusercontent.com/sylinrl/TruthfulQA/main/TruthfulQA.csv"
-)
 
 # EVAL_DATASETS : quel(s) jeu(x) de données labellisés utiliser pour l'évaluation
 # offline (entraînement du baseline NLI + jeu de test, cf. evaluation/data.py) —
@@ -88,6 +135,11 @@ TRUTHFULQA_DATA_PATH = os.environ.get(
 # à la fois sans toucher au code. Défaut : les deux.
 _EVAL_DATASETS_RAW = os.environ.get("BERLUE_EVAL_DATASETS", "halueval,truthfulqa")
 EVAL_DATASETS = [d.strip() for d in _EVAL_DATASETS_RAW.split(",") if d.strip()]
+
+# TRAIN_RATIO : proportion des questions uniques allouée au train par
+# `evaluation.data.split_train_test` (le reste va au test). Défaut : 0.8 (80% train
+# / 20% test).
+TRAIN_RATIO = float(os.environ.get("BERLUE_TRAIN_RATIO", "0.8"))
 
 # --- MLOps ---
 MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
@@ -110,6 +162,21 @@ EVALUATION_START_DATE = "2024-01-01"
 
 NOTIFY_CHANNEL = "#berlue-alerts"
 NOTIFY_AUTHOR = "Berlue_Pipeline_Bot"
+
+# --- Datasets d'évaluation (HaluEval, TruthfulQA) : source + cache local ---
+HALUEVAL_URL = "https://raw.githubusercontent.com/RUCAIBox/HaluEval/main/data/qa_data.json"
+HALUEVAL_DATA_PATH = "data/halueval/raw/qa_data.json"
+
+TRUTHFULQA_URL = "https://raw.githubusercontent.com/sylinrl/TruthfulQA/main/TruthfulQA.csv"
+TRUTHFULQA_DATA_PATH = "data/truthfulqa/raw/truthfulqa.csv"
+
+# Trois axes de version indépendants pour l'éval — à incrémenter manuellement
+# à chaque évolution significative du composant correspondant, pour
+# distinguer et pouvoir purger les résultats devenus obsolètes. Quel axe
+# s'applique à quelle table : cf. docs/evaluation/storage.md.
+PIPELINE_VERSION = "v1"  # logique du pipeline Berlue (RAG inversé + SelfCheckGPT)
+GENERATION_VERSION = "v1"  # logique/prompt de génération de réponse par le LLM sous test
+EVAL_VERSION = "v1"  # méthodologie d'éval (split train/test, sélection du jeu de test, prompt du juge, matrices)
 
 ##################  CONSTANTS  #####################
 # 💡 Cette ligne trouve dynamiquement la racine du projet
