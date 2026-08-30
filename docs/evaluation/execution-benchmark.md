@@ -71,6 +71,34 @@ le chrono, pour rester comparable à la moitié 2 (déjà chaude).
 Laptop, 12 Go VRAM) — les temps mode 2 reflètent cette carte, pas
 nécessairement la performance du L4 (24 Go) utilisé sur GCP.
 
+## Parallélisation (mode généré)
+
+`CONCURRENCY` (cf. [`run.md`](run.md)) parallélise chaque étape de
+`evaluate_model_generated` (génération, Berlue, juge) par un pool de
+threads — une étape à la fois sur tout le lot, questions dépilées en
+parallèle au sein de chaque étape. Chaque appel LLM est borné en longueur
+(`num_predict`) pour un pire cas prévisible, indépendant de la charge ou de
+la config serveur.
+
+Mesuré en local, `llama3.1:8b` des deux côtés, `OLLAMA_CONTEXT_LENGTH=1024`
+(largement suffisant pour les prompts courts de l'éval — mécanique complète
+dans [`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md)),
+500 questions (`ratio=0.8`, assez pour occuper tous les threads en régime
+stable — un lot trop petit dilue le gain, cf. ce même document) :
+
+```bash
+make evaluate_model_generated DATASET=halueval RATIO=0.8 \
+  MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b START=0 END=500 CONCURRENCY=32
+```
+
+| `CONCURRENCY` | Temps total | vs séquentiel |
+|---|---|---|
+| 1 | 373,4 s | 1× |
+| 4 | 275,7 s | 1,35× |
+| 8 | 250,2 s | 1,49× |
+| 16 | 195,8 s | 1,91× |
+| 32 | **93,3 s** | **4,00×** |
+
 ## GCP
 
 ```bash
