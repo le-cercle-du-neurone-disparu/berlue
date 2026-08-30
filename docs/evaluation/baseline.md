@@ -8,15 +8,11 @@ Pour les datasets eux-mêmes (format, labels), voir
 
 ## Prérequis
 
-Dépendances installées :
-
-```bash
-pip install -r requirements.txt -r requirements_dev.txt
-```
-
-- Accès réseau : `evaluation/data.py::load_labeled_examples` télécharge
-  HaluEval et TruthfulQA depuis GitHub raw à chaque appel (pas de cache
-  local).
+- Environnement local installé, voir [`local-setup.md`](../setup/local-setup.md).
+- Accès réseau au premier appel seulement : `evaluation/data.py::load_labeled_examples`
+  télécharge HaluEval et TruthfulQA vers `data/halueval/raw/qa_data.json` et
+  `data/truthfulqa/raw/truthfulqa.csv`, et saute le téléchargement s'ils y
+  sont déjà — même mécanisme que `make download_eval_data`.
 
 ## Entraîner
 
@@ -59,13 +55,14 @@ Charge le modèle entraîné et prédit sur un exemple fixe codé dans le fichie
 ## Lancer les tests liés
 
 ```bash
-pytest tests/test_nli_baseline.py tests/test_evaluation_data.py tests/test_evaluation_metrics.py -v
+pytest tests/test_evaluation_data.py tests/test_evaluation_metrics.py -v
 ```
 
-`test_nli_baseline.py` est marqué `@pytest.mark.functional` (exclu de la lane
-CI rapide) et nécessite d'avoir lancé `make train_baseline` avant — il charge
-le `.joblib` local, pas de mock. Les deux autres fichiers sont des tests
-unitaires purs (pas de réseau, pas de modèle entraîné requis).
+Tests unitaires purs (pas de réseau, pas de modèle entraîné requis).
+`tests/temp_test_nli_baseline.py` (préfixe `temp_` — non collecté par
+pytest, donc pas lancé par défaut) couvre `NliBaseline.predict`, marqué
+`@pytest.mark.functional`, nécessite d'avoir lancé `make train_baseline`
+avant (charge le `.joblib` local, pas de mock).
 
 ## Limiter à un seul dataset
 
