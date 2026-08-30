@@ -3,86 +3,792 @@ labellisés (HaluEval/TruthfulQA) — produit les chiffres comparatifs utilisés
 la présentation finale.
 
 Lancer avec : python -m berlue.evaluation.run_eval
-Pour l'instant, seule la baseline NLI est évaluée par défaut (le pipeline Berlue
-complet n'est pas encore implémenté) — cf. `evaluate_baseline`.
 
-Params utilisés indirectement (`berlue.params`, via `evaluation.data` et
-`nli_baseline.predict`) : `EVAL_DATASETS`, `HALUEVAL_DATA_PATH`,
-`TRUTHFULQA_DATA_PATH`, `NLI_BASELINE_PATH`.
+Params utilisés indirectement (`berlue.params`, via `evaluation.data`,
+`nli_baseline.predict` et `evaluation.result_store`) : `EVAL_DATASETS`,
+`HALUEVAL_URL`, `HALUEVAL_DATA_PATH`, `TRUTHFULQA_URL`, `TRUTHFULQA_DATA_PATH`,
+`TRAIN_RATIO`, `NLI_BASELINE_PATH`, `MLOPS_DB_PATH`, `PIPELINE_VERSION`,
+`GENERATION_VERSION`, `EVAL_VERSION`.
 """
 
-from berlue.api.schemas import ConfusionMatrix, Metrics
+import time
+from collections.abc import Callable
+from contextlib import contextmanager
 
-# Import des fonctions locales
+from berlue.api.schemas import ClaimResult, ConfusionMatrix
+from berlue.core.schemas import Verdict
 from berlue.evaluation.data import load_labeled_examples, split_train_test
+from berlue.evaluation.judge import judge_answer
 from berlue.evaluation.metrics import build_confusion_matrix
+from berlue.evaluation.result_store import EvalScope, LocalResultStore, get_result_store
+from berlue.llm.client import OllamaClient
 from berlue.nli_baseline.predict import NliBaseline
+from berlue.params import JUDGE_MODEL
+
+# Flush périodique du registre de scopes GCP (no-op en local) dans les
+# boucles d'éval — pas de flush par ligne (cf. gcp_result_store.py), pas
+# seulement en fin de boucle non plus (une longue boucle interrompue par
+# autre chose qu'un Ctrl+C — ex. kill -9 — ne passerait pas par le `finally`).
+_REGISTRY_FLUSH_EVERY_N_ITEMS = 20
 
 
-def evaluate_baseline(baseline: NliBaseline | None = None) -> ConfusionMatrix:
-    """Évalue la baseline NLI seule sur le jeu de test (HaluEval + TruthfulQA,
-    partie non utilisée par `nli_baseline.train.train_baseline`) et retourne sa
-    matrice de confusion.
+class _StepTimer:
+    """Chronomètre nommé par étape (`génération`, `juge`, `baseline NLI`,
+    `Berlue`...) — accumule durée totale et nombre d'appels par étape au fil
+    d'une boucle d'éval, pour un récapitulatif détaillé en fin de run (temps
+    moyen/total par tâche) plutôt qu'un seul temps englobant (`time make
+    ...`). Ne mesure que les calculs réels : un appel jamais fait (cache hit)
+    n'entre jamais dans `measure()`, donc ne compte pas."""
+
+    def __init__(self):
+        self._totals: dict[str, float] = {}
+        self._counts: dict[str, int] = {}
+
+    @contextmanager
+    def measure(self, step: str):
+        start = time.perf_counter()
+        yield
+        elapsed = time.perf_counter() - start
+        self._totals[step] = self._totals.get(step, 0.0) + elapsed
+        self._counts[step] = self._counts.get(step, 0) + 1
+
+    def summary(self) -> str:
+        if not self._counts:
+            return "aucun calcul réel (tout venait du cache)"
+        return " | ".join(
+            f"{step} : {total:.2f}s total, {total / self._counts[step]:.3f}s/appel (n={self._counts[step]})"
+            for step, total in self._totals.items()
+        )
+
+
+def aggregate_verdict(claims: list[ClaimResult]) -> Verdict:
+    """Réduit les verdicts par affirmation d'une réponse (`predict()` en retourne
+    un par claim extraite) en un seul verdict comparable au label vérité-terrain
+    de l'exemple : une seule affirmation contredite suffit à considérer toute la
+    réponse comme fausse (pire cas), sinon une seule incertaine suffit à rendre
+    la réponse indécise — sans affirmation, rien à valider.
     """
-    # Instanciation de la baseline si non fournie (Lazy loading)
+    if not claims:
+        return Verdict.NOT_ENOUGH_INFO
+
+    statuses = {claim.status for claim in claims}
+    if "red" in statuses:
+        return Verdict.CONTRADICTED
+    if "orange" in statuses:
+        return Verdict.NOT_ENOUGH_INFO
+    return Verdict.SUPPORTED
+
+
+def get_test_examples(
+    test_examples: list[dict] | None = None,
+    dataset: str | None = None,
+    ratio: float | None = None,
+) -> list[dict]:
+    """Retourne `test_examples` tel quel s'il est fourni, sinon recharge et
+    resplit les données d'un seul `dataset` — évite de télécharger/resplitter
+    deux fois quand baseline et modèle sont évalués sur le même jeu de test.
+
+    `dataset`/`ratio` ciblent un scope précis (défaut : le premier dataset de
+    `params.EVAL_DATASETS`/`params.TRAIN_RATIO`) — nécessaire pour comparer
+    la baseline à un scope Berlue déjà évalué avec des paramètres différents
+    des défauts globaux. Un seul dataset à la fois : les résultats ne
+    mélangent jamais plusieurs datasets, cf. docs/evaluation/storage.md.
+    """
+    if test_examples is not None:
+        return test_examples
+
+    load_kwargs = {} if dataset is None else {"datasets": [dataset]}
+    split_kwargs = {} if ratio is None else {"train_ratio": ratio}
+    _, test_examples = split_train_test(load_labeled_examples(**load_kwargs), **split_kwargs)
+    return test_examples
+
+
+def _official_dataset_test_size(scope: EvalScope) -> int | None:
+    """Taille du split de test officiel complet pour `scope.dataset`/
+    `scope.ratio` — indépendante de tout `test_examples` fourni en override
+    (tests, démos), donc utilisable pour savoir si une matrice construite sur
+    un sous-ensemble couvre le split complet ou non (cf.
+    docs/evaluation/storage.md). Le split est déterministe (seed fixe,
+    versions numpy/pandas/scikit-learn épinglées) — deux machines qui
+    l'appellent obtiennent le même total.
+
+    `None` si `scope.dataset` n'est pas un dataset réel connu (ex. tests
+    unitaires utilisant un nom fictif) — pas de total officiel dans ce cas.
+    """
+    try:
+        official = get_test_examples(None, dataset=scope.dataset, ratio=scope.ratio)
+    except ValueError:
+        return None
+    return len(official)
+
+
+def _official_valid_question_count(scope: EvalScope) -> int | None:
+    """Équivalent de `_official_dataset_test_size` pour le mode généré : nombre
+    de questions du split de test officiel complet ayant au moins une
+    réponse de référence correcte ET incorrecte (seules celles-ci sont
+    traitées, cf. `evaluate_model_generated`) — même convention que
+    `n_examples` sur `eval_matrices_generated_berlue`/`_baseline`."""
+    try:
+        official = get_test_examples(None, dataset=scope.dataset, ratio=scope.ratio)
+    except ValueError:
+        return None
+    grouped = group_examples_by_question(official)
+    return sum(1 for refs in grouped.values() if refs["correct_answers"] and refs["incorrect_answers"])
+
+
+def run_confusion_matrix_eval(test_examples: list[dict], predict_one: Callable[[dict], Verdict]) -> ConfusionMatrix:
+    """Évalue `predict_one(example) -> Verdict` sur `test_examples` et retourne
+    la matrice de confusion correspondante.
+    """
+    ground_truths = [ex["ground_truth_label"] for ex in test_examples]
+    predictions = [predict_one(ex) for ex in test_examples]
+    return build_confusion_matrix(ground_truths, predictions)
+
+
+def evaluate_baseline(
+    baseline: NliBaseline | None = None,
+    test_examples: list[dict] | None = None,
+    dataset: str | None = None,
+    ratio: float | None = None,
+) -> ConfusionMatrix:
+    """Évalue la baseline NLI seule sur le jeu de test (un seul dataset,
+    partie non utilisée par `nli_baseline.train.train_baseline`) et retourne
+    sa matrice de confusion. `dataset`/`ratio` ciblent un scope précis (cf.
+    `get_test_examples`).
+    """
     baseline = baseline or NliBaseline()
-
-    # 1. Récupérer uniquement le jeu de test
-    examples = load_labeled_examples()
-    _, test_examples = split_train_test(examples)
-
-    # Préparation des listes pour la matrice
-    ground_truths = []
-    predictions = []
+    test_examples = get_test_examples(test_examples, dataset=dataset, ratio=ratio)
 
     print(f"🔍 Évaluation NLI Baseline sur {len(test_examples)} exemples...")
-
-    # 2. Boucler sur les exemples pour prédire
-    for ex in test_examples:
-        # La prédiction est un Verdict (ex: Verdict.SUPPORTED)
-        pred = baseline.predict(question=ex["question"], answer=ex["answer"])
-
-        # On sauvegarde les résultats
-        predictions.append(pred)
-        ground_truths.append(ex["ground_truth_label"])  # True ou False
-
-    # 3. Construction et retour de la matrice de confusion
-    matrix = build_confusion_matrix(ground_truths, predictions)
-    print("✅ Évaluation terminée.")
+    start = time.perf_counter()
+    matrix = run_confusion_matrix_eval(test_examples, lambda ex: baseline.predict(ex["question"], ex["answer"]))
+    elapsed = time.perf_counter() - start
+    per_example = f"{elapsed / len(test_examples):.4f}s/exemple" if test_examples else "n/a"
+    print(f"✅ Évaluation terminée. ⏱ baseline NLI : {elapsed:.2f}s total, {per_example} (n={len(test_examples)}).")
 
     return matrix
 
 
-def run_evaluation(pipeline, baseline: NliBaseline | None = None) -> Metrics:
-    """Compare le pipeline Berlue complet (même contrat que `predict()` sur
-    `app.state.model`, cf. `berlue.mocks.mock_pipeline.MockBerluePipeline`) et la
-    baseline NLI aux labels vérité-terrain du même jeu de test qu'`evaluate_baseline`,
-    et retourne des `Metrics` comparables à celles de `/evaluate`.
+def evaluate_model(
+    pipeline,
+    scope: EvalScope,
+    start: int = 0,
+    end: int | None = None,
+    store: LocalResultStore | None = None,
+    test_examples: list[dict] | None = None,
+) -> None:
+    """Remplit le cache de prédictions de `scope` sur `[start:end]` du jeu de
+    test — pour chaque exemple, vérifie le cache avant d'appeler le pipeline
+    (`pipeline.predict(question, answer)`, même contrat que
+    `NliBaseline.predict` : on vérifie la réponse du dataset, on n'en génère
+    pas une nouvelle). Ne construit pas de matrice de confusion — cf.
+    `evaluate_model_matrix` pour ça, une fois le scope complet.
 
-    TODO(evaluation) :
-    1. evaluate_baseline(baseline) -> matrice baseline.
-    2. Même jeu de test, mais vérifié avec `pipeline.predict(question, llm_config)`
-       -> matrice berlue (evaluation.metrics.build_confusion_matrix).
-    3. Assembler les deux en `Metrics`.
+    Chaque prédiction est stockée immédiatement après son calcul (pas de
+    buffer) : un Ctrl+C ne perd donc que la prédiction en cours, relancer
+    (même scope, même tranche ou une autre) reprend là où c'était.
     """
+    store = store or get_result_store()
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+    end = len(test_examples) if end is None else end
+    subset = test_examples[start:end]
+
+    print(f"🔍 Évaluation du pipeline Berlue sur [{start}:{end}] ({len(subset)} exemples, scope={scope})...")
+
+    timer = _StepTimer()
+    n_cached, n_computed = 0, 0
+    try:
+        for i, ex in enumerate(subset):
+            question, answer = ex["question"], ex["answer"]
+
+            verdict = store.get_verdict(scope, question, answer)
+            if verdict is not None:
+                n_cached += 1
+                continue
+
+            with timer.measure("Berlue"):
+                verdict = aggregate_verdict(pipeline.predict(question, answer).claims)
+            store.put_prediction(scope, question, answer, ex["ground_truth_label"], verdict)
+            n_computed += 1
+
+            if (i + 1) % _REGISTRY_FLUSH_EVERY_N_ITEMS == 0:
+                store.flush_registry()
+    finally:
+        store.flush_registry()
+
+    print(
+        f"✅ Terminé : {n_cached} déjà en cache, {n_computed} nouvelle(s) prédiction(s) calculée(s) et stockée(s). "
+        f"⏱ {timer.summary()}"
+    )
+
+
+def evaluate_model_matrix(
+    scope: EvalScope, store: LocalResultStore | None = None, test_examples: list[dict] | None = None
+) -> ConfusionMatrix:
+    """Construit et stocke la matrice de confusion finale d'un `scope`, à
+    partir de tout ce qui est déjà en cache — n'appelle jamais le pipeline.
+
+    Lève une erreur explicite si le cache est incomplet (une ou plusieurs
+    questions du jeu de test du scope n'ont pas encore de prédiction stockée)
+    plutôt que de calculer silencieusement une matrice partielle — lancer
+    `evaluate_model` pour compléter le scope avant de rappeler cette fonction.
+    """
+    store = store or get_result_store()
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+
+    missing = 0
+    ground_truths = []
+    predictions = []
+    for ex in test_examples:
+        verdict = store.get_verdict(scope, ex["question"], ex["answer"])
+        if verdict is None:
+            missing += 1
+            continue
+        ground_truths.append(ex["ground_truth_label"])
+        predictions.append(verdict)
+
+    if missing:
+        raise ValueError(
+            f"❌ Cache incomplet pour {scope} : {missing}/{len(test_examples)} prédictions manquantes. "
+            "Lancer `evaluate_model` sur les tranches manquantes avant de construire la matrice."
+        )
+
+    matrix = build_confusion_matrix(ground_truths, predictions)
+    dataset_test_size = _official_dataset_test_size(scope)
+    store.put_matrix(scope, matrix, n_examples=len(test_examples), dataset_test_size=dataset_test_size)
+
+    full = (
+        ""
+        if dataset_test_size is None
+        else " (split complet)"
+        if len(test_examples) == dataset_test_size
+        else " (PARTIEL)"
+    )
+    print(f"✅ Matrice construite et stockée pour {scope} ({len(test_examples)} exemples{full}).")
+    return matrix
+
+
+def coverage_report(
+    scope: EvalScope, store: LocalResultStore | None = None, test_examples: list[dict] | None = None
+) -> dict:
+    """Quels index du jeu de test (mode dataset) sont déjà en cache pour
+    `scope`, et lesquels manquent — une seule requête (`list_predictions`),
+    pas un `get_verdict` par ligne. Retourne `{"total", "done_indices",
+    "missing_indices"}`, index dans l'ordre déterministe du split
+    train/test (mêmes index que `--start`/`--end`)."""
+    store = store or get_result_store()
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+
+    cached_keys = {(p["question"], p["answer"]) for p in store.list_predictions(scope)}
+
+    done_indices = []
+    missing_indices = []
+    for i, ex in enumerate(test_examples):
+        target = done_indices if (ex["question"], ex["answer"]) in cached_keys else missing_indices
+        target.append(i)
+
+    return {"total": len(test_examples), "done_indices": done_indices, "missing_indices": missing_indices}
+
+
+def format_index_ranges(indices: list[int]) -> str:
+    """Compacte une liste d'index triés en plages lisibles — `[0,1,2,5,6,9]`
+    devient `"0-2, 5-6, 9"`."""
+    if not indices:
+        return "(aucun)"
+
+    ranges = []
+    start = prev = indices[0]
+    for i in indices[1:]:
+        if i == prev + 1:
+            prev = i
+            continue
+        ranges.append(f"{start}-{prev}" if start != prev else str(start))
+        start = prev = i
+    ranges.append(f"{start}-{prev}" if start != prev else str(start))
+    return ", ".join(ranges)
+
+
+def group_examples_by_question(test_examples: list[dict]) -> dict[str, dict[str, list[str]]]:
+    """Regroupe `test_examples` (une ligne par (question, réponse)) par
+    question unique — nécessaire au mode 2, qui a besoin de toutes les
+    réponses de référence vraies ET fausses d'une question ensemble (pour le
+    juge), contrairement au mode 1 qui traite chaque ligne indépendamment.
+    """
+    grouped: dict[str, dict[str, list[str]]] = {}
+    for ex in test_examples:
+        entry = grouped.setdefault(ex["question"], {"correct_answers": [], "incorrect_answers": []})
+        key = "correct_answers" if ex["ground_truth_label"] else "incorrect_answers"
+        entry[key].append(ex["answer"])
+    return grouped
+
+
+GENERATION_INSTRUCTION = "Answer clearly and concisely, in 3 to 5 sentences maximum."
+
+
+def evaluate_model_generated(
+    pipeline,
+    scope: EvalScope,
+    judge_model: str = JUDGE_MODEL,
+    judge_client=None,
+    generator_client=None,
+    start: int = 0,
+    end: int | None = None,
+    store: LocalResultStore | None = None,
+    test_examples: list[dict] | None = None,
+    warmup: bool = False,
+) -> None:
+    """Mode 2, Berlue seul : pour chaque question de `[start:end]`, génère une
+    réponse (vrai appel LLM — `generator_client`, `scope.model_id` par défaut,
+    jamais mocké, même quand `pipeline` — le fact-check Berlue — l'est encore
+    tant que `HurluBerlu` n'est pas branché), la fait fact-checker par Berlue,
+    et juger par un LLM-juge ancré sur les réponses de référence du dataset
+    (vérité-terrain de substitution). Remplit les 3 caches correspondants
+    (`llm_answers`, `eval_berlue_generated`, `judge_verdicts`) — ne construit
+    pas de matrice.
+
+    Ne touche jamais la baseline — c'est le rôle exclusif d'`evaluate_baseline_generated`,
+    en aval, sur la réponse déjà générée ici (même principe qu'en mode 1 :
+    `evaluate_model`/`evaluate_baseline` sont deux chemins totalement séparés).
+
+    Questions sans au moins une réponse vraie ET une réponse fausse dans le
+    dataset sont ignorées (rien à comparer, pas de juge possible).
+
+    `warmup=True` charge `generator_client`/`judge_client` en VRAM (appel
+    jetable chacun) avant de démarrer la boucle chronométrée — sans ça, le
+    premier appel réel de chaque modèle paierait ce chargement et fausserait
+    le récapitulatif de temps affiché en fin de run (cf. `OllamaClient.warmup`).
+    """
+    store = store or get_result_store()
+    # Construits ici plutôt que de laisser judge_answer/l'appel de génération
+    # défaulter tout seuls : sinon un judge_model/model_id différent du défaut
+    # sans client explicite ferait exécuter un modèle différent de celui
+    # utilisé comme clé de cache.
+    judge_client = judge_client or OllamaClient(model=judge_model)
+    generator_client = generator_client or OllamaClient(model=scope.model_id)
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+
+    if warmup:
+        print(f"🔥 Warmup : {generator_client.warmup():.2f}s (génération), ", end="")
+        print(f"{judge_client.warmup():.2f}s (juge).")
+
+    grouped = group_examples_by_question(test_examples)
+    questions = sorted(grouped)  # ordre déterministe, reproductible entre invocations
+    end = len(questions) if end is None else end
+    subset = questions[start:end]
+
+    print(f"🔍 Évaluation générée+juge sur [{start}:{end}] ({len(subset)} questions, scope={scope})...")
+
+    timer = _StepTimer()
+    n_skipped = 0
+    try:
+        for i, question in enumerate(subset):
+            refs = grouped[question]
+            if not refs["correct_answers"] or not refs["incorrect_answers"]:
+                n_skipped += 1
+                continue
+
+            generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
+            if generated_answer is None:
+                prompt = f"{question}\n\n[Instruction: {GENERATION_INSTRUCTION}]"
+                with timer.measure("génération"):
+                    generated_answer = generator_client.generate(prompt=prompt)
+                store.put_generated_answer(scope.model_id, scope.generation_version, question, generated_answer)
+
+            if store.get_generated_berlue_verdict(scope, question) is None:
+                with timer.measure("Berlue"):
+                    berlue_verdict = aggregate_verdict(pipeline.predict(question, generated_answer).claims)
+                store.put_generated_berlue_verdict(scope, question, berlue_verdict)
+
+            judge_verdict_cached = store.get_judge_verdict(
+                scope.model_id, scope.generation_version, judge_model, scope.eval_version, question
+            )
+            if judge_verdict_cached is None:
+                with timer.measure("juge"):
+                    judge_verdict = judge_answer(
+                        question,
+                        refs["correct_answers"][0],
+                        refs["incorrect_answers"],
+                        generated_answer,
+                        client=judge_client,
+                    )
+                store.put_judge_verdict(
+                    scope.model_id, scope.generation_version, judge_model, scope.eval_version, question, judge_verdict
+                )
+
+            if (i + 1) % _REGISTRY_FLUSH_EVERY_N_ITEMS == 0:
+                store.flush_registry()
+    finally:
+        store.flush_registry()
+
+    print(
+        f"✅ Terminé : {len(subset) - n_skipped} question(s) traitée(s), {n_skipped} ignorée(s) (référence manquante). "
+        f"⏱ {timer.summary()}"
+    )
+
+
+def evaluate_baseline_generated(
+    scope: EvalScope,
+    baseline: NliBaseline | None = None,
+    start: int = 0,
+    end: int | None = None,
+    store: LocalResultStore | None = None,
+    test_examples: list[dict] | None = None,
+) -> None:
+    """Mode 2, baseline seule : classifie par la baseline NLI les réponses
+    déjà générées (`llm_answers`) pour ce scope, sans regénérer ni appeler
+    le juge/Berlue — c'est le **seul** endroit où la baseline mode 2 est
+    calculée (`evaluate_model_generated` ne s'occupe que de Berlue, jamais
+    de la baseline, même principe qu'en mode 1 avec `evaluate_model`/
+    `evaluate_baseline`). Questions sans réponse déjà générée : ignorées
+    (rien à classifier)."""
+    store = store or get_result_store()
     baseline = baseline or NliBaseline()
-    # TODO(evaluation)
-    # return Metrics(
-    #     baseline=ConfusionMatrix(
-    #         ground_truth_true=ConfusionRow(predicted_true=50, predicted_undecided=15, predicted_false=10),
-    #         ground_truth_false=ConfusionRow(predicted_true=8, predicted_undecided=7, predicted_false=10),
-    #     ),
-    #     berlue=ConfusionMatrix(
-    #         ground_truth_true=ConfusionRow(predicted_true=62, predicted_undecided=8, predicted_false=5),
-    #         ground_truth_false=ConfusionRow(predicted_true=4, predicted_undecided=6, predicted_false=15),
-    #     ),
-    # )
-    raise NotImplementedError
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+
+    grouped = group_examples_by_question(test_examples)
+    questions = sorted(q for q, refs in grouped.items() if refs["correct_answers"] and refs["incorrect_answers"])
+    end = len(questions) if end is None else end
+    subset = questions[start:end]
+
+    print(f"🔍 Baseline (mode généré) sur [{start}:{end}] ({len(subset)} questions, scope={scope})...")
+
+    timer = _StepTimer()
+    n_classified, n_skipped = 0, 0
+    for question in subset:
+        generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
+        if generated_answer is None:
+            n_skipped += 1
+            continue
+
+        if (
+            store.get_generated_baseline_verdict(
+                scope.dataset, scope.ratio, scope.model_id, scope.generation_version, scope.eval_version, question
+            )
+            is None
+        ):
+            with timer.measure("baseline NLI"):
+                baseline_verdict = baseline.predict(question, generated_answer)
+            store.put_generated_baseline_verdict(
+                scope.dataset,
+                scope.ratio,
+                scope.model_id,
+                scope.generation_version,
+                scope.eval_version,
+                question,
+                baseline_verdict,
+            )
+            n_classified += 1
+
+    print(
+        f"✅ Terminé : {n_classified} question(s) classifiée(s), {n_skipped} ignorée(s) (réponse pas encore générée). "
+        f"⏱ {timer.summary()}"
+    )
+
+
+def evaluate_baseline_generated_matrix(
+    scope: EvalScope,
+    judge_model: str = JUDGE_MODEL,
+    store: LocalResultStore | None = None,
+    test_examples: list[dict] | None = None,
+) -> ConfusionMatrix:
+    """Construit et stocke la matrice baseline-vs-juge (mode 2), à partir de
+    tout ce qui est déjà en cache (`eval_baseline_generated`, `judge_verdicts`)
+    — n'appelle jamais le classifieur ni le juge, et ne dépend jamais du
+    verdict Berlue : équivalent mode généré d'`evaluate_baseline`, chemin
+    totalement séparé d'`evaluate_model_generated_matrix` (Berlue-vs-juge).
+
+    Lève une erreur explicite si une question valide (avec les deux
+    références du dataset) n'a pas encore ses 2 verdicts en cache (juge,
+    baseline) plutôt que de calculer silencieusement une matrice partielle.
+    """
+    store = store or get_result_store()
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+
+    grouped = group_examples_by_question(test_examples)
+    valid_questions = sorted(q for q, refs in grouped.items() if refs["correct_answers"] and refs["incorrect_answers"])
+
+    missing = 0
+    ground_truths = []
+    baseline_predictions = []
+    for question in valid_questions:
+        judge_verdict = store.get_judge_verdict(
+            scope.model_id, scope.generation_version, judge_model, scope.eval_version, question
+        )
+        baseline_verdict = store.get_generated_baseline_verdict(
+            scope.dataset, scope.ratio, scope.model_id, scope.generation_version, scope.eval_version, question
+        )
+
+        if judge_verdict is None or baseline_verdict is None:
+            missing += 1
+            continue
+
+        ground_truths.append(judge_verdict == Verdict.SUPPORTED)
+        baseline_predictions.append(baseline_verdict)
+
+    if missing:
+        raise ValueError(
+            f"❌ Cache incomplet pour {scope} (mode généré, baseline) : {missing}/{len(valid_questions)} "
+            "question(s) manquante(s). Lancer `evaluate_model_generated` (pour le juge) et/ou "
+            "`evaluate_baseline_generated` (pour la baseline) sur les tranches manquantes avant "
+            "de construire la matrice."
+        )
+
+    baseline_matrix = build_confusion_matrix(ground_truths, baseline_predictions)
+    dataset_test_size = _official_valid_question_count(scope)
+    store.put_generated_baseline_matrix(
+        scope.dataset,
+        scope.ratio,
+        scope.model_id,
+        scope.generation_version,
+        scope.eval_version,
+        baseline_matrix,
+        n_examples=len(valid_questions),
+        dataset_test_size=dataset_test_size,
+    )
+
+    full = (
+        ""
+        if dataset_test_size is None
+        else " (split complet)"
+        if len(valid_questions) == dataset_test_size
+        else " (PARTIEL)"
+    )
+    print(
+        f"✅ Matrice baseline (mode généré) construite et stockée pour {scope} "
+        f"({len(valid_questions)} questions{full})."
+    )
+    return baseline_matrix
+
+
+def evaluate_model_generated_matrix(
+    scope: EvalScope,
+    judge_model: str = JUDGE_MODEL,
+    store: LocalResultStore | None = None,
+    test_examples: list[dict] | None = None,
+) -> ConfusionMatrix:
+    """Construit et stocke la matrice Berlue-vs-juge (mode 2), à partir de
+    tout ce qui est déjà en cache (`judge_verdicts`, `eval_berlue_generated`)
+    — n'appelle jamais le pipeline ni le juge, et ne dépend jamais du verdict
+    baseline : chemin totalement séparé d'`evaluate_baseline_generated_matrix`
+    (baseline-vs-juge).
+
+    Lève une erreur explicite si une question valide (avec les deux
+    références du dataset) n'a pas encore ses 2 verdicts en cache (juge,
+    Berlue) plutôt que de calculer silencieusement une matrice partielle.
+    """
+    store = store or get_result_store()
+    test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
+
+    grouped = group_examples_by_question(test_examples)
+    valid_questions = sorted(q for q, refs in grouped.items() if refs["correct_answers"] and refs["incorrect_answers"])
+
+    missing = 0
+    ground_truths = []
+    berlue_predictions = []
+    for question in valid_questions:
+        judge_verdict = store.get_judge_verdict(
+            scope.model_id, scope.generation_version, judge_model, scope.eval_version, question
+        )
+        berlue_verdict = store.get_generated_berlue_verdict(scope, question)
+
+        if judge_verdict is None or berlue_verdict is None:
+            missing += 1
+            continue
+
+        ground_truths.append(judge_verdict == Verdict.SUPPORTED)
+        berlue_predictions.append(berlue_verdict)
+
+    if missing:
+        raise ValueError(
+            f"❌ Cache incomplet pour {scope} (mode généré) : {missing}/{len(valid_questions)} "
+            "question(s) manquante(s). Lancer `evaluate_model_generated` sur les tranches "
+            "manquantes avant de construire la matrice."
+        )
+
+    berlue_matrix = build_confusion_matrix(ground_truths, berlue_predictions)
+    dataset_test_size = _official_valid_question_count(scope)
+
+    store.put_generated_berlue_matrix(
+        scope, berlue_matrix, n_examples=len(valid_questions), dataset_test_size=dataset_test_size
+    )
+
+    full = (
+        ""
+        if dataset_test_size is None
+        else " (split complet)"
+        if len(valid_questions) == dataset_test_size
+        else " (PARTIEL)"
+    )
+    print(
+        f"✅ Matrice Berlue (mode généré) construite et stockée pour {scope} "
+        f"({len(valid_questions)} questions{full})."
+    )
+    return berlue_matrix
 
 
 if __name__ == "__main__":
-    # Par défaut on n'évalue que la baseline NLI : le pipeline complet (RAG +
-    # SelfCheckGPT) n'existe pas encore. Utiliser run_evaluation(pipeline=...) une
-    # fois disponible pour comparer les deux.
-    matrix = evaluate_baseline()
-    print(matrix)
+    import argparse
+    import os
+
+    from berlue.evaluation.mock_pipeline import RandomBerluePipeline
+    from berlue.params import EVAL_VERSION, GENERATION_VERSION, PIPELINE_VERSION, TRAIN_RATIO
+
+    def _env_default(name: str, fallback):
+        """Valeur par défaut d'un flag CLI, surchargeable par la variable
+        d'environnement `BERLUE_JOB_<name>` — utilisé par le Job Cloud Run
+        d'éval : `gcloud run jobs execute --args` a un bug connu qui rejette
+        toute liste contenant une valeur dupliquée (ex. `v1` répété pour
+        plusieurs versions), donc le Job passe le scope via
+        `--update-env-vars` plutôt que `--args` (chaque `KEY=VALUE` y est
+        unique, même si plusieurs `VALUE` coïncident). Comportement local
+        (CLI directe) inchangé — aucune de ces variables n'est définie."""
+        return os.environ.get(f"BERLUE_JOB_{name}", fallback)
+
+    parser = argparse.ArgumentParser(
+        description="Évalue le pipeline Berlue (mock aujourd'hui, en attendant HurluBerlu) sur un scope."
+    )
+    parser.add_argument(
+        "--dataset", default=_env_default("DATASET", "halueval"), help="Un seul dataset (jamais mélangé)."
+    )
+    parser.add_argument("--ratio", type=float, default=_env_default("RATIO", TRAIN_RATIO), help="Ratio train/test.")
+    parser.add_argument(
+        "--model-id", default=_env_default("MODEL_ID", "random-mock"), help="Identité du modèle évalué."
+    )
+    parser.add_argument(
+        "--pipeline-version",
+        default=_env_default("PIPELINE_VERSION", PIPELINE_VERSION),
+        help="Version du pipeline Berlue.",
+    )
+    parser.add_argument(
+        "--generation-version",
+        default=_env_default("GENERATION_VERSION", GENERATION_VERSION),
+        help="Version de la génération LLM.",
+    )
+    parser.add_argument(
+        "--eval-version", default=_env_default("EVAL_VERSION", EVAL_VERSION), help="Version de la méthodologie d'éval."
+    )
+    parser.add_argument(
+        "--start", type=int, default=_env_default("START", 0), help="Index de départ dans le jeu de test."
+    )
+    parser.add_argument(
+        "--end", type=int, default=_env_default("END", None), help="Index de fin (exclu) — défaut : jusqu'au bout."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["dataset", "generated"],
+        default=_env_default("MODE", "dataset"),
+        help="dataset (défaut) : Berlue vérifie la réponse du dataset. "
+        "generated : le LLM génère sa réponse, jugée par un LLM-juge ancré sur les références du dataset.",
+    )
+    parser.add_argument(
+        "--judge-model",
+        default=_env_default("JUDGE_MODEL", JUDGE_MODEL),
+        help="Modèle du LLM-juge (mode generated uniquement).",
+    )
+    parser.add_argument(
+        "--warmup",
+        action="store_true",
+        default=_env_default("WARMUP", "") == "true",
+        help="Mode generated uniquement : précharge generator/judge en VRAM (appel jetable) avant "
+        "de démarrer le chrono de la boucle — pour un récapitulatif de temps qui ne compte pas le "
+        "chargement modèle. Sans effet avec --matrix (aucun appel LLM dans ce chemin).",
+    )
+    parser.add_argument(
+        "--matrix",
+        action="store_true",
+        default=_env_default("MATRIX", "") == "true",
+        help="Construit et stocke la/les matrice(s) finale(s) au lieu de remplir le cache "
+        "(échoue si le scope est incomplet).",
+    )
+    parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Affiche les index déjà en cache / manquants pour ce scope (mode dataset uniquement), sans rien calculer.",
+    )
+    parser.add_argument(
+        "--baseline",
+        action="store_true",
+        default=_env_default("BASELINE", "") == "true",
+        help="Mode dataset : évalue uniquement la baseline NLI (recalculée à la volée), ignore les autres options.",
+    )
+    parser.add_argument(
+        "--baseline-generated",
+        action="store_true",
+        default=_env_default("BASELINE_GENERATED", "") == "true",
+        help="Mode généré : classifie par la baseline NLI les réponses déjà générées pour ce scope "
+        "(--start/--end), sans regénérer ni appeler le juge/Berlue.",
+    )
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        help="Supprime les résultats en cache correspondant aux filtres --purge-*, au lieu d'évaluer. "
+        "Chaque filtre omis est un joker.",
+    )
+    parser.add_argument(
+        "--purge-scope",
+        choices=["all", "results", "matrices"],
+        default="all",
+        help="Limite la purge aux résultats individuels, aux matrices, ou aux deux (défaut).",
+    )
+    parser.add_argument("--purge-dataset", default=None, help="Filtre de purge : dataset.")
+    parser.add_argument("--purge-ratio", type=float, default=None, help="Filtre de purge : ratio train/test.")
+    parser.add_argument("--purge-model-id", default=None, help="Filtre de purge : modèle.")
+    parser.add_argument("--purge-pipeline-version", default=None, help="Filtre de purge : version du pipeline Berlue.")
+    parser.add_argument("--purge-generation-version", default=None, help="Filtre de purge : version de génération.")
+    parser.add_argument(
+        "--purge-eval-version", default=None, help="Filtre de purge : version de la méthodologie d'éval."
+    )
+    parser.add_argument("--purge-judge-model", default=None, help="Filtre de purge : modèle du LLM-juge (mode 2).")
+    args = parser.parse_args()
+
+    if args.purge:
+        print(
+            get_result_store().purge(
+                dataset=args.purge_dataset,
+                ratio=args.purge_ratio,
+                model_id=args.purge_model_id,
+                pipeline_version=args.purge_pipeline_version,
+                generation_version=args.purge_generation_version,
+                eval_version=args.purge_eval_version,
+                judge_model=args.purge_judge_model,
+                scope=args.purge_scope,
+            )
+        )
+    elif args.baseline:
+        print(evaluate_baseline(dataset=args.dataset, ratio=args.ratio))
+    else:
+        scope = EvalScope(
+            dataset=args.dataset,
+            ratio=args.ratio,
+            model_id=args.model_id,
+            pipeline_version=args.pipeline_version,
+            generation_version=args.generation_version,
+            eval_version=args.eval_version,
+        )
+
+        if args.baseline_generated:
+            if args.matrix:
+                print(evaluate_baseline_generated_matrix(scope, judge_model=args.judge_model))
+            else:
+                evaluate_baseline_generated(scope, start=args.start, end=args.end)
+        elif args.mode == "generated":
+            if args.matrix:
+                print(evaluate_model_generated_matrix(scope, judge_model=args.judge_model))
+            else:
+                evaluate_model_generated(
+                    RandomBerluePipeline(),
+                    scope,
+                    judge_model=args.judge_model,
+                    start=args.start,
+                    end=args.end,
+                    warmup=args.warmup,
+                )
+        elif args.coverage:
+            report = coverage_report(scope)
+            print(f"Total : {report['total']} exemples")
+            print(f"Fait    : {format_index_ranges(report['done_indices'])}")
+            print(f"Manquant : {format_index_ranges(report['missing_indices'])}")
+        elif args.matrix:
+            print(evaluate_model_matrix(scope))
+        else:
+            evaluate_model(RandomBerluePipeline(), scope=scope, start=args.start, end=args.end)
