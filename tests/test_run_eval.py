@@ -236,7 +236,12 @@ def test_coverage_report_all_missing_when_cache_empty(tmp_path):
 
     report = coverage_report(scope, store=store, test_examples=examples)
 
-    assert report == {"total": 5, "done_indices": [], "missing_indices": [0, 1, 2, 3, 4]}
+    assert report == {
+        "total": 5,
+        "done_indices": [],
+        "missing_indices": [0, 1, 2, 3, 4],
+        "skipped_indices": [],
+    }
 
 
 def test_coverage_report_reflects_partial_fill(tmp_path):
@@ -247,7 +252,53 @@ def test_coverage_report_reflects_partial_fill(tmp_path):
     evaluate_model(FakePipeline(), scope=scope, store=store, test_examples=examples, start=1, end=3)
     report = coverage_report(scope, store=store, test_examples=examples)
 
-    assert report == {"total": 5, "done_indices": [1, 2], "missing_indices": [0, 3, 4]}
+    assert report == {
+        "total": 5,
+        "done_indices": [1, 2],
+        "missing_indices": [0, 3, 4],
+        "skipped_indices": [],
+    }
+
+
+def test_coverage_report_generated_mode_total_matches_start_end_semantics(tmp_path):
+    """`total` doit compter *toutes* les questions (y compris celles sans
+    référence complète) — c'est ce sur quoi `--start`/`--end` itère
+    réellement pour `evaluate_model_generated`, pas seulement les valides."""
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+    scope = _scope()
+    examples = _paired_examples(2) + [{"question": "q_incomplete", "answer": "seule", "ground_truth_label": True}]
+
+    report = coverage_report(scope, store=store, test_examples=examples, mode="generated")
+
+    assert report["total"] == 3
+    assert report["skipped_indices"] == [2]  # q_incomplete, triée après q0/q1
+    assert report["missing_indices"] == [0, 1]
+    assert report["done_indices"] == []
+
+
+def test_coverage_report_generated_mode_reflects_partial_fill(tmp_path):
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+    scope = _scope()
+    examples = _paired_examples(3)
+
+    evaluate_model_generated(
+        FakePipeline(),
+        scope,
+        generator_client=FakeGeneratorClient(),
+        judge_client=FakeJudgeClient(response="TRUE"),
+        store=store,
+        test_examples=examples,
+        start=0,
+        end=2,
+    )
+    report = coverage_report(scope, store=store, test_examples=examples, mode="generated")
+
+    assert report == {
+        "total": 3,
+        "done_indices": [0, 1],
+        "missing_indices": [2],
+        "skipped_indices": [],
+    }
 
 
 def test_format_index_ranges_compacts_consecutive_runs():
@@ -490,8 +541,13 @@ def test_evaluate_baseline_generated_matrix_never_needs_a_berlue_verdict(tmp_pat
             scope.model_id, scope.generation_version, JUDGE_MODEL, scope.eval_version, question, Verdict.SUPPORTED
         )
         store.put_generated_baseline_verdict(
-            scope.dataset, scope.ratio, scope.model_id, scope.generation_version, scope.eval_version,
-            question, Verdict.SUPPORTED,
+            scope.dataset,
+            scope.ratio,
+            scope.model_id,
+            scope.generation_version,
+            scope.eval_version,
+            question,
+            Verdict.SUPPORTED,
         )
         assert store.get_generated_berlue_verdict(scope, question) is None
 

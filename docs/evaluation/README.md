@@ -8,8 +8,11 @@ sont stockés/calculés, et comment les consulter.
 - [`storage.md`](storage.md) — où et comment les résultats sont stockés
   (concepts, implémentation locale SQLite, implémentation GCP
   Firestore/BigQuery, transfert local → GCP).
-- [`run.md`](run.md) — où le calcul s'exécute (local, Job Cloud Run).
-- [`api.md`](api.md) — les routes de lecture des résultats déjà en cache.
+- [`run.md`](run.md) — où le calcul s'exécute (local, service Cloud Run).
+- [`api.md`](api.md) — les routes de lecture des résultats déjà en cache
+  (API produit, publique).
+- [`eval-service-api.md`](eval-service-api.md) — l'endpoint qui déclenche
+  le calcul (service Cloud Run d'éval, privé, piloté par `make`).
 - [`baseline.md`](baseline.md) — entraîner/évaluer la baseline NLI en
   local.
 - [`table-examples.md`](table-examples.md) — un exemple de ligne par

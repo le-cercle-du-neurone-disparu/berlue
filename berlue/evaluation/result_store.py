@@ -487,6 +487,17 @@ class LocalResultStore:
         présents dans `llm_answers`."""
         return self._group_count("llm_answers", ["model_id", "generation_version"])
 
+    def list_generated_answers(self, model_id: str, generation_version: str) -> set[str]:
+        """Questions déjà répondues pour `model_id`/`generation_version` —
+        une seule requête, pas un `get_generated_answer` par question (cf.
+        `coverage_report`, mode généré)."""
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT question FROM llm_answers WHERE model_id=? AND generation_version=?",
+                (model_id, generation_version),
+            ).fetchall()
+        return {row[0] for row in rows}
+
     def get_judge_verdict(
         self, model_id: str, generation_version: str, judge_model: str, eval_version: str, question: str
     ) -> Verdict | None:

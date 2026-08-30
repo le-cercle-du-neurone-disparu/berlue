@@ -11,6 +11,11 @@ target-version = "py314"
 select = ["E", "F", "I", "UP", "B"]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+# Marqueur de temps délibérément avant les imports (chronométrer leur coût
+# lui-même, cf. berlue.evaluation.timing) — E402 attendu ici, pas ailleurs.
+"berlue/evaluation/run_eval.py" = ["E402"]
+
 [tool.pytest.ini_options]
 # À la racine (pas dans tests/pytest.ini) : c'est le seul emplacement que pytest
 # trouve de façon fiable quel que soit le chemin passé en ligne de commande (ex.

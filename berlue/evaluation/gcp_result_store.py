@@ -71,6 +71,7 @@ from google.cloud import bigquery
 from berlue.api.schemas import ConfusionMatrix
 from berlue.core.schemas import Verdict
 from berlue.evaluation.result_store import EvalScope, _hash, _matrix_row_to_object, _matrix_to_values
+from berlue.evaluation.timing import mark
 from berlue.params import BQ_DATASET, EVAL_BIGQUERY_PROJECT, EVAL_FIRESTORE_PROJECT, EVAL_SERVICE_ACCOUNT
 
 _MATRIX_COLUMNS = (
@@ -113,8 +114,10 @@ def _access_token() -> str:
       module. Nécessite `roles/iam.serviceAccountTokenCreator` sur ce SA.
     """
     if _running_on_cloud_run():
+        mark("_access_token() start (ADC via métadonnées)")
         credentials, _ = google.auth.default()
         credentials.refresh(google.auth.transport.requests.Request())
+        mark("_access_token() fini")
         return credentials.token
 
     if not EVAL_SERVICE_ACCOUNT:
@@ -286,10 +289,13 @@ class GcpResultStore:
     REGISTRY_FLUSH_EVERY = 20
 
     def __init__(self, firestore_project: str = EVAL_FIRESTORE_PROJECT, bigquery_project: str = EVAL_BIGQUERY_PROJECT):
+        mark("GcpResultStore.__init__ start")
         self.fs = _FirestoreRest(firestore_project)
         self.bq = bigquery.Client(project=bigquery_project, credentials=_AccessTokenCredentials())
+        mark("bigquery.Client() construit")
         self.bq_dataset = BQ_DATASET
         self._ensure_bq_tables()
+        mark("_ensure_bq_tables() fait (3x create_table exists_ok)")
         self._registry_buffer: dict[tuple[str, tuple], int] = {}
 
     # -- Registre de scopes ------------------------------------------------
@@ -430,6 +436,10 @@ class GcpResultStore:
 
     def list_generated_answer_scopes(self) -> list[dict]:
         return self._list_registry_scopes("llm_answers")
+
+    def list_generated_answers(self, model_id: str, generation_version: str) -> set[str]:
+        docs = self.fs.query("llm_answers", {"model_id": model_id, "generation_version": generation_version})
+        return {doc["question"] for doc in docs}
 
     def get_judge_verdict(
         self, model_id: str, generation_version: str, judge_model: str, eval_version: str, question: str

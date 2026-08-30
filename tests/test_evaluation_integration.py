@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from berlue.api.fast import app
+from berlue.api.fast_eval import get_store
 from berlue.evaluation.mock_pipeline import RandomBerluePipeline
 from berlue.evaluation.result_store import EvalScope, LocalResultStore
 from berlue.evaluation.run_eval import (
@@ -93,15 +94,18 @@ def store(tmp_path) -> LocalResultStore:
 @pytest.fixture
 def api_client(store, monkeypatch):
     """TestClient pointé sur le store isolé de ce test, pas la base locale
-    réelle du dev — pas de pollution, pas de purge nécessaire. Force le mode
+    réelle du dev — pas de pollution, pas de purge nécessaire. Override de
+    dépendance FastAPI (`get_store`), pas `app.state` : les routes d'éval
+    l'injectent via `Depends(get_store)`, jamais `app.state`. Force le mode
     mock (`MockBerluePipeline`, léger) au démarrage : ce test ne touche
     jamais `/predict`/`/llms`, pas besoin de charger un vrai RAG/LLM
     d'extraction — sinon ce test échouerait sur une machine sans index FAISS
     déjà construit, pour une raison sans rapport avec ce qu'il vérifie."""
     monkeypatch.setattr("berlue.api.fast.USE_MOCK", True)
+    app.dependency_overrides[get_store] = lambda: store
     with TestClient(app) as client:
-        app.state.result_store = store
         yield client
+    del app.dependency_overrides[get_store]
 
 
 def test_mode_dataset_end_to_end_on_mini_real_dataset(store, mini_test_examples):
@@ -165,7 +169,8 @@ def test_mode_generated_end_to_end_on_mini_real_dataset(store, mini_test_example
 
 def test_both_modes_readable_via_api_on_mini_real_dataset(api_client, store, mini_test_examples):
     """Bout en bout complet : remplit les deux modes, puis relit tout via les
-    6 routes API (pas juste le store directement)."""
+    4 routes API (pas juste le store directement) — `/evaluated-models` et
+    `/model-evaluation` couvrent les deux modes via `mode=dataset|generated`."""
     scope = _scope()
 
     evaluate_model(RandomBerluePipeline(), scope=scope, store=store, test_examples=mini_test_examples)
@@ -199,8 +204,12 @@ def test_both_modes_readable_via_api_on_mini_real_dataset(api_client, store, min
         == 200
     )
 
-    assert api_client.get("/evaluated-models-generated", params={"model_id": "random-mock"}).status_code == 200
-    assert api_client.get("/model-evaluation-generated", params=generated_scope_params).status_code == 200
+    assert (
+        api_client.get("/evaluated-models", params={"model_id": "random-mock", "mode": "generated"}).status_code == 200
+    )
+    assert (
+        api_client.get("/model-evaluation", params={**generated_scope_params, "mode": "generated"}).status_code == 200
+    )
     assert (
         api_client.get(
             "/baseline-evaluation-generated",
