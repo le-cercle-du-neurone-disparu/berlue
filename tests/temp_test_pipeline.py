@@ -13,7 +13,7 @@ class StubOllamaClient:
         self.response = response
         self.responses = responses or []
 
-    def generate(self, prompt: str, temperature: float = 0.0) -> str:
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         return self.response
 
     def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> list[str]:

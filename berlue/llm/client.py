@@ -60,13 +60,26 @@ class OllamaClient:
         self.verbose = verbose
         self.client = Client(host=self.host, timeout=timeout, headers=_cloud_run_auth_headers(self.host))
 
-    def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE) -> str:
+    def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE, num_predict: int | None = None) -> str:
         """Génère une réponse pour `prompt` à la température donnée. Chaque
         appel est indépendant (endpoint `/api/generate`, stateless) — pas
         d'historique de conversation entre deux appels, même consécutifs sur
-        le même client."""
+        le même client.
+
+        `num_predict` : borne dure sur le nombre de tokens générés (défaut
+        Ollama = pas de limite). Sans elle, un modèle qui ne suit pas une
+        consigne de longueur peut générer jusqu'à saturer `n_ctx_slot` puis
+        continuer via un *context shift* (troncature + poursuite) répété,
+        chacun coûtant plusieurs secondes — un appel peut alors dépasser
+        largement le temps attendu, indépendamment de tout problème de
+        charge ou de configuration serveur (observé en conditions réelles :
+        un appel de génération resté bloqué plus de 120s de cette façon).
+        À fixer à chaque appel dont la longueur attendue est connue."""
 
         final_temp = temperature if temperature is not None else self.temperature
+        options = {"temperature": final_temp}
+        if num_predict is not None:
+            options["num_predict"] = num_predict
 
         if self.verbose:
             print(f"\n📤 [Ollama:{self.model}, temp={final_temp}] Prompt :\n{prompt}\n")
@@ -74,7 +87,7 @@ class OllamaClient:
         start = time.monotonic()
 
         try:
-            response = self.client.generate(model=self.model, prompt=prompt, options={"temperature": final_temp})
+            response = self.client.generate(model=self.model, prompt=prompt, options=options)
 
         except TimeoutException as e:
             print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")

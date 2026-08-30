@@ -37,7 +37,7 @@ class FakeJudgeClient:
     """Toujours TRUE — déterministe, pour un test reproductible sans dépendre
     d'un vrai Ollama disponible sur toutes les machines de dev/CI."""
 
-    def generate(self, prompt: str, temperature: float = 0.0) -> str:
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         return "TRUE"
 
 
@@ -46,7 +46,7 @@ class FakeGeneratorClient:
     test reste reproductible sur une machine sans Ollama, même si la
     génération n'est plus mockée par défaut (cf. evaluate_model_generated)."""
 
-    def generate(self, prompt: str, temperature: float = 0.0) -> str:
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         return f"generated:{prompt}"
 
 

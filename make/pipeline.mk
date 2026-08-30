@@ -97,12 +97,17 @@ JUDGE_MODEL ?= qwen2.5:0.5b
 # WARMUP=true : précharge generator/judge en VRAM avant de chronométrer la
 # boucle — cf. evaluate_model_generated ci-dessous et docs/evaluation/execution-benchmark.md.
 WARMUP ?= false
+# CONCURRENCY : questions traitées en parallèle au sein de chaque étape — 1
+# par défaut (séquentiel). À aligner sur le OLLAMA_NUM_PARALLEL réel du
+# serveur ciblé, cf. docs/gcp/ollama-gpu-parallelism.md.
+CONCURRENCY ?= 1
 
-evaluate_model_generated: ## Mode généré, Berlue seul : remplit le cache d'un scope sur [START:END] (génération + Berlue + juge, jamais la baseline) ; WARMUP=true précharge les modèles avant de chronométrer
+evaluate_model_generated: ## Mode généré, Berlue seul : remplit le cache d'un scope sur [START:END] (génération + Berlue + juge, jamais la baseline) ; WARMUP=true précharge les modèles avant de chronométrer ; CONCURRENCY pour paralléliser chaque étape
 	python -m berlue.evaluation.run_eval --mode generated \
 		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
 		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
 		--judge-model $(JUDGE_MODEL) --start $(START) $(if $(END),--end $(END),) \
+		--concurrency $(CONCURRENCY) \
 		$(if $(filter true,$(WARMUP)),--warmup,)
 
 evaluate_model_generated_all: ## Mode généré, Berlue seul : remplit tout le cache d'un scope puis construit/stocke sa matrice finale — jamais la baseline (cf. evaluate_model_generated_baseline_all)

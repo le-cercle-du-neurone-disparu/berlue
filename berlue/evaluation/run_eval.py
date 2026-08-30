@@ -15,8 +15,10 @@ from berlue.evaluation.timing import mark
 
 mark("module import start")
 
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import lru_cache
 
@@ -45,19 +47,23 @@ class _StepTimer:
     d'une boucle d'éval, pour un récapitulatif détaillé en fin de run (temps
     moyen/total par tâche) plutôt qu'un seul temps englobant (`time make
     ...`). Ne mesure que les calculs réels : un appel jamais fait (cache hit)
-    n'entre jamais dans `measure()`, donc ne compte pas."""
+    n'entre jamais dans `measure()`, donc ne compte pas. `measure()` est
+    thread-safe (verrou sur l'accumulation) — appelable depuis plusieurs
+    workers d'un `ThreadPoolExecutor` en parallèle."""
 
     def __init__(self):
         self._totals: dict[str, float] = {}
         self._counts: dict[str, int] = {}
+        self._lock = threading.Lock()
 
     @contextmanager
     def measure(self, step: str):
         start = time.perf_counter()
         yield
         elapsed = time.perf_counter() - start
-        self._totals[step] = self._totals.get(step, 0.0) + elapsed
-        self._counts[step] = self._counts.get(step, 0) + 1
+        with self._lock:
+            self._totals[step] = self._totals.get(step, 0.0) + elapsed
+            self._counts[step] = self._counts.get(step, 0) + 1
 
     def summary(self) -> str:
         if not self._counts:
@@ -399,6 +405,10 @@ def group_examples_by_question(test_examples: list[dict]) -> dict[str, dict[str,
 
 
 GENERATION_INSTRUCTION = "Answer clearly and concisely, in 3 to 5 sentences maximum."
+# Large marge au-dessus d'une réponse de 3 à 5 phrases légitime (mesuré : 50 à
+# 150 tokens en usage réel) — borne le pire cas d'une réponse qui ne suit pas
+# la consigne plutôt qu'un plafond serré (cf. OllamaClient.generate).
+GENERATION_MAX_TOKENS = 300
 
 
 def evaluate_model_generated(
@@ -412,15 +422,26 @@ def evaluate_model_generated(
     store: LocalResultStore | None = None,
     test_examples: list[dict] | None = None,
     warmup: bool = False,
+    concurrency: int = 1,
 ) -> None:
-    """Mode 2, Berlue seul : pour chaque question de `[start:end]`, génère une
-    réponse (vrai appel LLM — `generator_client`, `scope.model_id` par défaut,
-    jamais mocké, même quand `pipeline` — le fact-check Berlue — l'est encore
-    tant que `HurluBerlu` n'est pas branché), la fait fact-checker par Berlue,
-    et juger par un LLM-juge ancré sur les réponses de référence du dataset
-    (vérité-terrain de substitution). Remplit les 3 caches correspondants
-    (`llm_answers`, `eval_berlue_generated`, `judge_verdicts`) — ne construit
-    pas de matrice.
+    """Mode 2, Berlue seul : sur `[start:end]`, génère une réponse pour
+    chaque question (vrai appel LLM — `generator_client`, `scope.model_id`
+    par défaut, jamais mocké, même quand `pipeline` — le fact-check Berlue —
+    l'est encore tant que `HurluBerlu` n'est pas branché), puis la fait
+    fact-checker par Berlue, puis juger par un LLM-juge ancré sur les
+    réponses de référence du dataset (vérité-terrain de substitution) — un
+    passage complet par étape sur l'ensemble des questions, pas les 3 étapes
+    question par question (chaque étape ne dépend que de la réponse générée,
+    jamais du résultat d'une autre étape). Remplit les 3 caches
+    correspondants (`llm_answers`, `eval_berlue_generated`, `judge_verdicts`)
+    — ne construit pas de matrice.
+
+    `concurrency` : nombre de questions traitées en parallèle *au sein* de
+    chaque étape (`ThreadPoolExecutor`) — 1 par défaut (séquentiel,
+    comportement historique). À aligner sur le `OLLAMA_NUM_PARALLEL` réel du
+    serveur ciblé, pas une valeur arbitraire (cf.
+    docs/gcp/ollama-gpu-parallelism.md) : au-delà, les requêtes en surplus
+    s'empilent en file côté serveur sans rien gagner.
 
     Ne touche jamais la baseline — c'est le rôle exclusif d'`evaluate_baseline_generated`,
     en aval, sur la réponse déjà générée ici (même principe qu'en mode 1 :
@@ -450,54 +471,100 @@ def evaluate_model_generated(
     grouped = group_examples_by_question(test_examples)
     questions = sorted(grouped)  # ordre déterministe, reproductible entre invocations
     end = len(questions) if end is None else end
-    subset = questions[start:end]
+    candidates = questions[start:end]
+    subset = [q for q in candidates if grouped[q]["correct_answers"] and grouped[q]["incorrect_answers"]]
+    n_skipped = len(candidates) - len(subset)
 
-    print(f"🔍 Évaluation générée+juge sur [{start}:{end}] ({len(subset)} questions, scope={scope})...")
+    print(
+        f"🔍 Évaluation générée+juge sur [{start}:{end}] ({len(candidates)} questions, scope={scope}, "
+        f"concurrency={concurrency})..."
+    )
 
+    # Une étape à la fois sur la totalité de `subset`, plutôt que les 3 étapes
+    # question par question — chaque étape ne dépend que de la réponse
+    # générée (jamais du verdict d'une autre étape). Au sein d'une étape, les
+    # questions pas encore en cache sont dépilées par un pool de threads
+    # (cf. docs/gcp/ollama-gpu-parallelism.md pour pourquoi séquencer les
+    # étapes plutôt que les entrelacer). Le cache par étape (déjà en place)
+    # rend ce découpage transparent : reprendre un run interrompu au milieu
+    # d'une étape saute exactement les mêmes calculs déjà faits.
     timer = _StepTimer()
-    n_skipped = 0
-    try:
-        for i, question in enumerate(subset):
-            refs = grouped[question]
-            if not refs["correct_answers"] or not refs["incorrect_answers"]:
-                n_skipped += 1
-                continue
+    registry_lock = threading.Lock()
+    n_flushed = {"n": 0}
 
-            generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
-            if generated_answer is None:
-                prompt = f"{question}\n\n[Instruction: {GENERATION_INSTRUCTION}]"
-                with timer.measure("génération"):
-                    generated_answer = generator_client.generate(prompt=prompt)
-                store.put_generated_answer(scope.model_id, scope.generation_version, question, generated_answer)
-
-            if store.get_generated_berlue_verdict(scope, question) is None:
-                with timer.measure("Berlue"):
-                    berlue_verdict = aggregate_verdict(pipeline.predict(question, generated_answer).claims)
-                store.put_generated_berlue_verdict(scope, question, berlue_verdict)
-
-            judge_verdict_cached = store.get_judge_verdict(
-                scope.model_id, scope.generation_version, judge_model, scope.eval_version, question
-            )
-            if judge_verdict_cached is None:
-                with timer.measure("juge"):
-                    judge_verdict = judge_answer(
-                        question,
-                        refs["correct_answers"][0],
-                        refs["incorrect_answers"],
-                        generated_answer,
-                        client=judge_client,
-                    )
-                store.put_judge_verdict(
-                    scope.model_id, scope.generation_version, judge_model, scope.eval_version, question, judge_verdict
-                )
-
-            if (i + 1) % _REGISTRY_FLUSH_EVERY_N_ITEMS == 0:
+    def _maybe_flush_registry():
+        with registry_lock:
+            n_flushed["n"] += 1
+            if n_flushed["n"] % _REGISTRY_FLUSH_EVERY_N_ITEMS == 0:
                 store.flush_registry()
+
+    def _run_pool(todo: list[str], worker: Callable[[str], None]) -> None:
+        if not todo:
+            return
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            # list() force la consommation de map() : une exception dans un
+            # worker doit remonter ici (et donc via le `finally` plus bas),
+            # pas rester silencieusement dans un Future jamais lu.
+            list(executor.map(worker, todo))
+
+    def _generate_one(question: str) -> None:
+        prompt = f"{question}\n\n[Instruction: {GENERATION_INSTRUCTION}]"
+        with timer.measure("génération"):
+            generated_answer = generator_client.generate(prompt=prompt, num_predict=GENERATION_MAX_TOKENS)
+        store.put_generated_answer(scope.model_id, scope.generation_version, question, generated_answer)
+        _maybe_flush_registry()
+
+    def _berlue_one(question: str) -> None:
+        # `pipeline.predict` doit être thread-safe pour un `concurrency` > 1 —
+        # vrai pour un pipeline réel (appels LLM sans état partagé, comme
+        # `generator_client`/`judge_client`), pas garanti pour
+        # `RandomBerluePipeline` (RNG d'instance non verrouillé) : rester sur
+        # `concurrency=1` pour cette étape tant que le mock est utilisé.
+        generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
+        with timer.measure("Berlue"):
+            berlue_verdict = aggregate_verdict(pipeline.predict(question, generated_answer).claims)
+        store.put_generated_berlue_verdict(scope, question, berlue_verdict)
+        _maybe_flush_registry()
+
+    def _judge_one(question: str) -> None:
+        refs = grouped[question]
+        generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
+        with timer.measure("juge"):
+            judge_verdict = judge_answer(
+                question,
+                refs["correct_answers"][0],
+                refs["incorrect_answers"],
+                generated_answer,
+                client=judge_client,
+            )
+        store.put_judge_verdict(
+            scope.model_id, scope.generation_version, judge_model, scope.eval_version, question, judge_verdict
+        )
+        _maybe_flush_registry()
+
+    try:
+        _run_pool(
+            [q for q in subset if store.get_generated_answer(scope.model_id, scope.generation_version, q) is None],
+            _generate_one,
+        )
+        _run_pool(
+            [q for q in subset if store.get_generated_berlue_verdict(scope, q) is None],
+            _berlue_one,
+        )
+        _run_pool(
+            [
+                q
+                for q in subset
+                if store.get_judge_verdict(scope.model_id, scope.generation_version, judge_model, scope.eval_version, q)
+                is None
+            ],
+            _judge_one,
+        )
     finally:
         store.flush_registry()
 
     print(
-        f"✅ Terminé : {len(subset) - n_skipped} question(s) traitée(s), {n_skipped} ignorée(s) (référence manquante). "
+        f"✅ Terminé : {len(subset)} question(s) traitée(s), {n_skipped} ignorée(s) (référence manquante). "
         f"⏱ {timer.summary()}"
     )
 
@@ -737,6 +804,14 @@ def build_arg_parser():
         "chargement modèle. Sans effet avec --matrix (aucun appel LLM dans ce chemin).",
     )
     parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help="Mode generated uniquement : nombre de questions traitées en parallèle au sein de chaque "
+        "étape (génération, Berlue, juge) — 1 par défaut (séquentiel). À aligner sur le "
+        "OLLAMA_NUM_PARALLEL réel du serveur ciblé.",
+    )
+    parser.add_argument(
         "--matrix",
         action="store_true",
         help="Construit et stocke la/les matrice(s) finale(s) au lieu de remplir le cache "
@@ -853,6 +928,7 @@ def run_from_args(args, store: LocalResultStore | None = None):
             start=args.start,
             end=args.end,
             warmup=args.warmup,
+            concurrency=args.concurrency,
             store=store,
         )
         return None

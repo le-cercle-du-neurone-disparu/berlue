@@ -12,9 +12,11 @@ class FakeClient:
     def __init__(self, response: str):
         self.response = response
         self.last_prompt: str | None = None
+        self.last_num_predict: int | None = None
 
-    def generate(self, prompt: str, temperature: float = 0.0) -> str:
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         self.last_prompt = prompt
+        self.last_num_predict = num_predict
         return self.response
 
 
@@ -52,6 +54,16 @@ def test_judge_answer_returns_verdict_from_client_response():
     client = FakeClient("TRUE")
     verdict = judge_answer("Q?", "correct answer", ["wrong answer"], "candidate", client=client)
     assert verdict == Verdict.SUPPORTED
+
+
+def test_judge_answer_bounds_generation_length():
+    """Une consigne "un seul mot" ignorée peut faire partir un modèle en
+    génération illimitée (cas réel documenté plus haut) — `num_predict` doit
+    toujours être fixé pour borner le pire cas, jamais laissé par défaut."""
+    client = FakeClient("TRUE")
+    judge_answer("Q?", "correct answer", ["wrong answer"], "candidate", client=client)
+    assert client.last_num_predict is not None
+    assert client.last_num_predict <= 20
 
 
 def test_judge_answer_picks_one_incorrect_answer_among_several():
