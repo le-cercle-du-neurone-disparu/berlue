@@ -148,16 +148,22 @@ gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournen
 # pour un test de parallélisme ponctuel, ex. `make cloudrun_llm_deploy
 # LLM_NUM_PARALLEL=32 LLM_CONTEXT_LENGTH=1024`. Toujours revenir aux défauts
 # après un test (redéployer sans les surcharger) pour ne pas laisser la prod
-# sur une config expérimentale.
+# sur une config expérimentale. LLM_CPU/LLM_MEMORY : 8 vCPU / 32 Gi est le
+# **plafond dur** pour 1 GPU sur Cloud Run (`.08-1, 1, 2, 4, 6, 8` seules
+# valeurs de CPU acceptées avec `--gpu=1` — vérifié, `gcloud` refuse tout
+# le reste avec une erreur de validation explicite), pas juste une
+# recommandation — inutile de tenter plus haut.
 LLM_NUM_PARALLEL ?= 4
 LLM_CONCURRENCY ?= 4
 LLM_CONTEXT_LENGTH ?=
+LLM_CPU ?= 4
+LLM_MEMORY ?= 16Gi
 # Une virgule littérale dans un argument de $(if ...) serait lue comme le
 # séparateur then/else de $(if) lui-même — passer par une variable l'évite.
 comma := ,
 
-cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU L4, privé — IAM requis pour l'appeler) ; LLM_NUM_PARALLEL/LLM_CONCURRENCY/LLM_CONTEXT_LENGTH pour un test de parallélisme
-	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU L4, NUM_PARALLEL=$(LLM_NUM_PARALLEL))..."
+cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU L4, privé — IAM requis pour l'appeler) ; LLM_NUM_PARALLEL/LLM_CONCURRENCY/LLM_CONTEXT_LENGTH/LLM_CPU/LLM_MEMORY pour un test de parallélisme
+	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU L4, NUM_PARALLEL=$(LLM_NUM_PARALLEL), $(LLM_CPU) vCPU/$(LLM_MEMORY))..."
 	gcloud run deploy $(CLOUDRUN_LLM_SERVICE) \
 		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest \
 		--region $(GCP_REGION) \
@@ -165,8 +171,8 @@ cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollam
 		--gpu=1 \
 		--gpu-type=nvidia-l4 \
 		--no-gpu-zonal-redundancy \
-		--cpu=4 \
-		--memory=16Gi \
+		--cpu=$(LLM_CPU) \
+		--memory=$(LLM_MEMORY) \
 		--concurrency=$(LLM_CONCURRENCY) \
 		--set-env-vars=OLLAMA_NUM_PARALLEL=$(LLM_NUM_PARALLEL)$(if $(LLM_CONTEXT_LENGTH),$(comma)OLLAMA_CONTEXT_LENGTH=$(LLM_CONTEXT_LENGTH),) \
 		--max-instances=1 \
