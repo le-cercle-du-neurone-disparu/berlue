@@ -21,7 +21,9 @@ total de tokens générés à ce niveau divisé par la durée réelle de la fen�
 
 Réglable via variables d'environnement (voir valeurs par défaut ci-dessous) :
 OLLAMA_HOST, AUTH_TOKEN, MODEL, HALUEVAL_PATH, START_THREADS, MAX_THREADS,
-RAMP_INTERVAL_S, HOLD_AT_MAX_S, REQUEST_TIMEOUT_S.
+THREAD_STEP (threads ajoutés par palier — 1 par défaut ; monter ce pas pour
+balayer une large plage sans un ramp interminable, ex. un service distant à
+latence par appel élevée), RAMP_INTERVAL_S, HOLD_AT_MAX_S, REQUEST_TIMEOUT_S.
 
 Usage local :
     python scripts/ollama_load_test.py
@@ -58,6 +60,7 @@ REQUEST_TIMEOUT_S = float(os.environ.get("REQUEST_TIMEOUT_S", "10.0"))
 
 START_THREADS = int(os.environ.get("START_THREADS", "4"))
 MAX_THREADS = int(os.environ.get("MAX_THREADS", "30"))
+THREAD_STEP = int(os.environ.get("THREAD_STEP", "1"))
 RAMP_INTERVAL_S = float(os.environ.get("RAMP_INTERVAL_S", "5.0"))
 HOLD_AT_MAX_S = float(os.environ.get("HOLD_AT_MAX_S", "20.0"))
 
@@ -168,23 +171,32 @@ def main():
     )
     print(f"✅ Warmup fait en {time.monotonic() - t0:.2f}s.\n")
 
-    level_windows[START_THREADS] = {"start": time.monotonic(), "end": None}
+    next_worker_id = 0
     threads = []
-    for i in range(START_THREADS):
-        t = threading.Thread(target=worker, args=(i,), daemon=True)
-        t.start()
-        threads.append(t)
-    print(f"🚀 Démarrage à {START_THREADS} threads, +1 toutes les {RAMP_INTERVAL_S:.0f}s jusqu'à {MAX_THREADS}...\n")
+
+    def _spawn(n: int):
+        nonlocal next_worker_id
+        for _ in range(n):
+            t = threading.Thread(target=worker, args=(next_worker_id,), daemon=True)
+            t.start()
+            threads.append(t)
+            next_worker_id += 1
+
+    level_windows[START_THREADS] = {"start": time.monotonic(), "end": None}
+    _spawn(START_THREADS)
+    print(
+        f"🚀 Démarrage à {START_THREADS} threads, +{THREAD_STEP} toutes les "
+        f"{RAMP_INTERVAL_S:.0f}s jusqu'à {MAX_THREADS}...\n"
+    )
 
     level = START_THREADS
     while level < MAX_THREADS:
         time.sleep(RAMP_INTERVAL_S)
         print_level_summary(level)
-        level += 1
+        step = min(THREAD_STEP, MAX_THREADS - level)
+        level += step
         set_level(level)
-        t = threading.Thread(target=worker, args=(level,), daemon=True)
-        t.start()
-        threads.append(t)
+        _spawn(step)
         print(f"➕ Niveau {level} ({len(threads)} threads actifs)")
 
     print(f"\n⏸️  Palier à {MAX_THREADS} threads pendant {HOLD_AT_MAX_S:.0f}s...\n")
