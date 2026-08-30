@@ -62,6 +62,11 @@ IMAGE_PROJECT = ubuntu-os-cloud
 # --- Cloud Run ---
 GAR_MEMORY = 2Gi
 
+# Compte de service attaché au service Cloud Run (distinct de SA_NAME, la VM
+# d'entraînement) — droits Firestore/BigQuery nécessaires pour EVAL_STORE_TARGET=gcp
+# en exécution GCP, cf. make/gcp.mk#iam_setup_cloudrun_service_account.
+CLOUDRUN_SA_NAME = sa-berlue
+
 # 3 environnements (test/staging/prod), même projet GCP, 3 services Cloud Run
 # nommés $(GAR_IMAGE)-<env> (cf. make/cloudrun.mk, CLOUDRUN_ENV=test|staging|prod).
 # Accès public (--allow-unauthenticated) par environnement — repasser à false
@@ -71,6 +76,22 @@ GAR_MEMORY = 2Gi
 CLOUDRUN_PUBLIC_test = true
 CLOUDRUN_PUBLIC_staging = true
 CLOUDRUN_PUBLIC_prod = true
+
+# Job Cloud Run d'éval (mode batch, pas de notion d'environnement
+# test/staging/prod — un seul Job, exécuté à la demande). "-mocked" :
+# rappel volontaire que le pipeline Berlue exécuté dedans est encore
+# RandomBerluePipeline, pas HurluBerlu (cf. docs/evaluation/run.md,
+# tmp/eval-model-design.md §17). Renommer une fois le vrai pipeline branché.
+GAR_EVAL_IMAGE = berlue-eval-mocked
+CLOUDRUN_EVAL_JOB = berlue-eval-mocked
+
+# Service Cloud Run Ollama, appelé par les autres (Job d'éval en mode
+# généré, API) — cf. Dockerfile.llm, tmp/eval-model-design.md §18-19.
+# GPU L4, coûte dès le premier appel (~0,67 $/h) : jamais de min-instances
+# permanent sans confirmation explicite, toujours redescendre à 0 ou
+# supprimer après un test.
+GAR_LLM_IMAGE = berlue-llm
+CLOUDRUN_LLM_SERVICE = berlue-llm
 
 # --- BigQuery ---
 # ⚠️ Doit rester identique à BQ_DATASET dans berlue/params.py (utilisée des deux
