@@ -25,7 +25,7 @@ make gcp_down                                              # min-instances=0, en
 `cloudrun_eval_service_invoke` accepte les mêmes variables que
 `evaluate_model`/`evaluate_model_generated` (`DATASET`, `RATIO`,
 `MODEL_ID`, versions, `MODE`, `MATRIX`, `START`/`END`, `JUDGE_MODEL`,
-`WARMUP`, `BASELINE`, `COVERAGE`). `START`/`END` sont facultatifs — omis, un appel traite tout le
+`WARMUP`, `BASELINE`, `COVERAGE`, `CONCURRENCY`). `START`/`END` sont facultatifs — omis, un appel traite tout le
 scope (cf. [`run.md`](../evaluation/run.md) pour combien d'éléments compte
 un scope avant de découper, via `evaluate_model_coverage` en local contre
 le store GCP — pas besoin du service pour ça).
@@ -91,6 +91,14 @@ make cloudrun_llm_logs
 make cloudrun_llm_scale_to_zero           # sécurité budget, idempotent — à lancer après chaque session de test
 make cloudrun_llm_delete                  # arrête définitivement toute facturation liée
 ```
+
+`cloudrun_llm_deploy` accepte `LLM_NUM_PARALLEL`/`LLM_CONCURRENCY`/
+`LLM_CONTEXT_LENGTH` (défauts = config de prod ci-dessus, 4/4/auto) pour un
+test de parallélisme ponctuel — chiffres mesurés dans
+[`execution-benchmark.md`](../evaluation/execution-benchmark.md). Une
+nouvelle révision perd le modèle tiré (disque éphémère, cf. plus bas) :
+relancer `gcp_up WARM_MODELS="..."` après. Toujours redéployer sans
+surcharge ensuite pour revenir à la config de prod.
 
 Le modèle doit être tiré une fois le service déployé (`POST /api/pull` avec
 un jeton d'identité) — automatisé par `make gcp_up WARM_MODELS="..."` (cf.

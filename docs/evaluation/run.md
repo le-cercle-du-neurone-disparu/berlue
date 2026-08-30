@@ -186,7 +186,12 @@ make gcp_down                                               # min-instances=0, e
 Accepte les mêmes variables que `evaluate_model`/`evaluate_model_generated`
 (`DATASET`, `RATIO`, `MODEL_ID`, versions, `START`/`END`), plus
 `MODE=dataset|generated`, `MATRIX=true|false`, `WARMUP=true|false`,
-`BASELINE=true|false` et `COVERAGE=true|false`.
+`BASELINE=true|false`, `COVERAGE=true|false` et `CONCURRENCY` (mode
+`generated` uniquement — nécessite `berlue-llm` redéployé avec un
+`OLLAMA_NUM_PARALLEL` au moins égal, cf.
+[`cloudrun.md`](../gcp/cloudrun.md) et
+[`execution-benchmark.md`](execution-benchmark.md) pour des chiffres
+mesurés).
 
 **Mode `generated`** appelle Ollama (génération + juge) — servi par un
 service Cloud Run séparé, `berlue-llm` (GPU L4, privé, appelé via jeton
