@@ -1,0 +1,8 @@
+# Image Ollama dédiée, appelée par les autres services/jobs Cloud Run
+# (extraction, juge, génération — cf. docs/gcp/infra-gpu.md) plutôt
+# qu'embarquée dans chacun d'eux.
+FROM ollama/ollama:latest
+
+# Garde les modèles chargés en VRAM en permanence une fois demandés — évite
+# de repayer le cold start (11-35s mesuré) à chaque appel espacé.
+ENV OLLAMA_KEEP_ALIVE=-1

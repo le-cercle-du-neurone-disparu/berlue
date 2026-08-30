@@ -26,8 +26,116 @@ run_all: run_preprocess run_train run_evaluate run_pred ## Lance le pipeline com
 train_baseline: ## Entraîne le classifieur NLI léger (baseline) et sauvegarde le .joblib localement
 	python -m berlue.nli_baseline.train
 
-evaluate_baseline: ## Évalue la baseline NLI seule sur le jeu de test HaluEval/TruthfulQA
-	python -m berlue.evaluation.run_eval
+evaluate_baseline: ## Évalue la baseline NLI seule (mode dataset) sur DATASET/RATIO
+	python -m berlue.evaluation.run_eval --baseline --dataset $(DATASET) --ratio $(RATIO)
+
+# Surchargeables : `make evaluate_model DATASET=halueval RATIO=0.7 MODEL_ID=llama3.2:1b START=100 END=200`.
+# Un seul DATASET à la fois — les résultats ne mélangent jamais plusieurs
+# datasets, cf. docs/evaluation/storage.md.
+DATASET ?= halueval
+RATIO ?= 0.8
+MODEL_ID ?= random-mock
+PIPELINE_VERSION ?= v1
+GENERATION_VERSION ?= v1
+EVAL_VERSION ?= v1
+START ?= 0
+END ?=
+
+evaluate_model: ## Remplit le cache d'un scope sur [START:END] avec le pipeline Berlue (mock aujourd'hui)
+	python -m berlue.evaluation.run_eval \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--start $(START) $(if $(END),--end $(END),)
+
+evaluate_model_all: ## Remplit tout le cache d'un scope puis construit/stocke sa matrice finale
+	@$(MAKE) --no-print-directory evaluate_model START=0 END=
+	@$(MAKE) --no-print-directory evaluate_model_matrix
+
+evaluate_model_matrix: ## Construit/stocke la matrice finale d'un scope depuis le cache — échoue si incomplet
+	python -m berlue.evaluation.run_eval \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--matrix
+
+evaluate_model_coverage: ## Affiche les index déjà en cache / manquants d'un scope (mode dataset), sans rien calculer
+	python -m berlue.evaluation.run_eval \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--coverage
+
+# PURGE_SCOPE = all (défaut) | results (5 tables individuelles) | matrices (3 tables).
+PURGE_SCOPE ?= all
+
+evaluate_model_purge: ## Purge le cache filtré par DATASET/RATIO/MODEL_ID/PIPELINE_VERSION/GENERATION_VERSION/EVAL_VERSION/JUDGE_MODEL/PURGE_SCOPE — vide = joker (attention : défauts non vides ci-dessus, blanquer explicitement pour un joker, ex. `make evaluate_model_purge DATASET= RATIO= MODEL_ID= PIPELINE_VERSION= EVAL_VERSION=`)
+	python -m berlue.evaluation.run_eval --purge --purge-scope $(PURGE_SCOPE) \
+		$(if $(DATASET),--purge-dataset $(DATASET),) \
+		$(if $(RATIO),--purge-ratio $(RATIO),) \
+		$(if $(MODEL_ID),--purge-model-id $(MODEL_ID),) \
+		$(if $(PIPELINE_VERSION),--purge-pipeline-version $(PIPELINE_VERSION),) \
+		$(if $(GENERATION_VERSION),--purge-generation-version $(GENERATION_VERSION),) \
+		$(if $(EVAL_VERSION),--purge-eval-version $(EVAL_VERSION),) \
+		$(if $(JUDGE_MODEL),--purge-judge-model $(JUDGE_MODEL),)
+
+evaluate_explore_results: ## Liste les scopes déjà en cache pour les 5 tables de résultats individuels (local ou GCP selon EVAL_STORE_TARGET)
+	PYTHONPATH=. python scripts/explore_eval_store.py --kind results
+
+evaluate_explore_matrices: ## Liste les scopes déjà en cache pour les 3 tables de matrices (local ou GCP selon EVAL_STORE_TARGET)
+	PYTHONPATH=. python scripts/explore_eval_store.py --kind matrices
+
+# PUSH_SCOPE = all (défaut) | results (eval_predictions seulement) | matrices.
+PUSH_SCOPE ?= all
+
+evaluate_push_to_gcp: ## Pousse un scope (résultats mode 1 et/ou matrices selon PUSH_SCOPE) du store local vers GCP
+	PYTHONPATH=. python scripts/push_local_to_gcp.py \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--push-scope $(PUSH_SCOPE)
+
+# Mode 2 (réponse générée + LLM-juge) — surchargeable comme ci-dessus, plus
+# JUDGE_MODEL : `make evaluate_model_generated JUDGE_MODEL=llama3.1:8b`.
+JUDGE_MODEL ?= qwen2.5:0.5b
+# WARMUP=true : précharge generator/judge en VRAM avant de chronométrer la
+# boucle — cf. evaluate_model_generated ci-dessous et docs/evaluation/execution-benchmark.md.
+WARMUP ?= false
+
+evaluate_model_generated: ## Mode généré, Berlue seul : remplit le cache d'un scope sur [START:END] (génération + Berlue + juge, jamais la baseline) ; WARMUP=true précharge les modèles avant de chronométrer
+	python -m berlue.evaluation.run_eval --mode generated \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--judge-model $(JUDGE_MODEL) --start $(START) $(if $(END),--end $(END),) \
+		$(if $(filter true,$(WARMUP)),--warmup,)
+
+evaluate_model_generated_all: ## Mode généré, Berlue + baseline : remplit tout le cache d'un scope (les 2, séparément) puis construit/stocke leurs 2 matrices (elles aussi séparées)
+	@$(MAKE) --no-print-directory evaluate_model_generated START=0 END=
+	@$(MAKE) --no-print-directory evaluate_model_generated_matrix
+	@$(MAKE) --no-print-directory evaluate_model_generated_baseline START=0 END=
+	@$(MAKE) --no-print-directory evaluate_model_generated_baseline_matrix
+
+evaluate_model_generated_matrix: ## Mode généré, Berlue seul : construit/stocke la matrice Berlue-vs-juge — échoue si incomplet, ne dépend jamais de la baseline
+	python -m berlue.evaluation.run_eval --mode generated --matrix \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--judge-model $(JUDGE_MODEL)
+
+evaluate_model_generated_baseline: ## Mode généré, baseline seule : classifie par la baseline NLI les réponses déjà générées sur [START:END] — seul endroit où la baseline mode 2 est calculée (jamais dans evaluate_model_generated)
+	python -m berlue.evaluation.run_eval --mode generated --baseline-generated \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--start $(START) $(if $(END),--end $(END),)
+
+evaluate_model_generated_baseline_matrix: ## Mode généré : construit/stocke la matrice baseline-vs-juge, sans dépendre du verdict Berlue — échoue si incomplet
+	python -m berlue.evaluation.run_eval --mode generated --baseline-generated --matrix \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
+		--judge-model $(JUDGE_MODEL)
+
+download_halueval_data: ## Télécharge le dataset HaluEval complet (~10k lignes, ~6 Mo) — no-op si déjà présent
+	python -c 'from berlue.evaluation.data import download_dataset; from berlue.params import HALUEVAL_URL, HALUEVAL_DATA_PATH; download_dataset(HALUEVAL_URL, HALUEVAL_DATA_PATH)'
+
+download_truthfulqa_data: ## Télécharge le dataset TruthfulQA complet (~790 lignes, ~500 Ko) — no-op si déjà présent
+	python -c 'from berlue.evaluation.data import download_dataset; from berlue.params import TRUTHFULQA_URL, TRUTHFULQA_DATA_PATH; download_dataset(TRUTHFULQA_URL, TRUTHFULQA_DATA_PATH)'
+
+download_eval_data: download_halueval_data download_truthfulqa_data ## Télécharge HaluEval + TruthfulQA (les deux jeux utilisés par l'évaluation offline)
 
 download_fever_data_small: ## Télécharge un extrait FEVER pour un test rapide (FEVER_SAMPLE_LINES=2000 par défaut), fever.jsonl pointe dessus
 	@echo "⬇️  Téléchargement d'un extrait FEVER ($(FEVER_SAMPLE_LINES) lignes)..."
@@ -92,14 +200,8 @@ pipeline_generate: ## Étape 1 seule : génère la réponse brute du LLM
 pipeline_extract: ## Étapes 1-2 : génère la réponse puis extrait les affirmations
 	python -m berlue.pipeline.hurlu_berlu --until extract --question "$(QUESTION)"
 
-pipeline_samples: ## Étapes 1-3 : ajoute l'extraction
+pipeline_samples: ## Étapes 1-3 : ajoute l'échantillonnage SelfCheckGPT (K appels LLM)
 	python -m berlue.pipeline.hurlu_berlu --until samples --question "$(QUESTION)"
 
-pipeline_selfcheck: ## Étapes 1-4 : ajoute l'échantillonnage SelfCheckGPT (K appels LLM)
-	python -m berlue.pipeline.hurlu_berlu --until selfcheck --question "$(QUESTION)"
-
-pipeline_rag: ## Étapes 1-5 : ajoute le RAG
-	python -m berlue.pipeline.hurlu_berlu --until rag --question "$(QUESTION)"
-
-pipeline_fusion: ## Étapes 1-6 : ajoute le score de fusion
+pipeline_selfcheck: ## Étapes 1-4 : ajoute le score de divergence SelfCheckGPT
 	python -m berlue.pipeline.hurlu_berlu --question "$(QUESTION)"
