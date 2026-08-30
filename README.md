@@ -40,11 +40,11 @@ make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
 
 | | |
 |---|---|
-| **Setup** (préparer sa machine) | [`local-setup.md`](docs/setup/local-setup.md) · [`ollama-setup.md`](docs/setup/ollama-setup.md) |
+| **Setup** (préparer sa machine) | [`local-setup.md`](docs/setup/local-setup.md) · [`ollama-setup.md`](docs/setup/ollama-setup.md) · [`gcp.md`](docs/setup/gcp.md) |
 | **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) |
 | **Pipeline** (comment tourne chaque brique de Berlue) | [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) (orchestrateur) · [`llm.md`](docs/pipeline/llm.md) · [`extraction.md`](docs/pipeline/extraction.md) · [`selfcheck.md`](docs/pipeline/selfcheck.md) · [`rag.md`](docs/pipeline/rag.md) · [`fusion.md`](docs/pipeline/fusion.md) |
-| **Evaluation** (mesurer Berlue face à une baseline) | [`baseline.md`](docs/evaluation/baseline.md) |
-| **Deploy** (déploiement cloud) | [`gcp-deployment.md`](docs/deploy/gcp-deployment.md) |
+| **Evaluation** (mesurer Berlue face à une baseline) | [`docs/evaluation/`](docs/evaluation/) |
+| **GCP** (composants, authentification, accès équipe) | [`setup/gcp.md`](docs/setup/gcp.md) · [`composants.md`](docs/gcp/composants.md) · [`cloudrun.md`](docs/gcp/cloudrun.md) · [`infra-gpu.md`](docs/gcp/infra-gpu.md) · [`auth.md`](docs/gcp/auth.md) · [`share.md`](docs/gcp/share.md) |
 | **Repo** (gestion du dépôt pour l'équipe) | [`github-config.md`](docs/repo/github-config.md) · [`webhook-slack.md`](docs/repo/webhook-slack.md) |
 | **Datasets** (aperçu rapide) | [`fever.md`](docs/datasets/fever.md) · [`halueval.md`](docs/datasets/halueval.md) · [`truthfulqa.md`](docs/datasets/truthfulqa.md) |
 | **Historique Etude Dataset** | [`historique-etude-data/`](historique-etude-data/) — matériel de travail, pas la doc de référence |
@@ -75,9 +75,11 @@ make test_functional
 ```
 
 ### Étape 3 : Déploiement Cloud (test → staging → prod)
-Une fois le conteneur local validé, construisez l'image de production (plus légère, sans les dépendances de dev) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement — toutes les commandes (authentification, build/push, déploiement par environnement, architecture multi-projets, gestion d'accès, tout supprimer) : [`gcp-deployment.md`](docs/deploy/gcp-deployment.md).
+Une fois le conteneur local validé, construisez l'image de production (plus légère, sans les dépendances de dev) et déployez-la sur 3 environnements Cloud Run (test → staging → prod), une seule image promue progressivement — toutes les commandes (build/push, déploiement par environnement) :
+[`cloudrun.md`](docs/gcp/cloudrun.md) — authentification :
+[`auth.md`](docs/gcp/auth.md), gestion d'accès : [`share.md`](docs/gcp/share.md).
 
-*Vérifiez votre endpoint en direct* ([`gcp-deployment.md`](docs/deploy/gcp-deployment.md)) :
+*Vérifiez votre endpoint en direct* ([`cloudrun.md`](docs/gcp/cloudrun.md)) :
 
 ```bash
 make cloudrun_url CLOUDRUN_ENV=...
