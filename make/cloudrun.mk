@@ -55,19 +55,15 @@ cloudrun_delete: ## Supprime l'environnement CLOUDRUN_ENV=test|staging|prod (dé
 		--quiet
 
 # ==============================================================================
-# JOB CLOUD RUN — ÉVAL (image berlue-eval-mocked, cf. Dockerfile.eval)
+# SERVICE CLOUD RUN — ÉVAL (image berlue-eval-mocked-service, cf. Dockerfile.eval-service)
 # ==============================================================================
-# Un seul Job (pas de notion test/staging/prod, c'est un batch exécuté à la
-# demande) — build/push de l'image : make docker_build_eval docker_push_eval.
-
-cloudrun_eval_deploy: gcp_check_cli_auth ## Crée ou met à jour le Job Cloud Run d'éval
-	@echo "🚀 Déploiement du Job $(CLOUDRUN_EVAL_JOB)..."
-	gcloud run jobs deploy $(CLOUDRUN_EVAL_JOB) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_IMAGE):latest \
-		--region $(GCP_REGION) \
-		--project $(GCP_PROJECT) \
-		--service-account=$(CLOUDRUN_SA_EMAIL) \
-		--set-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp
+# Tourne en continu (min-instances flip via gcp_up/gcp_down) plutôt qu'un
+# conteneur neuf par exécution — remplace l'ancien Job (`berlue-eval-mocked`,
+# déprécié : cf. docs/evaluation/execution-benchmark.md pour la mesure qui a
+# motivé ce choix — ~65% du temps d'un run Job était du scheduling Cloud Run
+# Jobs pur, ~21% des imports Python tiers, les deux payés une seule fois par
+# instance ici au lieu de à chaque exécution). Un seul endpoint `/invoke` —
+# `berlue/api/eval_service.py`, mêmes flags que la CLI en JSON.
 
 # Mêmes variables scope que evaluate_model/evaluate_model_generated
 # (make/pipeline.mk) — MODE=dataset|generated remplace le choix de cible
@@ -75,66 +71,69 @@ cloudrun_eval_deploy: gcp_check_cli_auth ## Crée ou met à jour le Job Cloud Ru
 MODE ?= dataset
 MATRIX ?= false
 WARMUP ?= false
+BASELINE ?= false
+COVERAGE ?= false
 
-cloudrun_eval_run: gcp_check_cli_auth ## Exécute le Job d'éval sur GCP (DATASET/RATIO/MODEL_ID/... comme evaluate_model, + MODE=dataset|generated, MATRIX=true|false, WARMUP=true|false)
-	@ENV_VARS="BERLUE_JOB_DATASET=$(DATASET),BERLUE_JOB_RATIO=$(RATIO),BERLUE_JOB_MODEL_ID=$(MODEL_ID),BERLUE_JOB_PIPELINE_VERSION=$(PIPELINE_VERSION),BERLUE_JOB_GENERATION_VERSION=$(GENERATION_VERSION),BERLUE_JOB_EVAL_VERSION=$(EVAL_VERSION),BERLUE_JOB_MODE=$(MODE),BERLUE_JOB_START=$(START)"; \
-	if [ -n "$(END)" ]; then ENV_VARS="$$ENV_VARS,BERLUE_JOB_END=$(END)"; fi; \
-	if [ "$(MODE)" = "generated" ]; then \
-		LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
-		ENV_VARS="$$ENV_VARS,BERLUE_JOB_JUDGE_MODEL=$(JUDGE_MODEL),BERLUE_OLLAMA_HOST=$$LLM_URL"; \
-		if [ "$(WARMUP)" = "true" ]; then ENV_VARS="$$ENV_VARS,BERLUE_JOB_WARMUP=true"; fi; \
-	fi; \
-	if [ "$(MATRIX)" = "true" ]; then ENV_VARS="$$ENV_VARS,BERLUE_JOB_MATRIX=true"; fi; \
-	echo "🚀 Exécution de $(CLOUDRUN_EVAL_JOB) (dataset=$(DATASET), model_id=$(MODEL_ID), mode=$(MODE), matrix=$(MATRIX))..."; \
-	gcloud run jobs execute $(CLOUDRUN_EVAL_JOB) \
+cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Cloud Run d'éval
+	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE)..."
+	gcloud run deploy $(CLOUDRUN_EVAL_SERVICE) \
+		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
-		--wait \
-		--update-env-vars="$$ENV_VARS"
-
-cloudrun_eval_baseline: gcp_check_cli_auth ## Exécute la baseline NLI seule (mode dataset) sur GCP, sur DATASET/RATIO
-	@echo "🚀 Exécution de $(CLOUDRUN_EVAL_JOB) (baseline, dataset=$(DATASET), ratio=$(RATIO))..."
-	gcloud run jobs execute $(CLOUDRUN_EVAL_JOB) \
+		--service-account=$(CLOUDRUN_SA_EMAIL) \
+		--max-instances=1 \
+		--concurrency=1 \
+		--set-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
+		--no-allow-unauthenticated
+	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
+	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
-		--wait \
-		--update-env-vars="BERLUE_JOB_DATASET=$(DATASET),BERLUE_JOB_RATIO=$(RATIO),BERLUE_JOB_BASELINE=true"
+		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+		--role="roles/run.invoker" \
+		--condition=None
 
-cloudrun_eval_baseline_generated: gcp_check_cli_auth ## Exécute la baseline NLI (mode généré) sur GCP, sur les réponses déjà générées [START:END]
-	@ENV_VARS="BERLUE_JOB_DATASET=$(DATASET),BERLUE_JOB_RATIO=$(RATIO),BERLUE_JOB_MODEL_ID=$(MODEL_ID),BERLUE_JOB_GENERATION_VERSION=$(GENERATION_VERSION),BERLUE_JOB_EVAL_VERSION=$(EVAL_VERSION),BERLUE_JOB_MODE=generated,BERLUE_JOB_BASELINE_GENERATED=true,BERLUE_JOB_START=$(START)"; \
-	if [ -n "$(END)" ]; then ENV_VARS="$$ENV_VARS,BERLUE_JOB_END=$(END)"; fi; \
-	echo "🚀 Exécution de $(CLOUDRUN_EVAL_JOB) (baseline mode généré, dataset=$(DATASET), model_id=$(MODEL_ID))..."; \
-	gcloud run jobs execute $(CLOUDRUN_EVAL_JOB) \
+cloudrun_eval_service_url: ## Affiche l'URL du service Cloud Run d'éval
+	@gcloud run services describe $(CLOUDRUN_EVAL_SERVICE) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
-		--wait \
-		--update-env-vars="$$ENV_VARS"
+		--format "value(status.url)"
 
-cloudrun_eval_baseline_generated_matrix: gcp_check_cli_auth ## Construit/stocke sur GCP la matrice baseline-vs-juge seule (ne dépend pas du verdict Berlue) — échoue si incomplet
-	@echo "🚀 Exécution de $(CLOUDRUN_EVAL_JOB) (matrice baseline mode généré, dataset=$(DATASET), model_id=$(MODEL_ID))..."
-	gcloud run jobs execute $(CLOUDRUN_EVAL_JOB) \
-		--region $(GCP_REGION) \
-		--project $(GCP_PROJECT) \
-		--wait \
-		--update-env-vars="BERLUE_JOB_DATASET=$(DATASET),BERLUE_JOB_RATIO=$(RATIO),BERLUE_JOB_MODEL_ID=$(MODEL_ID),BERLUE_JOB_GENERATION_VERSION=$(GENERATION_VERSION),BERLUE_JOB_EVAL_VERSION=$(EVAL_VERSION),BERLUE_JOB_MODE=generated,BERLUE_JOB_BASELINE_GENERATED=true,BERLUE_JOB_MATRIX=true,BERLUE_JOB_JUDGE_MODEL=$(JUDGE_MODEL)"
-
-cloudrun_eval_list: ## Liste les Jobs Cloud Run actifs du projet
-	@echo "📋 Listing des Jobs Cloud Run..."
-	gcloud run jobs list --project $(GCP_PROJECT) --region $(GCP_REGION)
-
-cloudrun_eval_logs: ## Logs des exécutions du Job d'éval (dernières en premier)
-	@echo "📜 Logs de $(CLOUDRUN_EVAL_JOB)..."
-	gcloud run jobs logs read $(CLOUDRUN_EVAL_JOB) \
+cloudrun_eval_service_logs: ## Logs du service Cloud Run d'éval
+	@echo "📜 Logs de $(CLOUDRUN_EVAL_SERVICE)..."
+	gcloud run services logs read $(CLOUDRUN_EVAL_SERVICE) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--limit 100
 
-cloudrun_eval_delete: ## Supprime le Job Cloud Run d'éval
-	@echo "🗑️ Suppression du Job $(CLOUDRUN_EVAL_JOB)..."
-	gcloud run jobs delete $(CLOUDRUN_EVAL_JOB) \
-		--region $(GCP_REGION) \
-		--project $(GCP_PROJECT) \
-		--quiet
+cloudrun_eval_service_invoke: gcp_check_cli_auth ## Appelle /invoke sur le service d'éval (mêmes variables que evaluate_model/evaluate_model_generated, dont PIPELINE_VERSION/GENERATION_VERSION/EVAL_VERSION) — nécessite gcp_up au préalable
+	@URL=$$(gcloud run services describe $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	BODY=$$(python3 -c "import json,os; print(json.dumps({k: v for k, v in {'dataset': os.environ.get('DATASET'), 'ratio': float(os.environ['RATIO']) if os.environ.get('RATIO') else None, 'model_id': os.environ.get('MODEL_ID'), 'pipeline_version': os.environ.get('PIPELINE_VERSION'), 'generation_version': os.environ.get('GENERATION_VERSION'), 'eval_version': os.environ.get('EVAL_VERSION'), 'start': int(os.environ['START']) if os.environ.get('START') else None, 'end': int(os.environ['END']) if os.environ.get('END') else None, 'mode': os.environ.get('MODE'), 'judge_model': os.environ.get('JUDGE_MODEL'), 'matrix': os.environ.get('MATRIX') == 'true', 'warmup': os.environ.get('WARMUP') == 'true', 'baseline': os.environ.get('BASELINE') == 'true', 'coverage': os.environ.get('COVERAGE') == 'true'}.items() if v is not None}))" \
+		DATASET="$(DATASET)" RATIO="$(RATIO)" MODEL_ID="$(MODEL_ID)" PIPELINE_VERSION="$(PIPELINE_VERSION)" GENERATION_VERSION="$(GENERATION_VERSION)" EVAL_VERSION="$(EVAL_VERSION)" START="$(START)" END="$(END)" MODE="$(MODE)" JUDGE_MODEL="$(JUDGE_MODEL)" MATRIX="$(MATRIX)" WARMUP="$(WARMUP)" BASELINE="$(BASELINE)" COVERAGE="$(COVERAGE)"); \
+	echo "🚀 POST $$URL/invoke : $$BODY"; \
+	curl -sf -X POST "$$URL/invoke" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "$$BODY" \
+	| python3 -m json.tool
+
+# `eval_version` réservé, jamais utilisé pour un vrai run — c'est le seul des
+# 3 axes de version qui filtre TOUTES les tables (mode 1 et mode 2, cf.
+# docs/evaluation/storage.md), donc le seul sur lequel une purge peut
+# s'appuyer sans risque de déborder sur une vraie donnée même si on ne
+# précise pas les autres filtres.
+WARMUP_CHECK_EVAL_VERSION = warmup-check
+
+gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournent vraiment sur berlue-llm (pas juste un cache Firestore déjà rempli) — purge un tag réservé puis force 1 vrai appel généré+jugé. Nécessite gcp_up (+ WARM_MODELS) au préalable.
+	@echo "🧹 Purge du tag réservé eval_version=$(WARMUP_CHECK_EVAL_VERSION) (model_id=$(MODEL_ID))..."
+	@BERLUE_EVAL_STORE_TARGET=gcp GCP_PROJECT=$(GCP_PROJECT) python -m berlue.evaluation.run_eval \
+		--purge --purge-dataset $(DATASET) --purge-ratio $(RATIO) --purge-model-id $(MODEL_ID) \
+		--purge-judge-model $(JUDGE_MODEL) --purge-eval-version $(WARMUP_CHECK_EVAL_VERSION) > /dev/null
+	@URL=$$(gcloud run services describe $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	echo "🔍 1 appel garanti frais (dataset=$(DATASET), model_id=$(MODEL_ID), judge=$(JUDGE_MODEL))..."; \
+	curl -sf -X POST "$$URL/invoke" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" \
+		-d "{\"dataset\":\"$(DATASET)\",\"ratio\":$(RATIO),\"model_id\":\"$(MODEL_ID)\",\"judge_model\":\"$(JUDGE_MODEL)\",\"eval_version\":\"$(WARMUP_CHECK_EVAL_VERSION)\",\"mode\":\"generated\",\"start\":0,\"end\":1}" \
+	| python3 -m json.tool
+	@echo "✅ Si tu vois ça sans erreur : $(MODEL_ID) (génération) et $(JUDGE_MODEL) (juge) ont bien tourné pour de vrai sur berlue-llm — le cache était garanti vide avant l'appel."
 
 # ==============================================================================
 # SERVICE CLOUD RUN — OLLAMA (GPU, cf. Dockerfile.llm)
@@ -195,3 +194,60 @@ cloudrun_llm_delete: ## Supprime le service Ollama (arrête définitivement tout
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--quiet
+
+# ==============================================================================
+# CYCLE DE VIE — gcp_up / gcp_down
+# ==============================================================================
+# Monte et préchauffe berlue-eval (+ berlue-llm si WARM_MODELS est fourni),
+# à lancer une fois en début de session avant une série de
+# cloudrun_eval_service_invoke ; gcp_down redescend tout en fin de session.
+# ⚠️ Coûte tant que c'est en l'air (GPU L4 si WARM_MODELS non vide) — ne pas
+# oublier gcp_down.
+
+WARM_MODELS ?=
+
+gcp_up: gcp_check_cli_auth ## Monte et préchauffe berlue-eval (+ berlue-llm si WARM_MODELS="modele1 modele2 ...")
+	@if [ -n "$(WARM_MODELS)" ]; then \
+		echo "🔥 gcp_up : min-instances=1 sur $(CLOUDRUN_LLM_SERVICE)..."; \
+		gcloud run services update $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1; \
+		LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+		LLM_TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$LLM_URL); \
+		echo "⏳ Attente que $(CLOUDRUN_LLM_SERVICE) réponde..."; \
+		for i in $$(seq 1 60); do \
+			CODE=$$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $$LLM_TOKEN" "$$LLM_URL/api/tags"); \
+			[ "$$CODE" = "200" ] && break; \
+			sleep 2; \
+		done; \
+		echo "✅ $(CLOUDRUN_LLM_SERVICE) prêt ($$LLM_URL)."; \
+		for MODEL in $(WARM_MODELS); do \
+			echo "⬇️  Pull + warmup de $$MODEL sur $(CLOUDRUN_LLM_SERVICE)..."; \
+			curl -sf -X POST "$$LLM_URL/api/pull" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$$MODEL\",\"stream\":false}" > /dev/null; \
+			curl -sf -X POST "$$LLM_URL/api/generate" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$$MODEL\",\"prompt\":\"hi\",\"stream\":false}" > /dev/null; \
+			echo "✅ $$MODEL chaud."; \
+		done; \
+		echo "🔥 gcp_up : min-instances=1 + BERLUE_OLLAMA_HOST=$$LLM_URL sur $(CLOUDRUN_EVAL_SERVICE)..."; \
+		gcloud run services update $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1 --update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL; \
+	else \
+		echo "🔥 gcp_up : min-instances=1 sur $(CLOUDRUN_EVAL_SERVICE)..."; \
+		gcloud run services update $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1; \
+	fi
+	@EVAL_URL=$$(gcloud run services describe $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	EVAL_TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$EVAL_URL); \
+	echo "⏳ Attente que $(CLOUDRUN_EVAL_SERVICE) réponde sur /health..."; \
+	for i in $$(seq 1 60); do \
+		CODE=$$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $$EVAL_TOKEN" "$$EVAL_URL/health"); \
+		[ "$$CODE" = "200" ] && break; \
+		sleep 2; \
+	done; \
+	echo "✅ $(CLOUDRUN_EVAL_SERVICE) prêt ($$EVAL_URL)."; \
+	echo "📦 Préchauffe le split dataset=$(DATASET) ratio=$(RATIO) (chargement + split, mis en cache par process — cf. run_eval._cached_split)..."; \
+	curl -sf -X POST "$$EVAL_URL/invoke" -H "Authorization: Bearer $$EVAL_TOKEN" -H "Content-Type: application/json" \
+		-d "{\"dataset\":\"$(DATASET)\",\"ratio\":$(RATIO),\"coverage\":true}" > /dev/null; \
+	echo "✅ Split $(DATASET)/$(RATIO) chaud."
+	@echo "✅ gcp_up terminé — cloudrun_eval_service_invoke prêt à l'emploi."
+
+gcp_down: gcp_check_cli_auth ## Redescend berlue-eval et berlue-llm à min-instances=0 (sécurité budget, idempotent, inconditionnel)
+	@echo "🧯 gcp_down : min-instances=0 sur $(CLOUDRUN_EVAL_SERVICE) et $(CLOUDRUN_LLM_SERVICE)..."
+	gcloud run services update $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=0
+	gcloud run services update $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=0
+	@echo "✅ gcp_down terminé."

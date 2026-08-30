@@ -57,9 +57,9 @@ evaluate_model_matrix: ## Construit/stocke la matrice finale d'un scope depuis l
 		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
 		--matrix
 
-evaluate_model_coverage: ## Affiche les index déjà en cache / manquants d'un scope (mode dataset), sans rien calculer
+evaluate_model_coverage: ## Affiche le total d'éléments d'un scope (pour préparer un découpage START/END) + index déjà en cache/manquants, sans rien calculer — MODE=dataset|generated
 	python -m berlue.evaluation.run_eval \
-		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
+		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) --mode $(MODE) \
 		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
 		--coverage
 
@@ -105,9 +105,11 @@ evaluate_model_generated: ## Mode généré, Berlue seul : remplit le cache d'un
 		--judge-model $(JUDGE_MODEL) --start $(START) $(if $(END),--end $(END),) \
 		$(if $(filter true,$(WARMUP)),--warmup,)
 
-evaluate_model_generated_all: ## Mode généré, Berlue + baseline : remplit tout le cache d'un scope (les 2, séparément) puis construit/stocke leurs 2 matrices (elles aussi séparées)
+evaluate_model_generated_all: ## Mode généré, Berlue seul : remplit tout le cache d'un scope puis construit/stocke sa matrice finale — jamais la baseline (cf. evaluate_model_generated_baseline_all)
 	@$(MAKE) --no-print-directory evaluate_model_generated START=0 END=
 	@$(MAKE) --no-print-directory evaluate_model_generated_matrix
+
+evaluate_model_generated_baseline_all: ## Mode généré, baseline seule : classifie les réponses déjà générées puis construit/stocke sa matrice finale — jamais Berlue
 	@$(MAKE) --no-print-directory evaluate_model_generated_baseline START=0 END=
 	@$(MAKE) --no-print-directory evaluate_model_generated_baseline_matrix
 
@@ -118,13 +120,13 @@ evaluate_model_generated_matrix: ## Mode généré, Berlue seul : construit/stoc
 		--judge-model $(JUDGE_MODEL)
 
 evaluate_model_generated_baseline: ## Mode généré, baseline seule : classifie par la baseline NLI les réponses déjà générées sur [START:END] — seul endroit où la baseline mode 2 est calculée (jamais dans evaluate_model_generated)
-	python -m berlue.evaluation.run_eval --mode generated --baseline-generated \
+	python -m berlue.evaluation.run_eval --mode generated --baseline \
 		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
 		--generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
 		--start $(START) $(if $(END),--end $(END),)
 
 evaluate_model_generated_baseline_matrix: ## Mode généré : construit/stocke la matrice baseline-vs-juge, sans dépendre du verdict Berlue — échoue si incomplet
-	python -m berlue.evaluation.run_eval --mode generated --baseline-generated --matrix \
+	python -m berlue.evaluation.run_eval --mode generated --baseline --matrix \
 		--dataset $(DATASET) --ratio $(RATIO) --model-id $(MODEL_ID) \
 		--generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
 		--judge-model $(JUDGE_MODEL)

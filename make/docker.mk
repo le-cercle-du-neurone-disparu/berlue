@@ -99,18 +99,18 @@ docker_push_prod: ## Push l'image de production vers Artifact Registry
 	@echo "🚀 Push de l'image vers Artifact Registry ($(ARTIFACT_PROJECT))..."
 	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod
 
-docker_build_eval: ## Build l'image du Job Cloud Run d'éval (Dockerfile.eval, linux/amd64)
-	@echo "🏗️ Build de l'image d'éval $(GAR_EVAL_IMAGE)..."
+docker_build_eval_service: ## Build l'image du service Cloud Run d'éval (Dockerfile.eval-service, linux/amd64)
+	@echo "🏗️ Build de l'image service d'éval $(GAR_EVAL_SERVICE_IMAGE)..."
 	docker build \
 		--platform linux/amd64 \
 		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		-f Dockerfile.eval \
-		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_IMAGE):latest \
+		-f Dockerfile.eval-service \
+		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest \
 		.
 
-docker_push_eval: ## Push l'image d'éval vers Artifact Registry
-	@echo "🚀 Push de l'image d'éval vers Artifact Registry ($(ARTIFACT_PROJECT))..."
-	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_IMAGE):latest
+docker_push_eval_service: ## Push l'image service d'éval vers Artifact Registry
+	@echo "🚀 Push de l'image service d'éval vers Artifact Registry ($(ARTIFACT_PROJECT))..."
+	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest
 
 docker_build_llm: ## Build l'image du service Cloud Run Ollama (Dockerfile.llm, linux/amd64)
 	@echo "🏗️ Build de l'image LLM $(GAR_LLM_IMAGE)..."

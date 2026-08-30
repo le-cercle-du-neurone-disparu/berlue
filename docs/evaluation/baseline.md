@@ -34,13 +34,9 @@ exemples pour HaluEval seul).
 
 ## Évaluer
 
-```bash
-make evaluate_baseline
-```
-
-Réévalue la baseline sur le jeu de test (la partie non utilisée par
-`train_baseline`) et affiche la matrice de confusion 2x3 (vérité terrain
-vraie/fausse × prédiction vraie/indécise/fausse).
+`make evaluate_baseline DATASET=... RATIO=...` — cf.
+[`run.md`](run.md#mode-dataset) (paramètres, indépendance de `model_id`,
+pourquoi jamais stockée).
 
 ## Tester un exemple isolé
 

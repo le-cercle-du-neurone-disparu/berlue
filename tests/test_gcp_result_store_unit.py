@@ -1,7 +1,7 @@
 """Tests unitaires purs pour `berlue.evaluation.gcp_result_store` — aucune
 infra GCP requise (contrairement à `test_gcp_result_store.py`, `functional`).
 Couvre uniquement la sélection de la source du jeton d'accès (local vs
-Cloud Run), cf. docstring du module et `tmp/eval-model-design.md` §17."""
+Cloud Run), cf. docstring du module."""
 
 import pytest
 

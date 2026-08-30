@@ -77,16 +77,17 @@ CLOUDRUN_PUBLIC_test = true
 CLOUDRUN_PUBLIC_staging = true
 CLOUDRUN_PUBLIC_prod = true
 
-# Job Cloud Run d'éval (mode batch, pas de notion d'environnement
-# test/staging/prod — un seul Job, exécuté à la demande). "-mocked" :
-# rappel volontaire que le pipeline Berlue exécuté dedans est encore
-# RandomBerluePipeline, pas HurluBerlu (cf. docs/evaluation/run.md,
-# tmp/eval-model-design.md §17). Renommer une fois le vrai pipeline branché.
-GAR_EVAL_IMAGE = berlue-eval-mocked
-CLOUDRUN_EVAL_JOB = berlue-eval-mocked
+# Service Cloud Run d'éval (mode batch/CLI exécuté à la demande, tourne en
+# continu avec min-instances=1 — cf. `make gcp_up`/`gcp_down`,
+# docs/evaluation/execution-benchmark.md pour pourquoi). "-mocked" : rappel
+# volontaire que le pipeline Berlue exécuté dedans est encore
+# RandomBerluePipeline, pas HurluBerlu (cf. docs/evaluation/run.md).
+# Renommer une fois le vrai pipeline branché.
+GAR_EVAL_SERVICE_IMAGE = berlue-eval-mocked-service
+CLOUDRUN_EVAL_SERVICE = berlue-eval-mocked-service
 
-# Service Cloud Run Ollama, appelé par les autres (Job d'éval en mode
-# généré, API) — cf. Dockerfile.llm, tmp/eval-model-design.md §18-19.
+# Service Cloud Run Ollama, appelé par le service d'éval en mode
+# généré, API) — cf. Dockerfile.llm, docs/gcp/infra-gpu.md.
 # GPU L4, coûte dès le premier appel (~0,67 $/h) : jamais de min-instances
 # permanent sans confirmation explicite, toujours redescendre à 0 ou
 # supprimer après un test.

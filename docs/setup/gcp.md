@@ -7,8 +7,8 @@ d'entrée ; le détail par sujet est dans [`docs/gcp/`](../gcp/) :
 - [`composants.md`](../gcp/composants.md) — Firestore, BigQuery,
   Artifact Registry, le compte de service `sa-berlue`... leur rôle,
   l'API dont ils dépendent, les commandes pour les provisionner.
-- [`cloudrun.md`](../gcp/cloudrun.md) — le Job et les services Cloud Run
-  (éval, Ollama, API) : déploiement, coût, usage de chacun.
+- [`cloudrun.md`](../gcp/cloudrun.md) — les services Cloud Run (éval,
+  Ollama, API) : déploiement, coût, usage de chacun.
 - [`auth.md`](../gcp/auth.md) — la session `gcloud` CLI à gérer soi-même,
   et l'impersonation systématique de `sa-berlue` au runtime (local comme
   Cloud Run).
