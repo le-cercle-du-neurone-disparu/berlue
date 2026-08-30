@@ -52,6 +52,7 @@ pip-delete-this-directory.txt
 # ==============================================================================
 raw_data/
 data/
+tmp/
 training_outputs/
 *.csv
 *.parquet
