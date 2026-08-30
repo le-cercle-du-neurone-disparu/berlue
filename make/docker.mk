@@ -25,7 +25,11 @@ compose_up: docker_build_local ## Lance l'API via docker-compose (rechargement �
 compose_down: ## Arrête et supprime les conteneurs/réseau docker-compose
 	docker compose down
 
-artifact_registry_create: ## Crée le dépôt Docker dans Artifact Registry (dans ARTIFACT_PROJECT)
+artifact_registry_enable_api: gcp_check_cli_auth ## Active l'API Artifact Registry (dans ARTIFACT_PROJECT)
+	@echo "⚙️ Activation de l'API Artifact Registry dans $(ARTIFACT_PROJECT)..."
+	gcloud services enable artifactregistry.googleapis.com --project=$(ARTIFACT_PROJECT)
+
+artifact_registry_create: artifact_registry_enable_api ## Crée le dépôt Docker dans Artifact Registry (dans ARTIFACT_PROJECT)
 	@echo "📦 Création du dépôt Artifact Registry $(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT)..."
 	gcloud artifacts repositories create $(ARTIFACTSREPO) \
 		--repository-format=docker \
@@ -44,7 +48,8 @@ artifact_registry_role: ## Vous accorde la permission de push vers Artifact Regi
 	@echo "🔐 Ajout du rôle Artifact Registry Writer à votre compte sur $(ARTIFACT_PROJECT)..."
 	gcloud projects add-iam-policy-binding $(ARTIFACT_PROJECT) \
 		--member="user:$$(gcloud config get-value account)" \
-		--role="roles/artifactregistry.writer"
+		--role="roles/artifactregistry.writer" \
+		--condition=None
 
 # Accès par personne, scope = uniquement le dépôt $(ARTIFACTSREPO) (plus fin que
 # artifact_registry_role ci-dessus, qui donne un accès writer projet entier à
@@ -93,3 +98,28 @@ docker_build_prod: ## Build l'image Docker pour la production (linux/amd64)
 docker_push_prod: ## Push l'image de production vers Artifact Registry
 	@echo "🚀 Push de l'image vers Artifact Registry ($(ARTIFACT_PROJECT))..."
 	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod
+
+docker_build_eval: ## Build l'image du Job Cloud Run d'éval (Dockerfile.eval, linux/amd64)
+	@echo "🏗️ Build de l'image d'éval $(GAR_EVAL_IMAGE)..."
+	docker build \
+		--platform linux/amd64 \
+		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
+		-f Dockerfile.eval \
+		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_IMAGE):latest \
+		.
+
+docker_push_eval: ## Push l'image d'éval vers Artifact Registry
+	@echo "🚀 Push de l'image d'éval vers Artifact Registry ($(ARTIFACT_PROJECT))..."
+	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_IMAGE):latest
+
+docker_build_llm: ## Build l'image du service Cloud Run Ollama (Dockerfile.llm, linux/amd64)
+	@echo "🏗️ Build de l'image LLM $(GAR_LLM_IMAGE)..."
+	docker build \
+		--platform linux/amd64 \
+		-f Dockerfile.llm \
+		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest \
+		.
+
+docker_push_llm: ## Push l'image LLM vers Artifact Registry
+	@echo "🚀 Push de l'image LLM vers Artifact Registry ($(ARTIFACT_PROJECT))..."
+	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest

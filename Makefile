@@ -6,6 +6,7 @@ export
 
 # 3. Valeurs dérivées (nom fixe + identité/paramètre propre à chacun dans .env)
 SA_EMAIL = $(SA_NAME)@$(GCP_PROJECT).iam.gserviceaccount.com
+CLOUDRUN_SA_EMAIL = $(CLOUDRUN_SA_NAME)@$(GCP_PROJECT).iam.gserviceaccount.com
 BUCKET_NAME = $(GCP_PROJECT)-berlue_$(BUCKET_SUFFIX)
 
 # 4. Import des sous-makefiles (Ordre logique MLOps)
