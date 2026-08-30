@@ -2,7 +2,7 @@
 partie de HaluEval/TruthfulQA, utilisé comme baseline de comparaison par
 `berlue.evaluation` — le reste sert de jeu de test (cf. `berlue.evaluation.data`).
 
-Params utilisés (`berlue.params`) : `NLI_BASELINE_PATH`.
+Params utilisés (`berlue.params`) : `NLI_BASELINE_PATH`, `TRAIN_RATIO`.
 """
 
 import os
@@ -14,17 +14,17 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
 from berlue.evaluation.data import load_labeled_examples, split_train_test
-from berlue.params import NLI_BASELINE_PATH
+from berlue.params import NLI_BASELINE_PATH, TRAIN_RATIO
 
 
-def train_baseline(out_path: str = NLI_BASELINE_PATH, test_size: float = 0.2) -> None:
+def train_baseline(out_path: str = NLI_BASELINE_PATH, train_ratio: float = TRAIN_RATIO) -> None:
     """Entraîne un TfidfVectorizer + LogisticRegression sur le texte
     question+réponse d'une partie de HaluEval/TruthfulQA et sauvegarde le modèle
     avec joblib vers `out_path` (défaut : `params.NLI_BASELINE_PATH`).
     """
     print("⏳ Chargement et découpage des données...")
     examples = load_labeled_examples()
-    train_examples, _test_examples = split_train_test(examples, test_size)
+    train_examples, _test_examples = split_train_test(examples, train_ratio)
 
     # Concaténation de la question et de la réponse avec un espace.
     x_train = [f"{ex['question']} {ex['answer']}" for ex in train_examples]
