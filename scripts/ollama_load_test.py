@@ -23,7 +23,8 @@ Réglable via variables d'environnement (voir valeurs par défaut ci-dessous) :
 OLLAMA_HOST, AUTH_TOKEN, MODEL, HALUEVAL_PATH, START_THREADS, MAX_THREADS,
 THREAD_STEP (threads ajoutés par palier — 1 par défaut ; monter ce pas pour
 balayer une large plage sans un ramp interminable, ex. un service distant à
-latence par appel élevée), RAMP_INTERVAL_S, HOLD_AT_MAX_S, REQUEST_TIMEOUT_S.
+latence par appel élevée), RAMP_INTERVAL_S, HOLD_AT_MAX_S, REQUEST_TIMEOUT_S,
+NUM_PREDICT (borne de longueur de réponse, 150 par défaut).
 
 Usage local :
     python scripts/ollama_load_test.py
@@ -57,6 +58,11 @@ HALUEVAL_PATH = os.environ.get(
     "HALUEVAL_PATH", str(Path(__file__).resolve().parent.parent / "data" / "halueval" / "raw" / "qa_data.json")
 )
 REQUEST_TIMEOUT_S = float(os.environ.get("REQUEST_TIMEOUT_S", "10.0"))
+# Sans borne, une réponse qui ignore la consigne "1 à 2 phrases" peut
+# générer très au-delà (des centaines de tokens, observé en conditions
+# réelles) — fausserait la mesure de charge en monopolisant un slot loin de
+# la durée attendue, indépendamment du niveau de concurrence testé.
+NUM_PREDICT = int(os.environ.get("NUM_PREDICT", "150"))
 
 START_THREADS = int(os.environ.get("START_THREADS", "4"))
 MAX_THREADS = int(os.environ.get("MAX_THREADS", "30"))
@@ -106,7 +112,7 @@ def worker(worker_id: int):
         try:
             resp = requests.post(
                 f"{OLLAMA_HOST}/api/generate",
-                json={"model": MODEL, "prompt": prompt, "stream": False},
+                json={"model": MODEL, "prompt": prompt, "stream": False, "options": {"num_predict": NUM_PREDICT}},
                 headers=HEADERS,
                 timeout=REQUEST_TIMEOUT_S,
             )
