@@ -80,6 +80,8 @@ parallèle au sein de chaque étape. Chaque appel LLM est borné en longueur
 (`num_predict`) pour un pire cas prévisible, indépendant de la charge ou de
 la config serveur.
 
+### Local
+
 Mesuré en local, `llama3.1:8b` des deux côtés, `OLLAMA_CONTEXT_LENGTH=1024`
 (largement suffisant pour les prompts courts de l'éval — mécanique complète
 dans [`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md)),
@@ -98,6 +100,36 @@ make evaluate_model_generated DATASET=halueval RATIO=0.8 \
 | 8 | 250,2 s | 1,49× |
 | 16 | 195,8 s | 1,91× |
 | 32 | **93,3 s** | **4,00×** |
+
+### GCP
+
+Mesuré sur `berlue-llm` (L4) redéployé avec `LLM_NUM_PARALLEL`/
+`LLM_CONCURRENCY` égaux au `CONCURRENCY` testé, `LLM_CONTEXT_LENGTH=1024`
+(même contexte qu'en local, formule/plafond détaillés dans
+[`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md)) :
+
+```bash
+make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=32 LLM_CONTEXT_LENGTH=1024
+make gcp_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
+make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.8 \
+  MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b MODE=generated START=0 END=500 CONCURRENCY=32
+```
+
+| `CONCURRENCY` | Questions | Temps total | vs local (même `CONCURRENCY`) |
+|---|---|---|---|
+| 32 | 500 | 240 s | 2,57× plus lent |
+| 64 | 800 | 436 s | — |
+
+À concurrence égale, GCP est nettement plus lent qu'en local (latence par
+appel plus élevée : génération à 7,37 s/appel contre 3,13 s en local à
+`CONCURRENCY=32`) — cohérent avec l'écart déjà mesuré en séquentiel
+ci-dessus (L4 vs RTX 5070 Ti, plus la latence réseau entre les deux
+services Cloud Run). Monter à 64 n'apporte **rien** : débit légèrement
+inférieur à 32 (1,84 question/s contre 2,08 à 32), pas seulement un
+plafond — probablement les 4 vCPU de `berlue-llm` qui deviennent le facteur
+limitant (gestion de 64 connexions HTTP concurrentes) avant que le GPU n'en
+soit un, non confirmé par des métriques CPU. `CONCURRENCY=32` reste le
+réglage recommandé sur ce service, pas plus haut.
 
 ## GCP
 
