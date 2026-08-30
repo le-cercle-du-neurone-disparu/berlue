@@ -1,7 +1,9 @@
 """Tests unitaires purs pour `berlue.evaluation.gcp_result_store` — aucune
 infra GCP requise (contrairement à `test_gcp_result_store.py`, `functional`).
-Couvre uniquement la sélection de la source du jeton d'accès (local vs
-Cloud Run), cf. docstring du module."""
+Couvre la sélection de la source du jeton d'accès (local vs Cloud Run) et la
+sécurité thread du registre de scopes bufferisé, cf. docstring du module."""
+
+import threading
 
 import pytest
 
@@ -86,3 +88,54 @@ def test_access_token_raises_without_service_account_locally(monkeypatch):
 
     with pytest.raises(RuntimeError, match="EVAL_SERVICE_ACCOUNT"):
         gcp._access_token()
+
+
+class _FakeFirestore:
+    """Piste les incréments reçus (sous verrou — seul le comportement de
+    `GcpResultStore` sous test, pas ce double)."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.increments: dict[str, int] = {}
+
+    def create(self, collection, doc_id, fields):
+        pass
+
+    def increment(self, collection, doc_id, field, count):
+        with self._lock:
+            self.increments[doc_id] = self.increments.get(doc_id, 0) + count
+
+
+def _bare_gcp_store() -> gcp.GcpResultStore:
+    """Instance sans passer par `__init__` (évite `bigquery.Client()`/
+    `_ensure_bq_tables()`, appels réseau) — ne construit que l'état touché
+    par `_register_new_row`/`flush_registry`, sous test ici."""
+    store = gcp.GcpResultStore.__new__(gcp.GcpResultStore)
+    store.fs = _FakeFirestore()
+    store._registry_buffer = {}
+    store._registry_lock = threading.Lock()
+    return store
+
+
+def test_register_new_row_thread_safe_under_concurrency():
+    """`_registry_buffer` est muté par tous les workers d'un
+    `evaluate_model_generated(..., concurrency=N)` — un appel concurrent sans
+    verrou lève `RuntimeError: dictionary changed size during iteration` dès
+    qu'un flush (déclenché par un thread) itère le buffer pendant qu'un autre
+    l'incrémente (cas réel observé en conditions réelles sur GCP)."""
+    store = _bare_gcp_store()
+    n_threads, n_rows_per_thread = 16, 50
+
+    def worker():
+        for _ in range(n_rows_per_thread):
+            store._register_new_row("llm_answers", {"model_id": "m", "generation_version": "v1"})
+
+    threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    store.flush_registry()
+
+    total = sum(store.fs.increments.values()) + sum(store._registry_buffer.values())
+    assert total == n_threads * n_rows_per_thread

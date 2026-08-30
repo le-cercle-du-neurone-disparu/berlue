@@ -64,6 +64,7 @@ class InvokeBody(BaseModel):
     matrix: bool | None = None
     coverage: bool | None = None
     baseline: bool | None = None
+    concurrency: int | None = None
 
 
 _FLAG_FIELDS = {"warmup", "matrix", "coverage", "baseline"}

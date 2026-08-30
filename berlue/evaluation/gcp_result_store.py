@@ -59,6 +59,7 @@ Params utilisés (`berlue.params`) : `EVAL_FIRESTORE_PROJECT`,
 
 import os
 import subprocess
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -297,6 +298,11 @@ class GcpResultStore:
         self._ensure_bq_tables()
         mark("_ensure_bq_tables() fait (3x create_table exists_ok)")
         self._registry_buffer: dict[tuple[str, tuple], int] = {}
+        # Ce store est utilisable depuis plusieurs threads à la fois (éval
+        # parallélisée, cf. `evaluate_model_generated(..., concurrency=N)`) —
+        # protège les lectures/écritures/vidage de `_registry_buffer`, jamais
+        # tenu pendant un appel réseau Firestore (cf. `flush_registry`).
+        self._registry_lock = threading.Lock()
 
     # -- Registre de scopes ------------------------------------------------
 
@@ -304,21 +310,28 @@ class GcpResultStore:
         """Compte une nouvelle ligne pour `table`/`scope_fields` dans le
         registre de scopes — bufferisé en mémoire, aucun appel réseau ici."""
         key = (table, tuple(scope_fields.items()))
-        self._registry_buffer[key] = self._registry_buffer.get(key, 0) + 1
-        if sum(self._registry_buffer.values()) >= self.REGISTRY_FLUSH_EVERY:
+        with self._registry_lock:
+            self._registry_buffer[key] = self._registry_buffer.get(key, 0) + 1
+            should_flush = sum(self._registry_buffer.values()) >= self.REGISTRY_FLUSH_EVERY
+        if should_flush:
             self.flush_registry()
 
     def flush_registry(self) -> None:
         """Envoie au registre de scopes les incréments accumulés depuis le
         dernier flush. Idempotent (rien à faire si le buffer est vide) — à
         appeler périodiquement pendant un run, et systématiquement à la fin
-        (y compris sur Ctrl+C, cf. `run_eval.py`)."""
-        for (table, scope_items), count in self._registry_buffer.items():
+        (y compris sur Ctrl+C, cf. `run_eval.py`). Vide le buffer sous verrou
+        puis fait les appels réseau sur cette copie locale, jamais sous
+        verrou — un autre thread peut continuer à accumuler dans un buffer
+        neuf pendant ce temps, flushé à son tour plus tard."""
+        with self._registry_lock:
+            pending = dict(self._registry_buffer)
+            self._registry_buffer.clear()
+        for (table, scope_items), count in pending.items():
             scope_fields = dict(scope_items)
             doc_id = _doc_id(table, *scope_fields.values())
             self.fs.create("_scope_registry", doc_id, {"table": table, **scope_fields, "n_rows": 0})
             self.fs.increment("_scope_registry", doc_id, "n_rows", count)
-        self._registry_buffer.clear()
 
     def _list_registry_scopes(self, table: str) -> list[dict]:
         entries = self.fs.query("_scope_registry", {"table": table})
