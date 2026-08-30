@@ -9,7 +9,7 @@ from berlue.selfcheck.scorer import compute_divergence
 
 
 class HurluBerlu:
-    """Pipeline principal sans état (Stateless)."""
+    """Pipeline principal sans état (Stateless) pour la vérification RAG."""
 
     def __init__(
         self,
@@ -107,6 +107,7 @@ if __name__ == "__main__":
         default="fusion",  # Le défaut va jusqu'au bout, c'est à dire la fusion !
         help="S'arrête après cette étape (défaut : fusion).",
     )
+    # parser.add_argument("--question", default="Pourquoi l'eau mouille ?", help="Question posée au LLM.")
     parser.add_argument("--question", default="Has Ryan Gosling visited Africa ?", help="Question posée au LLM.")
     args = parser.parse_args()
 
