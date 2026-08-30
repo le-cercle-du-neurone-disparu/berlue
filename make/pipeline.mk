@@ -144,6 +144,9 @@ download_truthfulqa_data: ## Télécharge le dataset TruthfulQA complet (~790 li
 
 download_eval_data: download_halueval_data download_truthfulqa_data ## Télécharge HaluEval + TruthfulQA (les deux jeux utilisés par l'évaluation offline)
 
+ollama_load_test: ## Stress-test de charge sur Ollama local (cf. scripts/ollama_load_test.py pour MODEL/START_THREADS/MAX_THREADS/...) — détermine le CONCURRENCY optimal pour cette machine
+	python scripts/ollama_load_test.py
+
 download_fever_data_small: ## Télécharge un extrait FEVER pour un test rapide (FEVER_SAMPLE_LINES=2000 par défaut), fever.jsonl pointe dessus
 	@echo "⬇️  Téléchargement d'un extrait FEVER ($(FEVER_SAMPLE_LINES) lignes)..."
 	@mkdir -p data/fever/raw

@@ -187,6 +187,11 @@ cloudrun_llm_url: ## Affiche l'URL du service Ollama
 		--project $(GCP_PROJECT) \
 		--format "value(status.url)"
 
+ollama_load_test_gcp: gcp_check_cli_auth ## Stress-test de charge sur berlue-llm (cf. scripts/ollama_load_test.py) — nécessite le service déjà chaud (make gcp_up WARM_MODELS="...")
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	OLLAMA_HOST=$$URL AUTH_TOKEN=$$TOKEN python scripts/ollama_load_test.py
+
 cloudrun_llm_logs: ## Logs du service Ollama
 	@echo "📜 Logs de $(CLOUDRUN_LLM_SERVICE)..."
 	gcloud run services logs read $(CLOUDRUN_LLM_SERVICE) \
