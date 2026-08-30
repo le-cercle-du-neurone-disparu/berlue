@@ -4,21 +4,68 @@ baseline (`berlue.nli_baseline.train`) et pour évaluer le pipeline Berlue compl
 (`berlue.evaluation.run_eval`) — même split train/test pour les deux, pour rester
 comparables.
 
-Params utilisés (`berlue.params`) : `EVAL_DATASETS`, `HALUEVAL_DATA_PATH`,
-`TRUTHFULQA_DATA_PATH`.
+Params utilisés (`berlue.params`) : `EVAL_DATASETS`, `HALUEVAL_URL`,
+`HALUEVAL_DATA_PATH`, `TRUTHFULQA_URL`, `TRUTHFULQA_DATA_PATH`, `TRAIN_RATIO`.
 """
 
+import os
+import random
+
 import pandas as pd
+import requests
 from sklearn.model_selection import train_test_split
 
-from berlue.params import EVAL_DATASETS, HALUEVAL_DATA_PATH, TRUTHFULQA_DATA_PATH
+from berlue.params import (
+    EVAL_DATASETS,
+    HALUEVAL_DATA_PATH,
+    HALUEVAL_URL,
+    TRAIN_RATIO,
+    TRUTHFULQA_DATA_PATH,
+    TRUTHFULQA_URL,
+)
 
 KNOWN_DATASETS = ("halueval", "truthfulqa")
 
 
+def download_dataset(url: str, local_path: str) -> str:
+    """Télécharge `url` vers `local_path` s'il n'existe pas déjà localement, et
+    retourne `local_path` dans tous les cas — cache commun entre le chargement
+    (`load_labeled_examples`) et les cibles `make download_*`.
+    """
+    if os.path.exists(local_path):
+        print(f"✅ {local_path} déjà présent, téléchargement sauté.")
+        return local_path
+
+    print(f"⬇️  Téléchargement de {url} -> {local_path}...")
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    response = requests.get(url)
+    response.raise_for_status()
+    with open(local_path, "wb") as f:
+        f.write(response.content)
+
+    print(f"✅ Téléchargement terminé : {local_path}")
+    return local_path
+
+
+def explode_answers(rows: list[dict], question_key: str, answers_key: str, ground_truth_label: bool) -> list[dict]:
+    """Éclate un champ de réponses séparées par ';' en une ligne par variante
+    (une même question peut donc apparaître plusieurs fois, une fois par variante)."""
+    records = []
+    for row in rows:
+        question = row[question_key]
+        for answer in str(row[answers_key]).split(";"):
+            answer = answer.strip()
+            if answer:
+                records.append({"question": question, "answer": answer, "ground_truth_label": ground_truth_label})
+    return records
+
+
 def load_labeled_examples(
     datasets: list[str] = EVAL_DATASETS,
+    halueval_url: str = HALUEVAL_URL,
     halueval_path: str = HALUEVAL_DATA_PATH,
+    truthfulqa_url: str = TRUTHFULQA_URL,
     truthfulqa_path: str = TRUTHFULQA_DATA_PATH,
 ) -> list[dict]:
     """Charge des exemples labellisés depuis les jeux listés dans `datasets`."""
@@ -34,6 +81,7 @@ def load_labeled_examples(
     # 1. Traitement de HaluEval
     # ==========================================
     if "halueval" in datasets:
+        halueval_path = download_dataset(halueval_url, halueval_path)
         print(f"📥 Chargement de HaluEval depuis : {halueval_path}")
         df_he = pd.read_json(halueval_path, lines=True)
 
@@ -58,50 +106,74 @@ def load_labeled_examples(
     # 2. Traitement de TruthfulQA
     # ==========================================
     if "truthfulqa" in datasets:
+        truthfulqa_path = download_dataset(truthfulqa_url, truthfulqa_path)
         print(f"📥 Chargement de TruthfulQA depuis : {truthfulqa_path}")
-        df_tqa = pd.read_csv(truthfulqa_path)
+        rows = pd.read_csv(truthfulqa_path).to_dict(orient="records")
 
-        # Extraction des exemples CORRECTS
-        df_true_tqa = df_tqa[["Question", "Best Answer"]].copy()
-        df_true_tqa.rename(columns={"Question": "question", "Best Answer": "answer"}, inplace=True)
-        df_true_tqa["ground_truth_label"] = True
+        # Une ligne par variante de réponse (`Correct Answers`/`Incorrect Answers`
+        # sont des listes séparées par ';', de taille variable et généralement
+        # différente d'une colonne à l'autre) — préserve le déséquilibre vrai/faux
+        # du dataset d'origine, au lieu de ne garder qu'une seule réponse de
+        # chaque côté par question.
+        tqa_examples = explode_answers(rows, "Question", "Correct Answers", ground_truth_label=True)
+        tqa_examples += explode_answers(rows, "Question", "Incorrect Answers", ground_truth_label=False)
 
-        # Extraction des exemples INCORRECTS
-        # Les fausses réponses sont séparées par des ';', on extrait la première pour équilibrer
-        df_false_tqa = df_tqa[["Question", "Incorrect Answers"]].copy()
-        df_false_tqa["answer"] = df_false_tqa["Incorrect Answers"].astype(str).apply(lambda x: x.split(";")[0].strip())
-        df_false_tqa.drop(columns=["Incorrect Answers"], inplace=True)
-        df_false_tqa.rename(columns={"Question": "question"}, inplace=True)
-        df_false_tqa["ground_truth_label"] = False
-
-        # Concaténation et ajout de la source
-        df_tqa_combined = pd.concat([df_true_tqa, df_false_tqa], ignore_index=True)
-        df_tqa_combined["source"] = "truthfulqa"
+        for ex in tqa_examples:
+            ex["source"] = "truthfulqa"
 
         # Ajout à la liste globale
-        all_examples.extend(df_tqa_combined.to_dict(orient="records"))
+        all_examples.extend(tqa_examples)
 
     print(f"✅ Chargement terminé : {len(all_examples)} exemples normalisés au total.")
     return all_examples
 
 
-def split_train_test(examples: list[dict], test_size: float = 0.2, seed: int = 0) -> tuple[list[dict], list[dict]]:
-    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation,
-    en évitant le data leakage : on sépare par question unique pour qu'une même
-    question ne se retrouve pas à la fois dans le train et dans le test.
+def balance_classes(examples: list[dict], seed: int) -> list[dict]:
+    """Sous-échantillonne la classe majoritaire (`ground_truth_label`), séparément
+    pour chaque `source`, pour obtenir autant d'exemples vrais que faux dans
+    CHAQUE dataset d'origine (pas seulement sur le total) — un rééquilibrage
+    global toutes sources confondues pourrait sinon piocher dans le mauvais
+    dataset et casser l'équilibre naturel d'un dataset qui n'en avait pas besoin.
+    """
+    rng = random.Random(seed)
+    balanced = []
+
+    for source in sorted(set(ex["source"] for ex in examples)):
+        source_examples = [ex for ex in examples if ex["source"] == source]
+        true_examples = [ex for ex in source_examples if ex["ground_truth_label"] is True]
+        false_examples = [ex for ex in source_examples if ex["ground_truth_label"] is False]
+
+        n = min(len(true_examples), len(false_examples))
+        balanced += rng.sample(true_examples, n) + rng.sample(false_examples, n)
+
+    rng.shuffle(balanced)
+    return balanced
+
+
+def split_train_test(
+    examples: list[dict], train_ratio: float = TRAIN_RATIO, seed: int = 0
+) -> tuple[list[dict], list[dict]]:
+    """Sépare `examples` en (train, test) pour l'entraînement et l'évaluation.
+
+    Split par question unique (pas par ligne) pour éviter le data leakage : une
+    même question ne se retrouve jamais à la fois dans le train et dans le test.
+    Le train est ensuite rééquilibré à autant d'exemples vrais que faux, dataset
+    par dataset (`balance_classes`) ; le test garde la proportion vrai/faux
+    telle qu'elle ressort du split par question, sans rééquilibrage.
     """
 
-    # Filtre les questions en double pour ne retorner que des questions différentes
-    unique_questions = list(set(ex["question"] for ex in examples))
+    # Ordre déterministe avant mélange : nécessaire pour un split reproductible
+    # d'un run à l'autre (le train et le test recalculés séparément, ex. entre
+    # l'entraînement et l'évaluation, doivent retomber sur le même split).
+    unique_questions = sorted(set(ex["question"] for ex in examples))
 
     # Split sur les questions uniques (et non pas sur les lignes)
-    train_questions, test_questions = train_test_split(unique_questions, test_size=test_size, random_state=seed)
+    train_questions, _ = train_test_split(unique_questions, train_size=train_ratio, random_state=seed)
 
     # Conversion de la liste en set pour une meilleure performance (O(1))
     train_q_set = set(train_questions)
 
     # Reconstruction des datasets finaux
-
     train_examples = []
     test_examples = []
 
@@ -111,5 +183,10 @@ def split_train_test(examples: list[dict], test_size: float = 0.2, seed: int = 0
         else:
             test_examples.append(ex)
 
-    print(f"🔀 Split sans leakage (par question) : {len(train_examples)} (train) / {len(test_examples)} (test).")
+    train_examples = balance_classes(train_examples, seed)
+
+    print(
+        f"🔀 Split sans leakage (par question) : {len(train_examples)} (train, équilibré 50/50) / "
+        f"{len(test_examples)} (test, proportion d'origine)."
+    )
     return train_examples, test_examples

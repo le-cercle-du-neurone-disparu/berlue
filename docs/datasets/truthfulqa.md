@@ -7,11 +7,15 @@ mais plausibles — le second jeu utilisé pour l'évaluation offline
 
 ## Ce que le projet en utilise
 
-Chargé en CSV (`Question`, `Best Answer`, `Incorrect Answers` — liste
-séparée par `;`, seule la première entrée est retenue pour équilibrer avec
-HaluEval) — voir `berlue/evaluation/data.py`. Ce loader ramène TruthfulQA et
-HaluEval à un même schéma normalisé ; [`baseline.md`](../evaluation/baseline.md)
-décrit ce fonctionnement partagé (split train/test sans fuite de données, etc.).
+Chargé en CSV (`Question`, `Correct Answers`, `Incorrect Answers` — chacune une
+liste de variantes séparée par `;`, de taille variable) — voir
+`berlue/evaluation/data.py`. Chaque variante devient une ligne à part entière,
+donc une question apparaît plusieurs fois côté vrai comme côté faux ; ça
+préserve le déséquilibre naturel du dataset (généralement plus de variantes
+fausses que de vraies) plutôt que de le forcer à une seule paire par question.
+Ce loader ramène TruthfulQA et HaluEval à un même schéma normalisé ;
+[`baseline.md`](../evaluation/baseline.md) décrit ce fonctionnement partagé
+(split train/test sans fuite de données, etc.).
 
 ## Pour aller plus loin
 
