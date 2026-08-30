@@ -49,6 +49,7 @@ class PredictInput(BaseModel):
     """
 
     question: str
+    answer: str | None = None
     llm: LLMConfig = LLMConfig()
 
 
@@ -133,3 +134,44 @@ class EvaluateOutput(BaseModel):
     samples_evaluated: int
     metrics: Metrics
     status: str
+
+
+# ==============================================================================
+# SCHEMAS DE L'ENDPOINT EVALUATIONS (lecture seule des résultats déjà en cache)
+# ==============================================================================
+
+
+class EvaluationResult(BaseModel):
+    """
+    Résultat d'une évaluation du pipeline Berlue pour un scope donné (un seul
+    dataset, ratio, modèle, versions). `pipeline_version`/
+    `generation_version` absents selon la table (cf.
+    docs/evaluation/storage.md pour quel axe s'applique à quoi) ;
+    `eval_version` toujours présent.
+
+    `n_examples` couvre toujours tout ce qui a été fourni au calcul de la
+    matrice, mais pas forcément le split de test officiel complet — comparer
+    à `dataset_test_size` (taille réelle de ce split, `None` si inconnue) pour
+    savoir si cette matrice est un run intégral ou un sous-ensemble partiel
+    (ex. démo, développement).
+    """
+
+    dataset: str
+    ratio: float
+    model_id: str
+    pipeline_version: str | None = None
+    generation_version: str | None = None
+    eval_version: str
+    matrix: ConfusionMatrix
+    n_examples: int
+    dataset_test_size: int | None = None
+    computed_at: str
+
+
+class EvaluationListOutput(BaseModel):
+    """
+    Payload de réponse listant les résultats d'évaluation déjà en cache,
+    optionnellement filtrés (dataset(s), ratio, modèle, version).
+    """
+
+    evaluations: list[EvaluationResult]

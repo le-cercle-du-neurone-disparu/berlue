@@ -3,11 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from berlue.api.schemas import (
-    LLMListOutput,
-    PredictInput,
-    PredictOutput,
-)
+from berlue.api.fast_eval import eval_router
+from berlue.api.schemas import LLMListOutput, PredictInput, PredictOutput
 from berlue.llm.client import OllamaClient
 from berlue.params import EXTRACT_MODEL, RAG_MODEL, USE_MOCK
 
@@ -54,6 +51,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(eval_router)
 
 # ==========================================
 # 3. ENDPOINTS TECHNIQUES (template existant)
