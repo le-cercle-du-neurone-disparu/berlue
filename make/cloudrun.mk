@@ -83,7 +83,8 @@ cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le serv
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
 		--max-instances=1 \
 		--concurrency=1 \
-		--set-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
+		--timeout=900 \
+		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
 		--no-allow-unauthenticated
 	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
 	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \
@@ -109,8 +110,8 @@ cloudrun_eval_service_logs: ## Logs du service Cloud Run d'éval
 cloudrun_eval_service_invoke: gcp_check_cli_auth ## Appelle /invoke sur le service d'éval (mêmes variables que evaluate_model/evaluate_model_generated, dont PIPELINE_VERSION/GENERATION_VERSION/EVAL_VERSION) — nécessite gcp_up au préalable
 	@URL=$$(gcloud run services describe $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
 	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
-	BODY=$$(python3 -c "import json,os; print(json.dumps({k: v for k, v in {'dataset': os.environ.get('DATASET'), 'ratio': float(os.environ['RATIO']) if os.environ.get('RATIO') else None, 'model_id': os.environ.get('MODEL_ID'), 'pipeline_version': os.environ.get('PIPELINE_VERSION'), 'generation_version': os.environ.get('GENERATION_VERSION'), 'eval_version': os.environ.get('EVAL_VERSION'), 'start': int(os.environ['START']) if os.environ.get('START') else None, 'end': int(os.environ['END']) if os.environ.get('END') else None, 'mode': os.environ.get('MODE'), 'judge_model': os.environ.get('JUDGE_MODEL'), 'matrix': os.environ.get('MATRIX') == 'true', 'warmup': os.environ.get('WARMUP') == 'true', 'baseline': os.environ.get('BASELINE') == 'true', 'coverage': os.environ.get('COVERAGE') == 'true'}.items() if v is not None}))" \
-		DATASET="$(DATASET)" RATIO="$(RATIO)" MODEL_ID="$(MODEL_ID)" PIPELINE_VERSION="$(PIPELINE_VERSION)" GENERATION_VERSION="$(GENERATION_VERSION)" EVAL_VERSION="$(EVAL_VERSION)" START="$(START)" END="$(END)" MODE="$(MODE)" JUDGE_MODEL="$(JUDGE_MODEL)" MATRIX="$(MATRIX)" WARMUP="$(WARMUP)" BASELINE="$(BASELINE)" COVERAGE="$(COVERAGE)"); \
+	BODY=$$(python3 -c "import json,os; print(json.dumps({k: v for k, v in {'dataset': os.environ.get('DATASET'), 'ratio': float(os.environ['RATIO']) if os.environ.get('RATIO') else None, 'model_id': os.environ.get('MODEL_ID'), 'pipeline_version': os.environ.get('PIPELINE_VERSION'), 'generation_version': os.environ.get('GENERATION_VERSION'), 'eval_version': os.environ.get('EVAL_VERSION'), 'start': int(os.environ['START']) if os.environ.get('START') else None, 'end': int(os.environ['END']) if os.environ.get('END') else None, 'mode': os.environ.get('MODE'), 'judge_model': os.environ.get('JUDGE_MODEL'), 'matrix': os.environ.get('MATRIX') == 'true', 'warmup': os.environ.get('WARMUP') == 'true', 'baseline': os.environ.get('BASELINE') == 'true', 'coverage': os.environ.get('COVERAGE') == 'true', 'concurrency': int(os.environ['CONCURRENCY']) if os.environ.get('CONCURRENCY') else None}.items() if v is not None}))" \
+		DATASET="$(DATASET)" RATIO="$(RATIO)" MODEL_ID="$(MODEL_ID)" PIPELINE_VERSION="$(PIPELINE_VERSION)" GENERATION_VERSION="$(GENERATION_VERSION)" EVAL_VERSION="$(EVAL_VERSION)" START="$(START)" END="$(END)" MODE="$(MODE)" JUDGE_MODEL="$(JUDGE_MODEL)" MATRIX="$(MATRIX)" WARMUP="$(WARMUP)" BASELINE="$(BASELINE)" COVERAGE="$(COVERAGE)" CONCURRENCY="$(CONCURRENCY)"); \
 	echo "🚀 POST $$URL/invoke : $$BODY"; \
 	curl -sf -X POST "$$URL/invoke" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "$$BODY" \
 	| python3 -m json.tool
@@ -143,8 +144,20 @@ gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournen
 # de cause. Toujours redescendre à 0 instance (cloudrun_llm_scale_to_zero)
 # ou supprimer (cloudrun_llm_delete) après un test.
 
-cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU L4, privé — IAM requis pour l'appeler)
-	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU L4)..."
+# Défauts = config de prod actuelle (alignés, cf. infra-gpu.md) — surchargeables
+# pour un test de parallélisme ponctuel, ex. `make cloudrun_llm_deploy
+# LLM_NUM_PARALLEL=32 LLM_CONTEXT_LENGTH=1024`. Toujours revenir aux défauts
+# après un test (redéployer sans les surcharger) pour ne pas laisser la prod
+# sur une config expérimentale.
+LLM_NUM_PARALLEL ?= 4
+LLM_CONCURRENCY ?= 4
+LLM_CONTEXT_LENGTH ?=
+# Une virgule littérale dans un argument de $(if ...) serait lue comme le
+# séparateur then/else de $(if) lui-même — passer par une variable l'évite.
+comma := ,
+
+cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU L4, privé — IAM requis pour l'appeler) ; LLM_NUM_PARALLEL/LLM_CONCURRENCY/LLM_CONTEXT_LENGTH pour un test de parallélisme
+	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU L4, NUM_PARALLEL=$(LLM_NUM_PARALLEL))..."
 	gcloud run deploy $(CLOUDRUN_LLM_SERVICE) \
 		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest \
 		--region $(GCP_REGION) \
@@ -154,8 +167,8 @@ cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollam
 		--no-gpu-zonal-redundancy \
 		--cpu=4 \
 		--memory=16Gi \
-		--concurrency=4 \
-		--set-env-vars=OLLAMA_NUM_PARALLEL=4 \
+		--concurrency=$(LLM_CONCURRENCY) \
+		--set-env-vars=OLLAMA_NUM_PARALLEL=$(LLM_NUM_PARALLEL)$(if $(LLM_CONTEXT_LENGTH),$(comma)OLLAMA_CONTEXT_LENGTH=$(LLM_CONTEXT_LENGTH),) \
 		--max-instances=1 \
 		--timeout=600 \
 		--port=11434 \
