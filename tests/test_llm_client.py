@@ -83,6 +83,23 @@ def test_generate_raises_runtime_error_on_empty_response():
         client.generate(prompt="...")
 
 
+def test_warmup_calls_generate_once():
+    client = make_client(response_text="ok")
+
+    client.warmup()
+
+    assert len(client.client.calls) == 1
+
+
+def test_warmup_returns_a_non_negative_elapsed_time():
+    client = make_client(response_text="ok")
+
+    elapsed = client.warmup()
+
+    assert isinstance(elapsed, float)
+    assert elapsed >= 0.0
+
+
 def test_generate_many_returns_empty_list_for_non_positive_k():
     client = make_client()
 
