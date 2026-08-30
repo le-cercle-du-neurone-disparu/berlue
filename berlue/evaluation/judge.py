@@ -82,7 +82,10 @@ def judge_answer(
     correct_first = rng.random() < 0.5
 
     prompt = _build_prompt(question, correct_answer, incorrect_answer, candidate_answer, correct_first=correct_first)
-    raw_response = client.generate(prompt=prompt, temperature=0.0)
+    # num_predict=10 : la consigne demande exactement TRUE ou FALSE (1 token)
+    # — large marge sans laisser un modèle qui ignore la consigne partir en
+    # roue libre (cf. OllamaClient.generate).
+    raw_response = client.generate(prompt=prompt, temperature=0.0, num_predict=10)
 
     return _parse_verdict(raw_response)
 

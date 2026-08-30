@@ -1,6 +1,9 @@
 """Tests pour `berlue.evaluation.run_eval` — pipeline et store factices, aucune
 infra externe requise (pas d'appel LLM, pas de téléchargement de dataset)."""
 
+import threading
+import time
+
 import pytest
 
 from berlue.api.schemas import ClaimResult, LLMConfig, PredictOutput
@@ -65,7 +68,7 @@ class FakeJudgeClient:
         self.calls: list[str] = []
         self.warmup_calls = 0
 
-    def generate(self, prompt: str, temperature: float = 0.0) -> str:
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         self.calls.append(prompt)
         return self.response
 
@@ -82,7 +85,7 @@ class FakeGeneratorClient:
         self.calls: list[str] = []
         self.warmup_calls = 0
 
-    def generate(self, prompt: str, temperature: float = 0.0) -> str:
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         self.calls.append(prompt)
         return f"generated:{prompt}"
 
@@ -441,6 +444,98 @@ def test_evaluate_model_generated_respects_start_end_slice(tmp_path):
     assert store.get_generated_answer("fake", "v1", "q0") is None
     assert store.get_generated_answer("fake", "v1", "q1") is not None
     assert store.get_generated_answer("fake", "v1", "q2") is None
+
+
+class SlowThreadSafeClient:
+    """Comme `FakeGeneratorClient`/`FakeJudgeClient`, mais dort `delay_s` par
+    appel et piste les appels sous verrou — sert à vérifier qu'un
+    `concurrency` > 1 exécute vraiment les appels en parallèle (temps total
+    << somme des délais individuels), pas juste qu'il ne casse rien."""
+
+    def __init__(self, delay_s: float = 0.05):
+        self.delay_s = delay_s
+        self.calls: list[str] = []
+        self._lock = threading.Lock()
+        self.warmup_calls = 0
+
+    def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
+        time.sleep(self.delay_s)
+        with self._lock:
+            self.calls.append(prompt)
+        return f"generated:{prompt}"
+
+    def warmup(self, prompt: str = "Bonjour", temperature: float = 0.0) -> float:
+        self.warmup_calls += 1
+        return 0.0
+
+
+def test_evaluate_model_generated_concurrency_runs_questions_in_parallel(tmp_path):
+    """5 questions, chaque étape à 0.05s/appel : séquentiel (`concurrency=1`)
+    prendrait ~0.25s par étape (~0.75s pour les 3), `concurrency=5` doit
+    rester largement en dessous — la seule façon d'observer que le pool
+    exécute vraiment les workers en parallèle, pas seulement qu'il ne plante
+    pas."""
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+    scope = _scope()
+    generator_client = SlowThreadSafeClient(delay_s=0.05)
+    judge_client = SlowThreadSafeClient(delay_s=0.05)
+
+    start = time.monotonic()
+    evaluate_model_generated(
+        FakePipeline(),
+        scope,
+        judge_client=judge_client,
+        generator_client=generator_client,
+        store=store,
+        test_examples=_paired_examples(5),
+        concurrency=5,
+    )
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 0.3, f"pas de vrai parallélisme observé ({elapsed:.2f}s pour 5×2 appels à 0.05s)"
+    assert len(generator_client.calls) == 5
+    assert len(judge_client.calls) == 5
+    for i in range(5):
+        assert store.get_generated_answer("fake", "v1", f"q{i}") is not None
+        assert store.get_judge_verdict("fake", "v1", JUDGE_MODEL, "v1", f"q{i}") is not None
+
+
+def test_evaluate_model_generated_concurrency_matches_sequential_result(tmp_path):
+    """`concurrency=4` doit remplir exactement le même cache que
+    `concurrency=1` sur les mêmes exemples (deux stores séparés) — la
+    parallélisation ne doit rien changer au résultat, seulement au temps."""
+    examples = _paired_examples(6)
+
+    store_sequential = LocalResultStore(db_path=str(tmp_path / "sequential.db"))
+    evaluate_model_generated(
+        FakePipeline(status="orange"),
+        _scope(),
+        judge_client=FakeJudgeClient(response="FALSE"),
+        generator_client=FakeGeneratorClient(),
+        store=store_sequential,
+        test_examples=examples,
+        concurrency=1,
+    )
+
+    store_parallel = LocalResultStore(db_path=str(tmp_path / "parallel.db"))
+    evaluate_model_generated(
+        FakePipeline(status="orange"),
+        _scope(),
+        judge_client=FakeJudgeClient(response="FALSE"),
+        generator_client=FakeGeneratorClient(),
+        store=store_parallel,
+        test_examples=examples,
+        concurrency=4,
+    )
+
+    for i in range(6):
+        q = f"q{i}"
+        assert store_sequential.get_generated_answer("fake", "v1", q) == store_parallel.get_generated_answer(
+            "fake", "v1", q
+        )
+        assert store_sequential.get_judge_verdict(
+            "fake", "v1", JUDGE_MODEL, "v1", q
+        ) == store_parallel.get_judge_verdict("fake", "v1", JUDGE_MODEL, "v1", q)
 
 
 # --- evaluate_model_generated_matrix (mode 2, Berlue-vs-juge seule) ---------
