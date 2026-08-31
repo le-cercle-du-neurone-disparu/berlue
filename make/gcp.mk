@@ -137,10 +137,14 @@ iam_setup_service_account: ## Crée le compte de service et lui assigne les rôl
 		--quiet
 
 iam_setup_cloudrun_service_account: gcp_check_cli_auth ## Crée $(CLOUDRUN_SA_NAME) (compte de service Cloud Run) et lui donne les droits Firestore/BigQuery nécessaires à EVAL_STORE_TARGET=gcp
-	@echo "🤖 Création ou vérification du compte de service $(CLOUDRUN_SA_EMAIL)..."
-	gcloud iam service-accounts create $(CLOUDRUN_SA_NAME) \
-		--display-name="Berlue Cloud Run (éval GCP)" \
-		--project=$(GCP_PROJECT) || true
+	@if gcloud iam service-accounts describe $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) >/dev/null 2>&1; then \
+		echo "✅ Compte de service $(CLOUDRUN_SA_EMAIL) déjà présent, création sautée."; \
+	else \
+		echo "🤖 Création du compte de service $(CLOUDRUN_SA_EMAIL)..."; \
+		gcloud iam service-accounts create $(CLOUDRUN_SA_NAME) \
+			--display-name="Berlue Cloud Run (éval GCP)" \
+			--project=$(GCP_PROJECT); \
+	fi
 	@echo "🔐 Firestore lecture/écriture (datastore.user), restreint à la base (default)..."
 	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
 		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \

@@ -75,11 +75,15 @@ cloudrun_delete: ## Supprime l'environnement CLOUDRUN_ENV=test|staging|prod (dé
 # cette valeur puis `make cloudrun_deploy`, sans toucher à l'image.
 RAG_CORPUS_VERSION ?= full-145k
 
-rag_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS dédié à l'index RAG (dans BUCKET_PROJECT)
-	@echo "🪣 Création du bucket gs://$(RAG_BUCKET_NAME)..."
-	gcloud storage buckets create gs://$(RAG_BUCKET_NAME) \
-		--location=$(GCP_REGION) \
-		--project=$(BUCKET_PROJECT)
+rag_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS dédié à l'index RAG s'il n'existe pas déjà (dans BUCKET_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur
+	@if gcloud storage buckets describe gs://$(RAG_BUCKET_NAME) --project=$(BUCKET_PROJECT) >/dev/null 2>&1; then \
+		echo "✅ Bucket gs://$(RAG_BUCKET_NAME) déjà présent, création sautée."; \
+	else \
+		echo "🪣 Création du bucket gs://$(RAG_BUCKET_NAME)..."; \
+		gcloud storage buckets create gs://$(RAG_BUCKET_NAME) \
+			--location=$(GCP_REGION) \
+			--project=$(BUCKET_PROJECT); \
+	fi
 
 rag_bucket_grant_sa: gcp_check_cli_auth ## Autorise sa-berlue à lire le bucket RAG — requis par le volume GCS FUSE de cloudrun_deploy
 	@echo "🔐 Lecture pour $(CLOUDRUN_SA_EMAIL) sur gs://$(RAG_BUCKET_NAME)..."
