@@ -26,8 +26,8 @@ Aletheia (Streamlit, local)  →  berlue-api-<env> (Cloud Run, CPU)  →  berlue
 
 - **`berlue-llm`** : image (`Dockerfile.llm`), déploiement GPU L4, IAM
   (`run.invoker` pour `sa-berlue`), dimensionnement — même service que celui
-  utilisé par l'éval, cf. [`docs/gcp/cloudrun.md`](docs/gcp/cloudrun.md) et
-  [`docs/gcp/infra-gpu.md`](docs/gcp/infra-gpu.md).
+  utilisé par l'éval, cf. [`docs/gcp/cloudrun.md`](../docs/gcp/cloudrun.md) et
+  [`docs/gcp/infra-gpu.md`](../docs/gcp/infra-gpu.md).
 - **`OllamaClient`** (`berlue/llm/client.py`) : gère déjà l'auth OIDC vers un
   Cloud Run privé de façon générique (`_cloud_run_auth_headers`, activée par
   la détection `K_SERVICE`) — pas spécifique à l'éval, le pipeline principal

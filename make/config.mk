@@ -68,7 +68,7 @@ GAR_TIMEOUT = 600
 
 # Bucket GCS dédié à l'index RAG (FAISS/FEVER), monté en volume GCS FUSE par
 # cloudrun_deploy — jamais reconstruit au docker build, cf.
-# plan-deploiement-api-gcp.md. Dédié plutôt que BUCKET_NAME (buckets
+# claude-doc/plan-deploiement-api-gcp.md. Dédié plutôt que BUCKET_NAME (buckets
 # personnels/MLOps) : un volume GCS FUSE monte tout le contenu d'un bucket,
 # pas un sous-dossier — mélanger d'autres données les rendrait visibles dans
 # le conteneur API. Dans BUCKET_PROJECT (projet partagé, défaut GCP_PROJECT),

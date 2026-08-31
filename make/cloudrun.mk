@@ -69,7 +69,7 @@ cloudrun_delete: ## Supprime l'environnement CLOUDRUN_ENV=test|staging|prod (dé
 # ==============================================================================
 # Construit à part (make build_fever_index en local), jamais reconstruit au
 # docker build : le ré-embedding du corpus complet est trop coûteux pour
-# tourner à chaque déploiement de code, cf. plan-deploiement-api-gcp.md.
+# tourner à chaque déploiement de code, cf. claude-doc/plan-deploiement-api-gcp.md.
 # RAG_CORPUS_VERSION identifie le sous-dossier actif du bucket
 # (gs://$(RAG_BUCKET_NAME)/faiss/<version>/) — changer de corpus = changer
 # cette valeur puis `make cloudrun_deploy`, sans toucher à l'image.
