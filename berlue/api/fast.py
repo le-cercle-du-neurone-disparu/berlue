@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
         from berlue.api.service import BerlueService
         from berlue.rag.retriever import RagRetriever
 
-        app.state.retriever = RagRetriever(llm_client=OllamaClient(RAG_MODEL))
+        app.state.retriever = RagRetriever(llm_client=OllamaClient(model=RAG_MODEL))
         app.state.extractor = OllamaClient(model=EXTRACT_MODEL, temperature=0.0)
 
         app.state.service = BerlueService()
