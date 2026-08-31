@@ -426,9 +426,8 @@ def evaluate_model_generated(
 ) -> None:
     """Mode 2, Berlue seul : sur `[start:end]`, génère une réponse pour
     chaque question (vrai appel LLM — `generator_client`, `scope.model_id`
-    par défaut, jamais mocké, même quand `pipeline` — le fact-check Berlue —
-    l'est encore tant que `HurluBerlu` n'est pas branché), puis la fait
-    fact-checker par Berlue, puis juger par un LLM-juge ancré sur les
+    par défaut), puis la fait fact-checker par Berlue (`HurluBerlu`, via
+    `BerluePipeline`), puis juger par un LLM-juge ancré sur les
     réponses de référence du dataset (vérité-terrain de substitution) — un
     passage complet par étape sur l'ensemble des questions, pas les 3 étapes
     question par question (chaque étape ne dépend que de la réponse générée,
@@ -516,10 +515,9 @@ def evaluate_model_generated(
 
     def _berlue_one(question: str) -> None:
         # `pipeline.predict` doit être thread-safe pour un `concurrency` > 1 —
-        # vrai pour un pipeline réel (appels LLM sans état partagé, comme
-        # `generator_client`/`judge_client`), pas garanti pour
-        # `RandomBerluePipeline` (RNG d'instance non verrouillé) : rester sur
-        # `concurrency=1` pour cette étape tant que le mock est utilisé.
+        # vrai pour `BerluePipeline` (appels LLM sans état partagé, comme
+        # `generator_client`/`judge_client` ; `RagRetriever.verify_claim`
+        # n'écrit dans aucun état d'instance partagé non plus).
         generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
         with timer.measure("Berlue"):
             berlue_verdict = aggregate_verdict(pipeline.predict(question, generated_answer).claims)
@@ -777,9 +775,7 @@ def build_arg_parser():
 
     from berlue.params import EVAL_VERSION, GENERATION_VERSION, PIPELINE_VERSION, TRAIN_RATIO
 
-    parser = argparse.ArgumentParser(
-        description="Évalue le pipeline Berlue (mock aujourd'hui, en attendant HurluBerlu) sur un scope."
-    )
+    parser = argparse.ArgumentParser(description="Évalue le pipeline Berlue (HurluBerlu) sur un scope.")
     parser.add_argument("--dataset", default="halueval", help="Un seul dataset (jamais mélangé).")
     parser.add_argument("--ratio", type=float, default=TRAIN_RATIO, help="Ratio train/test.")
     parser.add_argument("--model-id", default="random-mock", help="Identité du modèle évalué.")
@@ -869,7 +865,7 @@ def run_from_args(args, store: LocalResultStore | None = None):
     Retourne la valeur produite (déjà affichée via `print()` comme avant) —
     `None` pour les branches qui ne font que remplir le cache.
     """
-    from berlue.evaluation.mock_pipeline import RandomBerluePipeline
+    from berlue.evaluation.berlue_pipeline import BerluePipeline
 
     if args.purge:
         result = (store or get_result_store()).purge(
@@ -922,7 +918,7 @@ def run_from_args(args, store: LocalResultStore | None = None):
             print(result)
             return result
         evaluate_model_generated(
-            RandomBerluePipeline(),
+            BerluePipeline(),
             scope,
             judge_model=args.judge_model,
             start=args.start,
@@ -938,7 +934,7 @@ def run_from_args(args, store: LocalResultStore | None = None):
         print(result)
         return result
 
-    evaluate_model(RandomBerluePipeline(), scope=scope, start=args.start, end=args.end, store=store)
+    evaluate_model(BerluePipeline(), scope=scope, start=args.start, end=args.end, store=store)
     return None
 
 

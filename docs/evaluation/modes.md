@@ -95,14 +95,12 @@ incorrecte tirées du dataset (`berlue.evaluation.judge`) :
 
 ### Ce qui est réel vs mocké aujourd'hui
 
-Génération et jugement sont de vrais appels LLM par défaut
-(`generator_client`/`judge_client`, tous deux de vrais `OllamaClient`) — un
-générateur ou un juge mocké ne mesurerait rien de réel. Seul le fact-check
-Berlue (`pipeline.predict`) tourne sur un pipeline mock
-(`RandomBerluePipeline`, verdicts aléatoires) : le vrai pipeline Berlue
-n'est pas encore branché sur ce mode. Les verdicts *Berlue* du mode généré
-ne sont donc pas encore représentatifs — seuls les verdicts *baseline* (NLI,
-réel) et *juge* le sont.
+Génération, fact-check Berlue et jugement sont tous de vrais appels LLM par
+défaut (`generator_client`/`judge_client`, de vrais `OllamaClient`, et
+`pipeline.predict` sur `HurluBerlu` via `BerluePipeline`) — un composant
+mocké ne mesurerait rien de réel. `RandomBerluePipeline` (verdicts
+aléatoires) reste disponible pour développer/tester la boucle d'éval sans
+dépendre d'Ollama ni d'un index FAISS, mais n'est plus branché par défaut.
 
 ## Comparaison
 

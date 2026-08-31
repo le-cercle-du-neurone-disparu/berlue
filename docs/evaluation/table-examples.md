@@ -78,9 +78,8 @@ computed_at          : "2026-08-29T01:08:12.054771+00:00"
 
 ### `eval_berlue_generated`
 
-Verdict issu du pipeline mock (`RandomBerluePipeline`, tiré au hasard) tant
-que le vrai `HurluBerlu` n'est pas branché sur ce mode — non représentatif,
-cf. [`modes.md`](modes.md).
+Exemple capturé avec le pipeline mock (`RandomBerluePipeline`, tiré au
+hasard) — non représentatif d'un verdict réel, cf. [`modes.md`](modes.md).
 
 ```
 dataset             : "halueval"

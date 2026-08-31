@@ -1,10 +1,11 @@
 """Test d'intégration bout en bout des deux modes d'évaluation (dataset et
 généré) sur une mini tranche du **vrai** jeu de test — marqué `functional` :
 télécharge les vrais datasets si absents, nécessite un baseline déjà
-entraîné (`make train_baseline`). Le pipeline Berlue reste le mock
-(`RandomBerluePipeline` — `HurluBerlu` n'est pas branché sur l'éval), le
-LLM-juge est factice ici pour rester reproductible sans dépendre d'un
-Ollama disponible sur toute machine de dev/CI.
+entraîné (`make train_baseline`). Le pipeline Berlue utilisé ici reste le
+mock (`RandomBerluePipeline`, appelé directement — pas `BerluePipeline`, le
+pipeline réel branché par défaut dans `run_eval.run_from_args`), le
+LLM-juge est factice aussi, pour rester reproductible sans dépendre d'un
+Ollama ni d'un index FAISS déjà construit sur toute machine de dev/CI.
 
 Lancer avec : pytest tests/test_evaluation_integration.py -m functional
 """
