@@ -309,6 +309,51 @@ gratuit.
 sur un maximum "au cas où". Chiffres complets (balayage fin, local et
 GCP) : [`execution-benchmark.md`](../evaluation/execution-benchmark.md).
 
+## Procédure : trouver le `CONCURRENCY` optimal sur sa machine
+
+Les chiffres ci-dessus sont propres aux GPU déjà mesurés (RTX 5070 Ti
+Laptop, L4) — sur une autre machine, à refaire plutôt qu'à supposer. Deux
+outils complémentaires, à utiliser dans cet ordre :
+
+**1. Stress test (`scripts/ollama_load_test.py`)** — repère une plage large
+en quelques minutes, sans toucher au code du projet ni aux vrais scopes
+d'éval :
+
+```bash
+# reconfigurer NUM_PARALLEL à chaque valeur testée (systemd local — sur
+# Cloud Run, cf. cloudrun_llm_deploy LLM_NUM_PARALLEL=N)
+sudo systemctl edit ollama   # Environment="OLLAMA_NUM_PARALLEL=N"
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+
+# charge fixe à N (START_THREADS=MAX_THREADS=N), pas un ramp — mesure le
+# débit agrégé à ce niveau précis
+MODEL=llama3.1:8b START_THREADS=N MAX_THREADS=N RAMP_INTERVAL_S=5 HOLD_AT_MAX_S=20 \
+  make ollama_load_test
+```
+
+Répéter pour quelques valeurs de N espacées (ex. 8, 16, 24, 32, 48) —
+retenir la zone où le débit agrégé plafonne, avant que le taux d'échec ne
+monte (cf. section précédente : la dégradation en charge cliente est
+progressive, pas un mur, donc chercher un plateau plutôt qu'un point).
+
+**2. Confirmation sur le vrai batch** (`evaluate_model_generated`) — le
+stress test envoie des prompts génériques HaluEval, pas les prompts réels
+de l'éval (longueur, contenu) ; à confirmer sur 2-3 valeurs autour de la
+zone repérée, avec `NUM_PARALLEL` = `CONCURRENCY` à chaque fois :
+
+```bash
+sudo systemctl edit ollama   # Environment="OLLAMA_NUM_PARALLEL=24"
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+make evaluate_model_generated DATASET=halueval RATIO=0.8 \
+  MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b START=0 END=500 CONCURRENCY=24
+```
+
+Comparer le temps réel entre les valeurs testées (500 questions minimum —
+un lot trop petit dilue le gain, cf. plus haut) et retenir la meilleure.
+Remettre `OLLAMA_NUM_PARALLEL` par défaut ensuite si la machine sert à
+autre chose (`sudo rm /etc/systemd/system/ollama.service.d/override.conf
+&& sudo systemctl daemon-reload && sudo systemctl restart ollama`).
+
 ## Comportement au-delà du plafond de parallélisme réel (charge client)
 
 Envoyer plus de requêtes concurrentes que `NUM_PARALLEL` ne casse rien —
