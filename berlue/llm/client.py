@@ -69,8 +69,7 @@ class OllamaClient:
             # On réutilise notre méthode unitaire
             resp = self.generate(prompt, temperature=temp)
             responses.append(resp)
-            preview = resp[:200] + ("..." if len(resp) > 200 else "")
-            print(f"   → {preview}")
+            print(f"   → {resp}")
             print("-" * 60)
 
         return responses

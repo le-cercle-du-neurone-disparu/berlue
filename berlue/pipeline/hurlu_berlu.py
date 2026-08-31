@@ -23,18 +23,33 @@ class HurluBerlu:
         self.llm_extract = llm_extract or llm_client
 
         self.retriever = retriever or RagRetriever()
+    LENGTH_CONSTRAINT = "Answer clearly and informatively, in 2 sentences at most."
+
+    def _build_prompt(self, question: str, length_constraint: str) -> str:
+        return f"{question}\n\n[Instruction : {length_constraint}]"
 
     # ÉTAPE 1
-    def generate_response(
-        self, question: str, length_constraint: str = "Réponds de manière claire et concise, en 1 phrase."
-    ) -> PipelineResult:
-        """Génère la réponse de base avec une limite de longueur."""
-
-        full_prompt = f"{question}\n\n[Instruction : {length_constraint}]"
-
+    def generate_response(self, question: str, length_constraint: str = LENGTH_CONSTRAINT) -> PipelineResult:
+        full_prompt = self._build_prompt(question, length_constraint)
         answer = self.llm_client.generate(prompt=full_prompt)
-
         return PipelineResult(question=question, raw_answer=answer)
+
+    # ÉTAPE 3
+    def generate_samples(self, result: PipelineResult, length_constraint: str = LENGTH_CONSTRAINT) -> PipelineResult:
+        full_prompt = self._build_prompt(result.question, length_constraint)
+        result.samples = sample_responses(question=full_prompt, client=self.llm_client)
+        return result
+    # ÉTAPE 1
+    # def generate_response(
+    #     self, question: str, length_constraint: str = "Answer to the question with a maximum of 2 sentences."
+    # ) -> PipelineResult:
+    #     """Génère la réponse de base avec une limite de longueur."""
+
+    #     full_prompt = f"{question}\n\n[Instruction : {length_constraint}]"
+
+    #     answer = self.llm_client.generate(prompt=full_prompt)
+
+    #     return PipelineResult(question=question, raw_answer=answer)
 
     # ÉTAPE 2
     def extract_claims(self, result: PipelineResult) -> PipelineResult:
@@ -44,10 +59,10 @@ class HurluBerlu:
         return result
 
     # ÉTAPE 3
-    def generate_samples(self, result: PipelineResult) -> PipelineResult:
+    # def generate_samples(self, result: PipelineResult) -> PipelineResult:
 
-        result.samples = sample_responses(question=result.question, client=self.llm_client)
-        return result
+    #     result.samples = sample_responses(question=result.question, client=self.llm_client)
+    #     return result
 
     # ÉTAPE 4
     def evaluate_selfcheck(self, result: PipelineResult) -> PipelineResult:
@@ -57,6 +72,12 @@ class HurluBerlu:
         for claim in result.claims:
             score = compute_divergence(claim=claim, samples=result.samples)
             result.selfcheck_scores.append(score)
+
+        if result.selfcheck_scores:
+            avg_divergence = sum(s.divergence_score for s in result.selfcheck_scores) / len(result.selfcheck_scores)
+            avg_confidence = 1.0 - avg_divergence
+            alert = "🔴" if avg_divergence > 0.5 else "🟢"
+            print(f"\n   {alert} [SelfCheck GLOBAL] Divergence moyenne : {avg_divergence:.2f} | Confiance : {avg_confidence:.2f}\n")
 
         return result
 
