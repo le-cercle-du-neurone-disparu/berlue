@@ -137,6 +137,38 @@ plus haut sur ce point précis) :
 comme pour les 13 modèles déjà dans [`ollama-gpu-parallelism.md`](ollama-gpu-parallelism.md#modèles-mesurés--référence))
 avant de retenir un candidat précis pour l'éval.
 
+## Combien de vCPU pour `berlue-llm`
+
+`--cpu`/`--memory` sur un service Cloud Run à 1 GPU sont bornés — `.08-1,
+1, 2, 4, 6, 8` sont les seules valeurs de CPU acceptées (`gcloud` refuse le
+reste avec une erreur de validation explicite), **8 vCPU / 32 Gio est donc
+le plafond dur**, pas une recommandation à dépasser prudemment.
+
+Le vCPU alloué ne sert pas le calcul GPU lui-même (ça, c'est
+`OLLAMA_NUM_PARALLEL`, cf. [`ollama-gpu-parallelism.md`](ollama-gpu-parallelism.md))
+mais la gestion des connexions/requêtes concurrentes côté serveur — un
+sous-dimensionnement s'y manifeste par de vrais rejets HTTP (429/503), pas
+juste une latence plus élevée. Mesuré (`llama3.1:8b`, `OLLAMA_NUM_PARALLEL`
+calé sur la charge à chaque palier, détail dans
+[`execution-benchmark.md`](../evaluation/execution-benchmark.md)) :
+
+| vCPU | Prix | 16 concurrents | 32 concurrents |
+|---|---|---|---|
+| 4 | 1,05 $/h | 69,3 tok/s, 0% échec | 83,5 tok/s, **12,7% échec réel** |
+| 6 | 1,23 $/h | 89,7 tok/s, 0% échec | 93,6 tok/s, 0% échec |
+| 8 | 1,42 $/h | 92,8 tok/s, 0% échec | **145,0 tok/s, 0% échec** |
+
+Prix = GPU L4 (0,672 $/h, fixe quel que soit le vCPU) + CPU (0,0648 $/h/vCPU)
++ mémoire (0,0072 $/h/Gio), tarifs catalogue `europe-west1`, config
+`--no-gpu-zonal-redundancy`.
+
+À faible concurrence les trois tailles se valent (4 vCPU tient très bien à
+16). Dès qu'on vise une vraie concurrence de run (32+), **8 vCPU l'emporte
+nettement, en débit et en tok/s par dollar dépensé** (102 vs 76 à 6 vCPU) —
+et c'est le seul sans erreur serveur. `cloudrun_llm_deploy` (défaut prod :
+4 vCPU/16 Gio) accepte `LLM_CPU`/`LLM_MEMORY` pour surcharger — passer à
+8/32Gio avant tout run visant une concurrence réelle.
+
 ## Mécanique détaillée du parallélisme et test de charge
 
 Formule exacte du coût VRAM par slot parallèle (dérivée des paramètres

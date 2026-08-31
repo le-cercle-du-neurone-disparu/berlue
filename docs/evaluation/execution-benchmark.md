@@ -80,56 +80,85 @@ parallèle au sein de chaque étape. Chaque appel LLM est borné en longueur
 (`num_predict`) pour un pire cas prévisible, indépendant de la charge ou de
 la config serveur.
 
+**Règle centrale, vérifiée sur les deux environnements** : `OLLAMA_NUM_PARALLEL`
+(côté serveur) doit être **calé sur `CONCURRENCY`** (côté éval), pas
+maximisé — un serveur configuré avec plus de slots que la charge réelle
+est nettement moins performant, pas juste "sans bénéfice" (mécanisme et
+comparaison chiffrée : [`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md)).
+Toutes les mesures ci-dessous suivent cette règle (`LLM_NUM_PARALLEL` =
+`CONCURRENCY` testé, à chaque palier).
+
 ### Local
 
-Mesuré en local, `llama3.1:8b` des deux côtés, `OLLAMA_CONTEXT_LENGTH=1024`
-(largement suffisant pour les prompts courts de l'éval — mécanique complète
-dans [`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md)),
-500 questions (`ratio=0.8`, assez pour occuper tous les threads en régime
-stable — un lot trop petit dilue le gain, cf. ce même document) :
+`llama3.1:8b` des deux côtés, `OLLAMA_CONTEXT_LENGTH=1024` (largement
+suffisant pour les prompts courts de l'éval), 500 questions (`ratio=0.8`,
+assez pour occuper tous les threads en régime stable — un lot trop petit
+dilue le gain) :
 
 ```bash
+# exemple à CONCURRENCY=24 — reconfigurer OLLAMA_NUM_PARALLEL=24 côté
+# serveur avant de lancer (systemd override en dev, cf. ollama-gpu-parallelism.md)
 make evaluate_model_generated DATASET=halueval RATIO=0.8 \
-  MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b START=0 END=500 CONCURRENCY=32
+  MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b START=0 END=500 CONCURRENCY=24
 ```
 
-| `CONCURRENCY` | Temps total | vs séquentiel |
-|---|---|---|
-| 1 | 373,4 s | 1× |
-| 4 | 275,7 s | 1,35× |
-| 8 | 250,2 s | 1,49× |
-| 16 | 195,8 s | 1,91× |
-| 32 | **93,3 s** | **4,00×** |
+| `CONCURRENCY` | Temps total | | `CONCURRENCY` | Temps total |
+|---|---|---|---|---|
+| 1 | 373,4 s | | 22 | 101 s |
+| 4 | 191 s | | 24 | 101 s |
+| 8 | 177 s | | **26** | **98 s (meilleur)** |
+| 16 | 109 s | | 28 | 101 s |
+| 18 | 104 s | | 30 | 103 s |
+| 20 | 102 s | | 32 | 103 s |
+| | | | 40 | 107 s |
+
+Plateau large et plat de 18 à 40 (98-109 s, écarts proches du bruit de
+mesure) — en dessous de 16, dégradation nette. Toute valeur entre 18 et 32
+est quasi optimale sur cette carte (RTX 5070 Ti Laptop, 12 Go) ; pas de
+gain à monter plus haut.
 
 ### GCP
 
-Mesuré sur `berlue-llm` (L4) redéployé avec `LLM_NUM_PARALLEL`/
-`LLM_CONCURRENCY` égaux au `CONCURRENCY` testé, `LLM_CONTEXT_LENGTH=1024`
-(même contexte qu'en local, formule/plafond détaillés dans
-[`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md)) :
+`berlue-llm` (L4), `OLLAMA_CONTEXT_LENGTH=1024`, redéployé à chaque palier
+avec `LLM_NUM_PARALLEL` = `CONCURRENCY` testé :
 
 ```bash
-make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=32 LLM_CONTEXT_LENGTH=1024
+make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42 LLM_CONTEXT_LENGTH=1024 LLM_CPU=8 LLM_MEMORY=32Gi
 make gcp_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.8 \
   MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b MODE=generated START=0 END=500 CONCURRENCY=32
 ```
 
-| `CONCURRENCY` | Questions | Temps total | vs local (même `CONCURRENCY`) |
-|---|---|---|---|
-| 32 | 500 | 240 s | 2,57× plus lent |
-| 64 | 800 | 436 s | — |
+Débit agrégé mesuré au stress test (`scripts/ollama_load_test.py` contre
+`berlue-llm` directement, 8 vCPU — méthode plus rapide que le batch complet
+pour balayer beaucoup de paliers, cf. [`cloudrun.md`](../gcp/cloudrun.md)) :
 
-À concurrence égale, GCP est nettement plus lent qu'en local (latence par
-appel plus élevée : génération à 7,37 s/appel contre 3,13 s en local à
-`CONCURRENCY=32`) — cohérent avec l'écart déjà mesuré en séquentiel
-ci-dessus (L4 vs RTX 5070 Ti, plus la latence réseau entre les deux
-services Cloud Run). Monter à 64 n'apporte **rien** : débit légèrement
-inférieur à 32 (1,84 question/s contre 2,08 à 32), pas seulement un
-plafond — probablement les 4 vCPU de `berlue-llm` qui deviennent le facteur
-limitant (gestion de 64 connexions HTTP concurrentes) avant que le GPU n'en
-soit un, non confirmé par des métriques CPU. `CONCURRENCY=32` reste le
-réglage recommandé sur ce service, pas plus haut.
+| `CONCURRENCY`=`NUM_PARALLEL` | Débit agrégé | Échec |
+|---|---|---|
+| 8 | 110,6 tok/s | 0% |
+| 16 | 92,8 tok/s | 0% |
+| 24 | 116,8 tok/s | 0% |
+| **32** | **145,0 tok/s** | 0% |
+| 40 | 143,1 tok/s | 0% |
+| 48 | 69,0 tok/s | 46,9%* |
+| 64 | 134,8 tok/s | 12,5%* |
+| 80 | 110,9 tok/s | 23,7%* |
+| 96 | 110,4 tok/s | 0% |
+
+\* Erreurs HTTP 429 réelles (rejet serveur), pas des timeouts client —
+mesure faite une seule fois par palier, pas assez de répétitions pour
+confirmer si c'est un vrai plafond autour de 48 ou un aléa d'infra
+ponctuel (64/80/96 ne montrent pas une dégradation propre et croissante,
+ce qui serait attendu si c'était un plafond structurel). **`CONCURRENCY=32`
+reste le réglage recommandé** — meilleur point mesuré, dans une zone
+propre sans aucune erreur.
+
+**vCPU de `berlue-llm`** — 8 (le maximum autorisé par Cloud Run pour 1 GPU)
+recommandé dès qu'on vise une vraie concurrence, malgré le surcoût : à
+`CONCURRENCY=16`, 4/6/8 vCPU sont proches (66-73 tok/s par $/h dépensé) ;
+à `CONCURRENCY=32`, 8 vCPU domine nettement (102 tok/s par $/h, contre 76
+à 6 vCPU) et c'est le seul sans erreur serveur (4 vCPU : 12,7% d'échec réel
+à 32, mécanisme et détail des prix dans [`infra-gpu.md`](../gcp/infra-gpu.md)).
 
 ## GCP
 

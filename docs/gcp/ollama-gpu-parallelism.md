@@ -283,6 +283,32 @@ pratique : le plafond de concurrence *utile* pour un modèle donné se
 mesure empiriquement (débit agrégé par palier de charge), `N_max` ne
 donne qu'une borne à ne pas dépasser, pas le point optimal.
 
+## `OLLAMA_NUM_PARALLEL` doit être calé sur la concurrence réelle, pas maximisé
+
+`OLLAMA_NUM_PARALLEL` fixe le nombre de slots **réservés**, pas seulement
+utilisés à la demande — un serveur configuré large mais sous-exploité paie
+un coût réel, pas juste "pas de bénéfice". Vérifié sur deux GPU
+indépendants (RTX 5070 Ti Laptop 12 Go, L4 24 Go) : même charge cliente,
+seul `OLLAMA_NUM_PARALLEL` change entre les deux colonnes —
+
+| Charge réelle | Serveur large | Serveur calé sur la charge |
+|---|---|---|
+| 16 clients (local) | 165,3 tok/s (`NUM_PARALLEL=40`) | 399,9 tok/s (`NUM_PARALLEL=16`) |
+| 32 clients (local) | 290,0 tok/s (`NUM_PARALLEL=40`) | 527,9 tok/s (`NUM_PARALLEL=32`) |
+| 32 clients (GCP) | 60,5 tok/s (`NUM_PARALLEL=128`) | 261,0 tok/s (`NUM_PARALLEL=32`) |
+
+Jusqu'à 4× le débit à charge cliente identique, juste en réduisant le
+nombre de slots configurés côté serveur pour coller au nombre de requêtes
+réellement envoyées. Cause probable (non confirmée avec certitude) : le
+scheduling/les CUDA graphs de llama.cpp composent avec le nombre de slots
+*configurés*, pas seulement les slots *actifs* — un slot inactif n'est pas
+gratuit.
+
+**Implication pratique** : dimensionner `OLLAMA_NUM_PARALLEL` (et
+`CONCURRENCY` côté éval) sur la charge **prévue pour ce run précis**, pas
+sur un maximum "au cas où". Chiffres complets (balayage fin, local et
+GCP) : [`execution-benchmark.md`](../evaluation/execution-benchmark.md).
+
 ## Comportement au-delà du plafond de parallélisme réel (charge client)
 
 Envoyer plus de requêtes concurrentes que `NUM_PARALLEL` ne casse rien —
