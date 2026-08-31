@@ -93,12 +93,31 @@ make cloudrun_llm_delete                  # arrête définitivement toute factur
 ```
 
 `cloudrun_llm_deploy` accepte `LLM_NUM_PARALLEL`/`LLM_CONCURRENCY`/
-`LLM_CONTEXT_LENGTH` (défauts = config de prod ci-dessus, 4/4/auto) pour un
-test de parallélisme ponctuel — chiffres mesurés dans
-[`execution-benchmark.md`](../evaluation/execution-benchmark.md). Une
-nouvelle révision perd le modèle tiré (disque éphémère, cf. plus bas) :
+`LLM_CONTEXT_LENGTH`/`LLM_CPU`/`LLM_MEMORY` (défauts = config de prod
+ci-dessus) pour caler le service sur un run précis — `LLM_NUM_PARALLEL`
+doit égaler le `CONCURRENCY` prévu côté éval (jamais un maximum "au cas
+où", ça coûte du débit réel, cf.
+[`ollama-gpu-parallelism.md`](ollama-gpu-parallelism.md)), `LLM_CPU=8
+LLM_MEMORY=32Gi` recommandé dès qu'on vise une vraie concurrence (cf.
+[`infra-gpu.md`](infra-gpu.md)) :
+
+```bash
+make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42 LLM_CPU=8 LLM_MEMORY=32Gi
+```
+
+Une nouvelle révision perd le modèle tiré (disque éphémère, cf. plus bas) :
 relancer `gcp_up WARM_MODELS="..."` après. Toujours redéployer sans
 surcharge ensuite pour revenir à la config de prod.
+
+`make ollama_load_test_gcp` (cf. `scripts/ollama_load_test.py`) envoie une
+charge directement à `berlue-llm` (auth OIDC automatique), sans passer par
+le service d'éval — utile pour balayer beaucoup de paliers de concurrence
+rapidement (nécessite `gcp_up WARM_MODELS="..."` au préalable) :
+
+```bash
+MODEL=llama3.1:8b START_THREADS=32 MAX_THREADS=32 RAMP_INTERVAL_S=5 HOLD_AT_MAX_S=30 \
+  make ollama_load_test_gcp
+```
 
 Le modèle doit être tiré une fois le service déployé (`POST /api/pull` avec
 un jeton d'identité) — automatisé par `make gcp_up WARM_MODELS="..."` (cf.

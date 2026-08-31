@@ -119,12 +119,19 @@ make evaluate_model_generated_all DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8
 make evaluate_model_generated DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b START=0 END=50 WARMUP=true
 
 # CONCURRENCY : questions traitées en parallèle au sein de chaque étape
-# (génération, Berlue, juge), 1 par défaut (séquentiel) — à aligner sur le
-# OLLAMA_NUM_PARALLEL réel du serveur ciblé, cf.
+# (génération, Berlue, juge), 1 par défaut (séquentiel) — doit être égal
+# au OLLAMA_NUM_PARALLEL du serveur ciblé pour ce run précis (jamais un
+# maximum "au cas où" côté serveur, ça coûte du débit réel, cf.
 # docs/gcp/ollama-gpu-parallelism.md et execution-benchmark.md pour la
-# méthode et des chiffres mesurés.
+# méthode et des chiffres mesurés).
 make evaluate_model_generated DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b CONCURRENCY=32
 ```
+
+`make ollama_load_test` (`scripts/ollama_load_test.py`) détermine le
+meilleur `CONCURRENCY`/`OLLAMA_NUM_PARALLEL` pour une machine donnée —
+chiffres déjà mesurés sur les machines de référence dans
+[`execution-benchmark.md`](execution-benchmark.md), à reproduire sur une
+autre machine plutôt qu'à supposer.
 
 **Baseline NLI** (classifie les réponses déjà générées par Berlue
 ci-dessus, sans regénérer ni rejuger — seul endroit où la baseline mode 2
