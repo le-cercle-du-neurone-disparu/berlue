@@ -327,3 +327,40 @@ test.
 - Taille du corpus FEVER uploadé dans le bucket : extrait 2000 lignes
   (rapide à construire) vs corpus complet ~145k (meilleure précision RAG) —
   n'affecte plus l'image ni les builds, changeable par un simple ré-upload.
+
+## Prochaine étape — reproduire en local le CPU/GPU non-idle sur `berlue-llm`
+
+Observé le 31/08 (cf. [`docs/gcp/aletheia-local.md`](../docs/gcp/aletheia-local.md)) :
+après un warmup (`gcp_up WARM_MODELS="llama3.2:3b"`), l'instance
+`berlue-llm` est restée classée *active* par Cloud Run pendant plus de 20
+minutes sans aucune requête HTTP entrante (CPU ~20-25%, GPU ~5% en continu,
+confirmé par les graphes Metrics de la console) — empêchant tout
+scale-to-zero indépendamment de `min-instances`. Deux lignes de log
+repérées sur cette période, candidates mais pas confirmées comme cause :
+
+```
+level=WARN msg="llama-server GPU discovery watchdog timed out" error="context deadline exceeded"
+level=WARN msg="unable to refresh free memory, using old values"
+```
+
+Suggère une boucle de retry côté `llama-server`/Ollama qui ne se stabilise
+jamais, plutôt qu'un vrai travail de calcul — à confirmer.
+
+À faire pour identifier la cause précise (pas fait faute d'accès à un GPU
+en local dans cette session) :
+
+1. Reproduire la config exacte de `Dockerfile.llm` en local sur une machine
+   avec GPU (`OLLAMA_KEEP_ALIVE=-1`, mêmes `OLLAMA_NUM_PARALLEL`) —
+   `make ollama_setup`/`docker_run_local`-style, ou directement `ollama
+   serve` avec les mêmes variables d'environnement.
+2. Chauffer avec `llama3.2:3b` (`ollama pull` + un appel `/api/generate`
+   jetable), puis laisser tourner **sans aucune requête** pendant 15-20
+   minutes en surveillant `nvidia-smi`/l'usage CPU en continu, et les logs
+   Ollama en verbosité max (`OLLAMA_DEBUG=1`, `--log-verbosity 4`) pour
+   capturer la fréquence des deux messages ci-dessus et voir s'ils
+   corrèlent avec l'activité CPU/GPU mesurée.
+3. Une fois la boucle identifiée, chercher le réglage Ollama qui l'arrête
+   (ou confirmer que c'est un comportement inhérent au serveur GPU
+   `llama-server` sans réglage direct, auquel cas la seule parade reste la
+   discipline documentée dans `aletheia-local.md` — `cloudrun_llm_delete`
+   systématique plutôt que compter sur le scale-to-zero).

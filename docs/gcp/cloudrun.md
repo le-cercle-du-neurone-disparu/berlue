@@ -45,12 +45,17 @@ le store GCP — pas besoin du service pour ça).
    VRAM (un appel de génération jetable) — nécessaire avant tout
    `MODE=generated`, sans effet sinon.
 
-`gcp_down` redescend toujours `berlue-eval-mocked-service` et `berlue-llm`
-à `min-instances=0`, inconditionnellement (idempotent, pas d'état à suivre
-entre les deux commandes).
+`gcp_down` redescend toujours `berlue-eval-mocked-service`, `berlue-llm` et
+`berlue-api-<env>` (`CLOUDRUN_ENV`, défaut `test`) à `min-instances=0`,
+inconditionnellement (idempotent, pas d'état à suivre entre les deux
+commandes) — cf. [`aletheia-local.md`](aletheia-local.md) pour le workflow
+complet avec Aletheia en local.
 
 ⚠️ Coûte tant que c'est monté (GPU L4 si `WARM_MODELS` non vide, cf.
-section suivante) — toujours `gcp_down` en fin de session.
+section suivante) — `gcp_down` en fin de session, mais **ne garantit pas
+l'arrêt immédiat d'une instance `berlue-llm` déjà active** (cf. section
+suivante) : `cloudrun_llm_delete` reste le seul levier garanti pour
+vraiment couper la facturation GPU.
 
 **Vérifier qu'un modèle tourne vraiment** (pas juste servi depuis un cache
 Firestore déjà rempli par une session précédente) :
@@ -88,9 +93,16 @@ make docker_build_llm docker_push_llm     # build + push l'image (Dockerfile.llm
 make cloudrun_llm_deploy                  # crée/met à jour le service (+ IAM run.invoker)
 make cloudrun_llm_url                     # récupère l'URL du service
 make cloudrun_llm_logs
-make cloudrun_llm_scale_to_zero           # sécurité budget, idempotent — à lancer après chaque session de test
-make cloudrun_llm_delete                  # arrête définitivement toute facturation liée
+make cloudrun_llm_scale_to_zero           # retire la garantie de capacité chaude, idempotent
+make cloudrun_llm_delete                  # seul levier garanti pour arrêter la facturation liée
 ```
+
+`cloudrun_llm_scale_to_zero`/`min-instances=0` **ne garantit pas l'arrêt
+immédiat d'une instance déjà active** — Cloud Run peut la garder tant qu'il
+la classe *active* plutôt qu'*idle*, indépendamment de `min-instances` (cas
+réel et détail du diagnostic : [`aletheia-local.md`](aletheia-local.md#terminer-une-session--toujours-forcer-larrêt-réel)).
+`cloudrun_llm_delete` reste le seul levier garanti après une session — à
+utiliser systématiquement, pas seulement en dernier recours.
 
 `cloudrun_llm_deploy` accepte `LLM_NUM_PARALLEL`/`LLM_CONCURRENCY`/
 `LLM_CONTEXT_LENGTH`/`LLM_CPU`/`LLM_MEMORY` (défauts = config de prod
