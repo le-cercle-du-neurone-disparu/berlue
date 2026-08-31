@@ -5,6 +5,22 @@ déployée sur Cloud Run (`berlue-api-<env>` + `berlue-llm`) plutôt que sur un
 Ollama/RAG local — aucune dépendance locale lourde côté Aletheia
 (`USE_MOCK`/Ollama/FAISS restent l'affaire de Berlue).
 
+## Prérequis — une fois par machine/session gcloud
+
+S'assurer que l'auth CLI est valide et que l'infra GCP est bien provisionnée
+avant toute session — les deux sont idempotents, sans risque à rejouer :
+
+```bash
+# depuis le repo berlue — interactif, à lancer depuis son propre terminal
+make gcp_auth
+```
+
+```bash
+# depuis le repo berlue — provisionne/vérifie APIs, Firestore, BigQuery,
+# sa-berlue, bucket RAG (gratuit et anticipable, cf. cloudrun.md)
+make gcp_setup
+```
+
 ## Démarrer une session
 
 1. Préchauffer `berlue-llm` et `berlue-api-<env>` — sans ça, la première
