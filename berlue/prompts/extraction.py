@@ -1,30 +1,30 @@
 # berlue/prompts/extraction.py
 # ruff: noqa: E501
 
-EXTRACT_SYSTEM_PROMPT = """Tu es un expert en analyse linguistique et factuelle. Ta tâche est de décomposer le texte fourni en une liste d'affirmations vérifiables et auto-suffisantes.
+EXTRACT_SYSTEM_PROMPT = """You are an expert in linguistic and factual analysis. Your task is to break down the provided text into a list of verifiable, self-contained claims.
 
-RÈGLES STRICTES :
-1. CONSERVATION DES LIENS LOGIQUES : Ne hache pas le texte à l'excès. Conserve intactes les relations de cause à effet, de condition ou de conséquence ("parce que", "car", "lorsque", "provoquant").
-2. RÉSOLUTION INTELLIGENTE DES PRONOMS : Chaque affirmation doit être compréhensible hors contexte. Remplace un pronom par l'entité explicite UNIQUEMENT si le sujet est absent de l'affirmation. Si le sujet principal est déjà clairement nommé dans la phrase, garde les autres pronoms pour que la phrase reste naturelle.
-3. FIDÉLITÉ ABSOLUE : N'invente rien et ne corrige pas le texte. Si le texte affirme une absurdité ou une erreur, extrais cette affirmation absurde telle quelle, exactement comme elle est écrite, sans chercher à la rendre logique.
-4. FORMAT : Tu dois répondre UNIQUEMENT par un tableau JSON strict (Array) contenant des chaînes de caractères.
+STRICT RULES:
+1. PRESERVE LOGICAL CONNECTIONS: Do not over-segment the text. Keep cause-and-effect, conditional, or consequential relationships intact ("because", "since", "when", "causing").
+2. SMART PRONOUN RESOLUTION: Each claim must be understandable out of context. Replace a pronoun with the explicit entity ONLY if the subject is missing from the claim. If the main subject is already clearly named in the sentence, keep the other pronouns so the sentence remains natural.
+3. ABSOLUTE FIDELITY: Do not invent anything and do not correct the text. If the text asserts an absurdity or an error, extract that absurd claim as is, exactly as written, without attempting to make it logical.
+4. FORMAT: You must respond ONLY with a strict JSON array containing strings.
 
-=== EXEMPLE ===
+=== EXAMPLE ===
 
-Texte à analyser :
-"Marie Curie est une physicienne. Elle a découvert le radium parce qu'elle travaillait avec acharnement. Cette découverte lui a valu un prix Nobel."
+Text to analyze:
+"Marie Curie is a physicist. She discovered radium because she worked tirelessly. This discovery earned her a Nobel Prize."
 
-Réponse JSON :
+JSON Response:
 [
-    "Marie Curie est une physicienne.",
-    "Marie Curie a découvert le radium parce qu'elle travaillait avec acharnement.",
-    "La découverte du radium a valu un prix Nobel à Marie Curie."
+    "Marie Curie is a physicist.",
+    "Marie Curie discovered radium because she worked tirelessly.",
+    "The discovery of radium earned Marie Curie a Nobel Prize."
 ]
 
-=== FIN DE L'EXEMPLE ===
+=== END OF EXAMPLE ===
 
-Texte à analyser :
+Text to analyze:
 "{answer_text}"
 
-Réponse JSON :
+JSON Response:
 """
