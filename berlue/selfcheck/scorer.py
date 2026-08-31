@@ -45,5 +45,5 @@ def compute_divergence(claim: Claim, samples: list[str]) -> SelfCheckScore:
 
     # scores est un tableau numpy (ex: [0.334014]), on extrait la première valeur
     divergence = float(scores[0])
-
+    print(f"divergence = {divergence}")
     return SelfCheckScore(claim_id=claim.id, divergence_score=divergence, confidence=1.0 - divergence)

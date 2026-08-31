@@ -54,12 +54,13 @@ BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- EXTRACTION ---
 EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "llama3.2:3b")
+# EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "qwen2.5:0.5b")
 EXTRACT_SYSTEM_PROMPT = _EXTRACT_SYSTEM_PROMPT
 
 # --- SELFCHECK ---
 SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
-SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.7"))
-SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.3"))
+SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.3"))
+SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.0"))
 
 # --- Embeddings + RAG inversé ---
 RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
@@ -73,7 +74,7 @@ NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
 NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./models/nli_tfidf_logreg.joblib")
 
 # --- Données ---
-FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/raw/fever")
+FEVER_DATA_PATH = os.environ.get("BERLUE_FEVER_DATA_PATH", "./data/fever/raw/fever.jsonl")
 HALUEVAL_DATA_PATH = os.environ.get(
     "BERLUE_HALUEVAL_DATA_PATH", "https://raw.githubusercontent.com/RUCAIBox/HaluEval/main/data/qa_data.json"
 )

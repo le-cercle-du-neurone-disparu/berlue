@@ -108,4 +108,7 @@ def predict_endpoint(payload: PredictInput):
                 payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
             )
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e
