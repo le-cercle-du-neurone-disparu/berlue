@@ -127,8 +127,9 @@ make evaluate_model_generated DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b JU
 make evaluate_model_generated DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b CONCURRENCY=32
 ```
 
-`make ollama_load_test` (`scripts/ollama_load_test.py`) détermine le
-meilleur `CONCURRENCY`/`OLLAMA_NUM_PARALLEL` pour une machine donnée —
+Procédure pour déterminer le meilleur `CONCURRENCY`/`OLLAMA_NUM_PARALLEL`
+sur une machine donnée (stress test rapide puis confirmation sur le vrai
+batch) : [`ollama-gpu-parallelism.md`](../gcp/ollama-gpu-parallelism.md#procédure-trouver-le-concurrency-optimal-sur-sa-machine) —
 chiffres déjà mesurés sur les machines de référence dans
 [`execution-benchmark.md`](execution-benchmark.md), à reproduire sur une
 autre machine plutôt qu'à supposer.
