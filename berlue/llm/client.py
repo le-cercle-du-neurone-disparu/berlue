@@ -53,6 +53,7 @@ class OllamaClient:
         Génère `k` réponses indépendantes au même prompt, chacune à une température
         choisie dans `[temperature_min, temperature_max]`.
         """
+
         if k <= 0:
             return []
 
@@ -69,7 +70,8 @@ class OllamaClient:
             # On réutilise notre méthode unitaire
             resp = self.generate(prompt, temperature=temp)
             responses.append(resp)
-
+            print(f"   → {resp}")
+            print("-" * 60)
         return responses
 
 

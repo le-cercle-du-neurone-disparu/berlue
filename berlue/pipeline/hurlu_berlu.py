@@ -61,6 +61,14 @@ class HurluBerlu:
         for claim in result.claims:
             score = compute_divergence(claim=claim, samples=result.samples)
             result.selfcheck_scores.append(score)
+        if result.selfcheck_scores:
+            avg_divergence = sum(s.divergence_score for s in result.selfcheck_scores) / len(result.selfcheck_scores)
+            avg_confidence = 1.0 - avg_divergence
+            alert = "🔴" if avg_divergence > 0.5 else "🟢"
+            print(
+                f"\n   {alert} [SelfCheck GLOBAL] Divergence moyenne : {avg_divergence:.2f} |"
+                f"Confiance : {avg_confidence:.2f}\n"
+            )
 
         return result
 
