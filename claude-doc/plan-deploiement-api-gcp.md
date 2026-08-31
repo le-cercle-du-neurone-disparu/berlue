@@ -1,13 +1,12 @@
-> **Statut : implémenté** (branche `feat-berlu-sur-gcp`) — code, Makefile et
-> bucket décrits ci-dessous sont en place, y compris le rattachement du
-> bucket RAG à `gcp_setup`/`gcp_destroy` plutôt qu'à `gcp_up`/`gcp_down`
-> (création/IAM gratuits et anticipables → setup ; coût variable à la
-> demande → up/down, cf. section « Index RAG »). Reste à faire
-> manuellement : `make gcp_setup`, construire/uploader l'index RAG
-> (`build_fever_index`, `rag_index_upload`), puis dérouler les Phases 1-5
-> pour de vrai contre un projet GCP (aucune commande
-> `gcloud`/`make cloudrun_*`/`make gcp_*` n'a été exécutée par Claude —
-> actions facturées et outward-facing, à lancer à la main).
+> **Statut : validé de bout en bout contre GCP** (31/08, branche
+> `feat-berlu-sur-gcp`, projet `gen-lang-client-0242212765`) — `gcp_setup`
+> exécuté (bucket RAG créé, IAM `sa-berlue`), index `small-2000` uploadé,
+> `berlue-api-test` déployé et câblé sur `berlue-llm` déjà en place,
+> `/predict` répond 200 avec des verdicts cohérents après le passage à
+> `GAR_MEMORY=8Gi`/`GAR_CPU=2` (2Gi puis 4Gi ont d'abord échoué en
+> conditions réelles, cf. Phase 2). `gcp_down` relancé après le test.
+> Reste : re-tester avec le corpus `full-145k`, promouvoir
+> staging/prod (Phase 5).
 
 # Plan — déploiement GCP de l'API Berlue (hors éval)
 
@@ -212,9 +211,27 @@ utilisable pour `sa-berlue`).
 
 `GAR_TIMEOUT=600` (`make/config.mk`, remplace le défaut Cloud Run 300s) —
 `/predict` enchaîne ~6 appels LLM séquentiels (génération, extraction, K=5
-échantillons SelfCheck, RAG, fusion). `GAR_MEMORY` laissé à `2Gi` — à
-surveiller en conditions réelles (`sentence-transformers` + FastAPI/Torch),
-pas changé préventivement faute de mesure.
+échantillons SelfCheck, RAG, fusion).
+
+`GAR_MEMORY`/`GAR_CPU` mesurés en conditions réelles (31/08, premier test
+`/predict` de bout en bout contre `berlue-api-test`), pas laissés au
+défaut faute de mesure comme prévu initialement :
+
+- `2Gi` (défaut initial) : le "disque" du conteneur est adossé à la
+  mémoire allouée sur Cloud Run — `/predict` télécharge à la demande le
+  modèle NLI de SelfCheckGPT (`potsawee/deberta-v3-large-mnli`, ~1,7 Go,
+  en plus du modèle d'embedding RAG déjà chargé) et manquait de place
+  pour l'écrire (1703 Mio libres pour un fichier de 1740 Mio).
+- `4Gi` : la requête a cette fois été tuée en plein milieu (`Container
+  terminated on signal 9` dans les logs Cloud Run — OOM réel, pas une
+  erreur applicative) — charger les deux modèles + le runtime torch en
+  pic dépasse 4Gi.
+- `8Gi` : `/predict` passe de bout en bout (200, ~100s sur la première
+  requête, modèle froid côté `berlue-llm`).
+- Cloud Run plafonne la mémoire selon le CPU alloué (1 vCPU → 4Gi max,
+  confirmé par une erreur `gcloud` explicite) — `GAR_CPU=2` ajouté à
+  `cloudrun_deploy` pour débloquer `GAR_MEMORY=8Gi`, pas un simple choix
+  de performance.
 
 ## Phase 3 — Build + déploiement de l'image API corrigée
 

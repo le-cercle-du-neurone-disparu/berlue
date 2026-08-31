@@ -60,7 +60,19 @@ IMAGE_FAMILY = ubuntu-2204-lts
 IMAGE_PROJECT = ubuntu-os-cloud
 
 # --- Cloud Run ---
-GAR_MEMORY = 2Gi
+# 2Gi puis 4Gi mesurés insuffisants en conditions réelles (31/08) : /predict
+# charge en mémoire le modèle d'embedding RAG (all-mpnet-base-v2) ET le
+# modèle NLI de SelfCheckGPT (potsawee/deberta-v3-large-mnli, ~1.7 Go de
+# poids, plus l'overhead torch au chargement/inférence) — 2Gi a d'abord
+# manqué de "disque" (adossé à la mémoire sur Cloud Run) pour le
+# télécharger, 4Gi a fini tué par le kernel (Container terminated on
+# signal 9 dans les logs Cloud Run — OOM, pas une erreur applicative).
+# 8Gi = marge réelle pour les deux modèles + le runtime torch en pic.
+GAR_MEMORY = 8Gi
+# Cloud Run plafonne la mémoire selon le CPU alloué (1 vCPU -> 4Gi max,
+# confirmé par erreur gcloud le 31/08) — 2 vCPU nécessaire pour débloquer
+# GAR_MEMORY=8Gi, pas juste un choix de performance.
+GAR_CPU = 2
 # /predict enchaîne ~6 appels LLM séquentiels (génération, extraction, K
 # échantillons SelfCheck, RAG, fusion) — 600s plutôt que le défaut Cloud Run
 # (300s), à ajuster une fois mesuré en conditions réelles contre berlue-llm.

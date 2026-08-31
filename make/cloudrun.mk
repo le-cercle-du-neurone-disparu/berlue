@@ -29,6 +29,7 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 	gcloud run deploy $(GAR_IMAGE)-$(CLOUDRUN_ENV) \
 		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
 		--memory $(GAR_MEMORY) \
+		--cpu $(GAR_CPU) \
 		--timeout=$(GAR_TIMEOUT) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
