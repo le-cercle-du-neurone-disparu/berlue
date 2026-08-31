@@ -60,6 +60,19 @@ class OllamaClient:
         self.verbose = verbose
         self.client = Client(host=self.host, timeout=timeout, headers=_cloud_run_auth_headers(self.host))
 
+    def list_models(self) -> list[str]:
+        """Liste les modèles disponibles sur le serveur Ollama ciblé (`self.host`) —
+        passe par `self.client`, déjà configuré avec l'auth OIDC nécessaire si
+        `self.host` est un service Cloud Run privé, contrairement au module
+        `ollama` global (`ollama.list()`), qui l'ignore."""
+        response = self.client.list()
+        models = response.get("models", []) if isinstance(response, dict) else response.models
+        names = []
+        for m in models:
+            name = m.get("name", m.get("model")) if isinstance(m, dict) else m.model
+            names.append(name)
+        return names
+
     def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE, num_predict: int | None = None) -> str:
         """Génère une réponse pour `prompt` à la température donnée. Chaque
         appel est indépendant (endpoint `/api/generate`, stateless) — pas
