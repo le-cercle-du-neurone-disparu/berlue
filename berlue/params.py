@@ -118,7 +118,9 @@ JUDGE_MODEL = os.environ.get("BERLUE_JUDGE_MODEL", "llama3.1:8b")
 # --- Embeddings + RAG inversé ---
 RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
 RAG_INDEX_DIR = "data/fever/faiss"
-RAG_VECTOR_DB_PATH = "data/fever/faiss"
+# Surchargeable pour pointer vers un volume monté (ex. GCS FUSE sur Cloud
+# Run, cf. docs/gcp/cloudrun.md) plutôt que le chemin local par défaut.
+RAG_VECTOR_DB_PATH = os.environ.get("RAG_VECTOR_DB_PATH", "data/fever/faiss")
 RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.2:3b")  # phi3.5:latest
 RAG_SYSTEM_PROMPT = _RAG_SYSTEM_PROMPT
 

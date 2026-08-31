@@ -61,6 +61,19 @@ IMAGE_PROJECT = ubuntu-os-cloud
 
 # --- Cloud Run ---
 GAR_MEMORY = 2Gi
+# /predict enchaîne ~6 appels LLM séquentiels (génération, extraction, K
+# échantillons SelfCheck, RAG, fusion) — 600s plutôt que le défaut Cloud Run
+# (300s), à ajuster une fois mesuré en conditions réelles contre berlue-llm.
+GAR_TIMEOUT = 600
+
+# Bucket GCS dédié à l'index RAG (FAISS/FEVER), monté en volume GCS FUSE par
+# cloudrun_deploy — jamais reconstruit au docker build, cf.
+# plan-deploiement-api-gcp.md. Dédié plutôt que BUCKET_NAME (buckets
+# personnels/MLOps) : un volume GCS FUSE monte tout le contenu d'un bucket,
+# pas un sous-dossier — mélanger d'autres données les rendrait visibles dans
+# le conteneur API. Dans BUCKET_PROJECT (projet partagé, défaut GCP_PROJECT),
+# comme les autres buckets d'équipe.
+RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag
 
 # Compte de service attaché au service Cloud Run (distinct de SA_NAME, la VM
 # d'entraînement) — droits Firestore/BigQuery nécessaires pour EVAL_STORE_TARGET=gcp
