@@ -1,16 +1,31 @@
 import logging
 
-from berlue.core.schemas import FusedVerdict, PipelineResult, Verdict
+from berlue.core .schemas import FusedVerdict, PipelineResult, RagJudgment, Verdict
 
 logger = logging.getLogger(__name__)
+
+# Seuil sous lequel on considère que SelfCheckGPT indique une incohérence significative
+COHERENCE_THRESHOLD = 0.5
+# Bonus appliqué quand cohérence ET preuve DB convergent fortement (cas FEVER_REFUTES)
+CONVERGENCE_BONUS = 0.05
+# Confiance plafonnée quand RAG et SelfCheck se contredisent (aucun des deux ne doit dominer)
+CONFLICT_CONFIDENCE_CAP = 0.35
+# Décote appliquée quand un seul des deux signaux est disponible (pas de second avis)
+SINGLE_SIGNAL_DISCOUNT = 0.7
 
 
 def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck: float = 0.3) -> PipelineResult:
     """
-    Dernière étape : combine les scores RAG et SelfCheckGPT pour statuer sur chaque affirmation.
-    Prend en compte les 5 nouveaux statuts RAG pour affiner l'explication et la confiance.
+    Dernière étape : combine le jugement RAG (5 cas) et SelfCheckGPT pour statuer sur
+    chaque affirmation.
+
+    - FEVER_CONFIRMS / FEVER_REFUTES : preuve formelle en base, le RAG domine (logique inchangée).
+    - LIKELY_TRUE / LIKELY_FALSE : pas de preuve en base, mais le RAG a un avis. On regarde
+      si SelfCheck converge (confiance renforcée), diverge (conflit -> confiance plafonnée
+      basse), ou est indisponible (un seul signal -> confiance décotée).
+    - I_DONT_KNOWN : RAG indécis, on retombe sur SelfCheck seul.
     """
-    logger.info("🧬 [Fusion] Début de la synthèse des résultats...")
+    logger.info("\n🧬 [Fusion] Début de la synthèse des résultats...")
 
     rag_dict = {v.claim_id: v for v in result.rag_scores}
     sc_dict = {s.claim_id: s for s in result.selfcheck_scores}
@@ -19,64 +34,79 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
         rag = rag_dict.get(claim.id)
         sc = sc_dict.get(claim.id)
 
-        # 1. Calcul de la cohérence interne (l'inverse de la divergence)
-        coherence = 1.0 - sc.divergence_score if sc else 0.5
+        sc_available = sc is not None
+        coherence = (1.0 - sc.divergence_score) if sc_available else 0.5
+        # Le LLM ne s'est pas contredit entre ses échantillons (≠ "c'est vrai")
+        llm_self_consistent = coherence >= COHERENCE_THRESHOLD
 
-        # On extrait la valeur du verdict RAG en texte (gère les Enum et les strings)
-        rag_verdict = str(rag.verdict).split(".")[-1] if rag else "I_DONT_KNOW"
+        evidence = None
+        rag_judgment = rag.verdict if rag else RagJudgment.I_DONT_KNOWN
 
-        # 2. Application de l'arbre de décision
-        if rag_verdict == "FEVER_CONFIRMS":
+        # --- CAS 1 : FEVER prouve que c'est vrai ---
+        if rag_judgment == RagJudgment.FEVER_CONFIRMS:
             final_verdict = Verdict.SUPPORTED
             final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
-            explanation = "L'affirmation est factuellement prouvée par la base de données FEVER."
+            explanation = "L'affirmation est factuellement prouvée par la base de données."
             evidence = rag.evidence
 
-        elif rag_verdict == "FEVER_REFUTES":
+        # --- CAS 2 : FEVER prouve que c'est faux ---
+        elif rag_judgment == RagJudgment.FEVER_REFUTES:
             final_verdict = Verdict.CONTRADICTED
-            final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
-            explanation = "L'affirmation est formellement contredite par la base de données FEVER."
+            final_conf = rag.confidence
+            if sc_available and coherence > 0.7:
+                # LLM confiant à tort = signal d'hallucination supplémentaire, jamais un facteur d'atténuation
+                final_conf = min(final_conf + CONVERGENCE_BONUS, 1.0)
+            explanation = "L'affirmation est formellement contredite par la base de données."
             evidence = rag.evidence
 
-        elif rag_verdict == "LIKELY_TRUE":
-            final_verdict = Verdict.SUPPORTED
-            final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
-            explanation = "Absente de FEVER, mais jugée très vraisemblable selon les connaissances générales du modèle."
-            evidence = None
+        # --- CAS 3 : rien dans FEVER, mais le RAG est persuadé que c'est vrai ---
+        elif rag_judgment == RagJudgment.LIKELY_TRUE:
+            final_verdict = Verdict.NOT_ENOUGH_INFO  # jamais SUPPORTED sans preuve en base
+            if sc_available and llm_self_consistent:
+                final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
+                explanation = "Le jugement du RAG et la cohérence du LLM convergent vers vrai, mais aucune preuve en base."
+            elif not sc_available:
+                final_conf = rag.confidence * SINGLE_SIGNAL_DISCOUNT
+                explanation = "Le RAG penche pour vrai, mais sans confirmation SelfCheck ni preuve en base."
+            else:
+                final_conf = CONFLICT_CONFIDENCE_CAP
+                explanation = "Signaux contradictoires : le RAG penche pour vrai, mais le LLM s'est contredit lui-même — à vérifier manuellement."
 
-        elif rag_verdict == "LIKELY_FALSE":
-            final_verdict = Verdict.CONTRADICTED
-            # Si c'est LIKELY_FALSE, une faible cohérence (hallucination SelfCheck) renforce l'idée que c'est faux
-            final_conf = (rag.confidence * weight_rag) + ((1.0 - coherence) * weight_selfcheck)
-            explanation = (
-                "Absente de FEVER, mais jugée invraisemblable (hallucination probable) "
-                "selon les connaissances générales."
-            )
-            evidence = None
+        # --- CAS 4 : rien dans FEVER, mais le RAG est persuadé que c'est faux ---
+        elif rag_judgment == RagJudgment.LIKELY_FALSE:
+            if sc_available and not llm_self_consistent:
+                final_verdict = Verdict.CONTRADICTED
+                final_conf = (rag.confidence * weight_rag) + ((1.0 - coherence) * weight_selfcheck)
+                explanation = "Le jugement du RAG et l'incohérence du LLM convergent : hallucination probable, sans preuve en base."
+            elif not sc_available:
+                final_verdict = Verdict.CONTRADICTED
+                final_conf = rag.confidence * SINGLE_SIGNAL_DISCOUNT
+                explanation = "Le RAG penche pour faux, mais sans confirmation SelfCheck ni preuve en base."
+            else:
+                # LLM cohérent (confiant) MAIS le RAG estime que c'est faux : à prendre au sérieux,
+                # une hallucination "stable" est justement ce que SelfCheck seul ne détecte pas.
+                final_verdict = Verdict.CONTRADICTED
+                final_conf = CONFLICT_CONFIDENCE_CAP
+                explanation = "Signaux contradictoires : le LLM est resté cohérent, mais le RAG estime que c'est faux — à vérifier manuellement en priorité."
 
+        # --- CAS 5 : le RAG n'a aucune idée ---
         else:
-            # CAS "I_DONT_KNOW" : Ni FEVER ni les connaissances internes ne peuvent trancher.
-            # On s'en remet à 100% au comportement du générateur (SelfCheck).
-            if coherence < 0.5:
-                # Le générateur s'est contredit dans ses propres réponses.
+            if not sc_available:
+                final_verdict = Verdict.NOT_ENOUGH_INFO
+                final_conf = 0.3
+                explanation = "Aucune preuve disponible (ni base, ni jugement RAG, ni vérification interne)."
+            elif not llm_self_consistent:
                 final_verdict = Verdict.CONTRADICTED
                 final_conf = 1.0 - coherence
-                explanation = (
-                    "Hallucination détectée : aucune information disponible et le modèle se contredit lui-même."
-                )
+                explanation = "Hallucination probable détectée : le LLM s'est contredit lui-même (RAG indécis, aucune preuve en base)."
             else:
-                # Le générateur est très cohérent, mais on a zéro preuve.
                 final_verdict = Verdict.NOT_ENOUGH_INFO
                 final_conf = coherence
-                explanation = (
-                    "L'affirmation semble cohérente, mais manque de sources et sort des connaissances générales."
-                )
-            evidence = None
+                explanation = "L'affirmation semble cohérente, mais manque de sources dans la base (RAG indécis)."
 
         # Petite sécurité pour être sûr que la confiance reste entre 0.0 et 1.0
         final_conf = min(max(final_conf, 0.0), 1.0)
 
-        # 3. Création de l'objet final
         fused = FusedVerdict(
             claim_id=claim.id,
             claim_text=claim.text,
