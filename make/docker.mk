@@ -62,6 +62,19 @@ artifact_registry_role: ## Vous accorde la permission de push vers Artifact Regi
 		--condition=None \
 		--quiet </dev/null
 
+artifact_registry_role_revoke: ## Vous retire la permission de push vers Artifact Registry (contrepartie d'artifact_registry_role, appelée par gcp_destroy)
+	@ACCOUNT="$(GCLOUD_ACTIVE_ACCOUNT)"; \
+	if [ -z "$$ACCOUNT" ]; then \
+		echo "❌ Aucun compte gcloud actif. Lancez : make gcp_auth"; \
+		exit 1; \
+	fi; \
+	echo "🔓 Retrait du rôle Artifact Registry Writer à $$ACCOUNT sur $(ARTIFACT_PROJECT)..."; \
+	gcloud projects remove-iam-policy-binding $(ARTIFACT_PROJECT) \
+		--member="user:$$ACCOUNT" \
+		--role="roles/artifactregistry.writer" \
+		--condition=None \
+		--quiet </dev/null
+
 # Accès par personne, scope = uniquement le dépôt $(ARTIFACTSREPO) (plus fin que
 # artifact_registry_role ci-dessus, qui donne un accès writer projet entier à
 # vous-même). ROLE = reader (lecture/pull, défaut) ou writer (lecture+écriture/push).

@@ -156,16 +156,26 @@ potentiellement différent.
 make gcp_destroy
 ```
 
-Supprime tout ce qui est **déployé** : les 5 services Cloud Run
-(`berlue-api-test/staging/prod`, `berlue-eval-mocked-service`,
-`berlue-llm`), le dépôt Artifact Registry et ses images, le bucket RAG.
-Demande une confirmation explicite (taper `oui`). **Conserve** Firestore,
-BigQuery et `sa-berlue` — donc les données d'éval.
+**Revert complet de `gcp_setup`, `gcp_deploy` et `gcp_up`/`gcp_eval_up`.**
+Confirmation par l'ID du projet — ça **détruit toutes les données d'éval**,
+irrécupérables par une commande de ce dépôt.
 
-```bash
-make gcp_destroy_all
-```
+| Créé par | Supprimé par `gcp_destroy` |
+|---|---|
+| services Cloud Run (`gcp_deploy`) | les 5, après un `gcp_down` préalable |
+| instances chaudes (`gcp_up`, `gcp_eval_up`) | `gcp_down` en tête de séquence |
+| images poussées (`gcp_deploy`) | avec le dépôt Artifact Registry |
+| dépôt Artifact Registry | ✅ |
+| votre droit de push (`artifactregistry.writer`) | ✅ |
+| bucket RAG + son contenu | ✅ |
+| base Firestore | ✅ |
+| dataset BigQuery | ✅ |
+| `sa-berlue` **et ses 3 rôles projet** | ✅ (rôles d'abord, puis le compte) |
+| API activées | ❌ volontairement — gratuites, et les désactiver n'est pas sans risque pour le reste du projet |
+| images Docker **locales** | ❌ hors GCP (`docker image prune` si besoin) |
 
-En plus : la base Firestore, le dataset BigQuery et `sa-berlue` — c'est
-l'inverse exact de `gcp_setup`, et ça **détruit toutes les données
-d'éval**, irrécupérables. Confirmation par l'ID du projet.
+L'ordre compte à deux endroits : `gcp_down` passe en premier pour que rien ne
+reste facturé si une suppression échoue ensuite ; les rôles projet de
+`sa-berlue` sont retirés **avant** le compte de service, sinon la policy du
+projet garde des entrées orphelines `deleted:serviceAccount:...` que plus
+rien ne nettoie.
