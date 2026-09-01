@@ -71,7 +71,9 @@ class RagRetriever:
         for i in range(len(distances[0])):
             dist = distances[0][i]
             idx = indices[0][i]
-            if idx < len(self.metadata["claims"]):
+            # FAISS renvoie -1 pour un voisin manquant : sans la borne basse, `-1`
+            # passait le test et injectait le DERNIER document du corpus comme preuve.
+            if 0 <= idx < len(self.metadata["claims"]):
                 evidences.append(
                     {
                         "text": self.metadata["claims"][idx],
