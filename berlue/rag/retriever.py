@@ -14,10 +14,11 @@ from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_
 
 logger = logging.getLogger(__name__)
 
-# Labels FEVER (str du dataset) -> Verdict (enum du contrat interne berlue.core.schemas).
-# "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
-# garde que SUPPORTS/REFUTES) ; gardé ici pour les retours anticipés de verify_claim.
-FEVER_LABEL_TO_VERDICT = {
+# Verdict rendu par le LLM du RAG (str du prompt) -> RagJudgment, le contrat interne.
+# Ce ne sont PAS les labels FEVER du dataset : ceux-ci ("SUPPORTS"/"REFUTES") décrivent
+# les extraits fournis au prompt, pas la décision. "NOT ENOUGH INFO" n'est plus produit
+# par prompts/rag.py mais reste accepté, d'anciennes réponses pouvant le contenir.
+RAG_VERDICT_TO_JUDGMENT = {
     "FEVER_CONFIRMS": RagJudgment.FEVER_CONFIRMS,
     "FEVER_REFUTES": RagJudgment.FEVER_REFUTES,
     "LIKELY_TRUE": RagJudgment.LIKELY_TRUE,
@@ -25,6 +26,19 @@ FEVER_LABEL_TO_VERDICT = {
     "NOT ENOUGH INFO": RagJudgment.I_DONT_KNOWN,
     "I_DONT_KNOW": RagJudgment.I_DONT_KNOWN,
 }
+
+
+def _source_de(evidence: dict) -> str:
+    """Titre de la page Wikipédia d'un extrait FEVER, ou "FEVER" à défaut.
+
+    `evidence_url` est imbriqué sur quatre niveaux et sa forme varie selon les
+    entrées : une indexation directe `[0][0][2]` levait une IndexError qui faisait
+    perdre le verdict entier.
+    """
+    try:
+        return evidence["evidence_url"][0][0][2]
+    except KeyError, IndexError, TypeError:
+        return "FEVER"
 
 
 class RagRetriever:
@@ -142,8 +156,10 @@ class RagRetriever:
                 chosen_ev = evidences[used_idx]
                 final_evidence = Evidence(
                     text=chosen_ev["text"],
-                    source=chosen_ev["evidence_url"][0][0][2] if chosen_ev.get("evidence_url") else "FEVER",
-                    similarity_score=confidence,
+                    source=_source_de(chosen_ev),
+                    # La distance FAISS, pas la confiance du LLM : le champ est
+                    # documenté comme un score de similarité.
+                    similarity_score=chosen_ev["distance"],
                 )
             else:
                 # Pas de preuve citée : on n'en renvoie aucune. Le verdict, lui, survit
@@ -163,7 +179,7 @@ class RagRetriever:
 
             return RagVerdict(
                 claim_id=claim.id,
-                verdict=FEVER_LABEL_TO_VERDICT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
+                verdict=RAG_VERDICT_TO_JUDGMENT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
                 confidence=confidence,
                 evidence=final_evidence,
             )
