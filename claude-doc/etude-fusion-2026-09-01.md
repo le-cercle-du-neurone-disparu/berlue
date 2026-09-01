@@ -7,7 +7,9 @@ propose rien, il décrit.
 La correction proposée fait l'objet d'un document distinct :
 [`specification-fusion-2026-09-02.md`](specification-fusion-2026-09-02.md).
 
-Correspond aux points **3**, **7**, **9** et **20** de `tofix.md`.
+Couvre quatre défauts : la cohérence SelfCheck traitée comme une probabilité de
+vérité, les pannes indiscernables d'une prédiction, la confiance qui mesure autre
+chose que la confiance, et les poids de fusion que personne ne lit.
 
 ---
 
@@ -152,25 +154,25 @@ garde la gradation de V4.**
 
 ---
 
-# 3. Les bugs de `tofix.md` liés à ce refactor
+# 3. Les défauts liés à ce refactor
 
 ## 3.1 Ce que la correction ferme complètement
 
-| point | comment |
+| défaut | comment |
 |---|---|
-| **3** — la cohérence SelfCheck traitée comme une probabilité de vérité | objet même du refactor : l'asymétrie est restaurée, `CONTREDIT` redevient atteignable |
-| **9** — `final_conf` mesure la centralité, pas la confiance | la confiance devient la confiance *dans le verdict rendu*, `0.00` pour un INDÉCIS |
-| **19** — prints de debug dans `fusion.py` | les trois disparaissent avec la réécriture |
-| **20** — poids de fusion câblés nulle part | `FUSION_WEIGHT_RAG` enfin lu depuis `params.py`, et tous les seuils y sont déclarés |
+| la cohérence SelfCheck traitée comme une probabilité de vérité | objet même du refactor : l'asymétrie est restaurée, `CONTREDIT` redevient atteignable |
+| `final_conf` mesure la centralité, pas la confiance | la confiance devient la confiance *dans le verdict rendu*, `0.00` pour un INDÉCIS |
+| prints de debug dans `fusion.py` | les trois disparaissent avec la réécriture |
+| poids de fusion câblés nulle part | `FUSION_WEIGHT_RAG` enfin lu depuis `params.py`, et tous les seuils y sont déclarés |
 
-Deux points P4 suivent :
+Deux défauts mineurs suivent :
 
 - la branche `else` qui laissait `evidence` à `None` devient une **décision assumée**
   (seule une preuve FEVER porte une `evidence`) au lieu d'un oubli ;
 - `do_fusion` devient **idempotente** — mais `evaluate_selfcheck` et `evaluate_rag`
-  continuent d'`append` sans vider, donc ce P4 n'est réglé qu'au tiers.
+  continuent d'`append` sans vider, donc celui-ci n'est réglé qu'au tiers.
 
-## 3.2 Défini ici, mais à détecter ailleurs — point 7
+## 3.2 Défini ici, mais à détecter ailleurs — les pannes
 
 La spécification **définit** l'état de panne (règle R1 : quel que soit le composant en
 panne, aucun verdict, la question est à rejouer). La **détection**, elle, reste
@@ -178,13 +180,13 @@ entièrement à faire, et pas dans `fusion.py` :
 
 - le `except Exception` de `rag/retriever.py:163` avale les `TimeoutError` et
   `RuntimeError` levés par `OllamaClient.generate` ;
-- le `ValueError` de `compute_divergence` n'est rattrapé nulle part (point 14).
+- le `ValueError` de `compute_divergence` n'est rattrapé nulle part.
 
 Tant que ces erreurs ne remontent pas, `result.panne` ne sera jamais renseigné et la
-règle R1 ne se déclenchera jamais. **Le point 7 n'est donc pas fermé par ce refactor,
-il est seulement rendu possible.**
+règle R1 ne se déclenchera jamais. **La détection des pannes n'est donc pas réglée par
+ce refactor, elle est seulement rendue possible.**
 
-## 3.3 Prérequis — sans le point 2, deux règles sur cinq sont mortes
+## 3.3 Prérequis — sans la levée de la garde du retriever, deux règles sur cinq sont mortes
 
 C'est la dépendance la plus importante, et elle n'est pas évidente à la lecture.
 
@@ -201,18 +203,19 @@ rag_belief = 0.5   ->   toujours dans la bande neutre [0.40, 0.60]   ->   toujou
 
 Les règles **R4** (accord) et **R5** (arbitrage pondéré) ne se déclencheraient
 quasiment jamais, et le verdict final serait décidé par SelfCheck seul, aux extrêmes.
-Autrement dit : corriger le point 3 sans le point 2 donne un système correct sur le
-papier dont **deux règles sur cinq sont mortes en production**.
+Autrement dit : réécrire la fusion sans lever cette garde donne un système correct sur
+le papier dont **deux règles sur cinq sont mortes en production**.
 
-Le point **2** est donc un prérequis, pas un point suivant. Il est petit — la garde ne
-doit annuler que `final_evidence`, pas le verdict, sauf pour `FEVER_CONFIRMS` et
-`FEVER_REFUTES` qui exigent une preuve citée. Le point **8** (retours anticipés typés
-`Verdict` au lieu de `RagJudgment`) vit dans les trois mêmes lignes de `verify_claim`.
+Lever cette garde est donc un prérequis, pas une étape suivante. Le correctif est petit :
+elle ne doit annuler que `final_evidence`, pas le verdict — sauf pour `FEVER_CONFIRMS` et
+`FEVER_REFUTES`, qui exigent une preuve citée. Un défaut voisin vit dans les trois mêmes
+lignes de `verify_claim` : les retours anticipés y sont typés `Verdict` au lieu de
+`RagJudgment`, deux énumérations qui ne sont jamais égales.
 
 ## 3.4 Dettes induites par le refactor
 
 Ajouter une valeur de verdict `PANNE` n'est pas neutre. Deux conséquences obligatoires,
-sans lesquelles le refactor **aggrave** le point 7 au lieu de l'améliorer :
+sans lesquelles le refactor **aggrave** le problème des pannes au lieu de l'améliorer :
 
 - `evaluation/metrics.py` doit **exclure** les lignes en panne de la matrice de
   confusion. Une nouvelle valeur de verdict comptée silencieusement comme une
@@ -233,6 +236,7 @@ La spécification reprend cette intention d'origine et lui ajoute ce que V4 avai
 apporté de bon. Voir
 [`specification-fusion-2026-09-02.md`](specification-fusion-2026-09-02.md).
 
-Périmètre réaliste du chantier : **points 3, 2 et 8 ensemble** — ils partagent le même
-flux de données — ce qui ferme en plus les points 9, 19 et 20, et rend le point 7
-détectable.
+Périmètre réaliste du chantier : **la réécriture de la fusion, la levée de la garde du
+retriever et le typage de ses retours anticipés, ensemble** — ils partagent le même flux
+de données. Ça règle au passage la confiance, les prints de debug et les poids non
+câblés, et rend les pannes détectables.

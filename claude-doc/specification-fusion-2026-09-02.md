@@ -9,8 +9,9 @@ des développeurs reconstituée depuis git — fait l'objet d'un document distin
 [`etude-fusion-2026-09-01.md`](etude-fusion-2026-09-01.md). Les renvois « point 1.2.x
 de l'étude » pointent vers lui.
 
-Ferme les points **3**, **9** et **20** de `tofix.md`, et définit l'état de panne du
-point **7**.
+Corrige trois défauts — la cohérence SelfCheck traitée comme une probabilité de vérité,
+la confiance qui mesure la centralité du score, les poids de fusion que personne ne lit —
+et définit l'état de panne.
 
 ---
 
@@ -55,9 +56,11 @@ reproductible. Trois causes légitimes, vérifiées dans le code et le package :
 Ces causes produisent de la divergence **modérée**. Les seuils extrêmes de la règle R3
 filtrent l'essentiel de ce bruit.
 
-> ⚠️ **Risque résiduel** : le point 4 de `tofix.md` (affirmation en anglais comparée à
-> des échantillons en français) produit une divergence qui est du bruit pur, et qui
-> *peut* être extrême. À traiter **avant** toute calibration.
+> ⚠️ **Risque résiduel** : le prompt d'extraction impose des affirmations en anglais,
+> alors que les échantillons SelfCheck sont produits dans la langue de la question et
+> que le modèle NLI est anglophone. Sur une question française, la divergence mesurée
+> est donc du bruit pur — et elle *peut* être extrême. À traiter **avant** toute
+> calibration.
 
 ## 1.2 Preuve et conviction
 
@@ -116,9 +119,9 @@ Ollama, service down, erreur non récupérable).
 **Quel que soit le composant en panne, la réponse entière est en panne** : aucun
 verdict n'est rendu pour aucune affirmation, et la question doit être **rejouée** pour
 obtenir un résultat complet. Ces lignes doivent être **exclues** de la matrice de
-confusion, jamais comptées comme des prédictions — c'est le fond du point 7, où une
-panne d'infrastructure remplit aujourd'hui la matrice de faux `NOT_ENOUGH_INFO`
-indiscernables de vraies prédictions.
+confusion, jamais comptées comme des prédictions. C'est tout l'enjeu : aujourd'hui une
+panne d'infrastructure remplit la matrice de faux `NOT_ENOUGH_INFO` indiscernables de
+vraies prédictions.
 
 ### R2 — FEVER a tranché
 
@@ -179,7 +182,7 @@ n'affirme rien : il n'y a rien dont être confiant, donc 0.00. Corrige le point 
 
 | nom | valeur de départ | statut |
 |---|---|---|
-| `FUSION_WEIGHT_RAG` | 0.60 | déjà déclaré dans `params.py`, jamais lu (point 20) |
+| `FUSION_WEIGHT_RAG` | 0.60 | déjà déclaré dans `params.py`, mais lu par personne |
 | `FUSION_WEIGHT_SELFCHECK_CHARGE` | 0.55 | remplace `FUSION_WEIGHT_SELFCHECK` — SelfCheck accuse |
 | `FUSION_WEIGHT_SELFCHECK_DECHARGE` | 0.30 | remplace `FUSION_WEIGHT_SELFCHECK` — SelfCheck disculpe |
 | `FUSION_DIVERGENCE_NEUTRE` | 0.50 | **à calibrer** — notée `d0` dans les formules |
@@ -281,24 +284,26 @@ calibration.
    l'API, pour décider comment le présenter.
 3. **Calibration** — cf. 1.6, chantier distinct (cache des sorties RAG/SelfCheck pour
    rejouer la fusion seule).
-4. **Point 4 de `tofix.md`** (langue des échantillons) à traiter avant de calibrer :
-   tant qu'il est là, une partie des divergences mesurées est du bruit pur.
+4. **La langue des échantillons** est à traiter avant de calibrer : tant que des
+   affirmations anglaises sont comparées à des échantillons non anglais par un modèle
+   NLI anglophone, une partie des divergences mesurées est du bruit pur.
 
-# Ce que cette spec ferme dans `tofix.md`
+# Ce que cette spécification corrige
 
-| point | comment |
+| défaut | comment |
 |---|---|
-| **3** — cohérence traitée comme une probabilité de vérité | asymétrie restaurée (R3/R4/R5) |
-| **9** — `final_conf` mesure la centralité | confiance = confiance dans le verdict, 0.00 si INDÉCIS |
-| **20** — poids de fusion non câblés | `FUSION_WEIGHT_RAG` lu depuis `params.py`, poids SelfCheck ajoutés |
-| **19** — prints de debug dans `fusion.py` | disparaissent avec la réécriture |
-| **7** — pannes indiscernables | partiellement : R1 définit l'état ; **la détection reste à faire** dans `rag/retriever.py` et `selfcheck/scorer.py` |
+| cohérence traitée comme une probabilité de vérité | asymétrie restaurée (R3/R4/R5) |
+| `final_conf` mesure la centralité | confiance = confiance dans le verdict, 0.00 si INDÉCIS |
+| poids de fusion non câblés | `FUSION_WEIGHT_RAG` lu depuis `params.py`, poids SelfCheck ajoutés |
+| prints de debug dans `fusion.py` | disparaissent avec la réécriture |
+| pannes indiscernables d'une prédiction | partiellement : R1 définit l'état ; **la détection reste à faire** dans `rag/retriever.py` et `selfcheck/scorer.py` |
 
-> ⚠️ **Prérequis : le point 2.** Tant que `rag/retriever.py:133-141` écrase les verdicts
+> ⚠️ **Prérequis : lever la garde du retriever.** Tant que `rag/retriever.py:133-141`
+> écrase les verdicts
 > `LIKELY_TRUE` / `LIKELY_FALSE`, la fusion ne reçoit que des `I_DONT_KNOWN` à confiance
 > `0.0` — donc `rag_belief = 0.5`, donc toujours la bande neutre, donc toujours **R3**.
 > Les règles **R4** et **R5** ne se déclencheraient quasiment jamais. Appliquer cette
-> spécification sans corriger le point 2 produit un système correct sur le papier dont
+> spécification sans lever cette garde produit un système correct sur le papier dont
 > deux règles sur cinq sont mortes en production.
 
 Analyse complète des dépendances et des dettes induites : section 3 de
