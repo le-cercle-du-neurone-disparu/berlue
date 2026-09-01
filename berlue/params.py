@@ -35,6 +35,14 @@ assert MODEL_TARGET in ("local", "gcs", "mlflow"), (
     f"❌ MODEL_TARGET invalide : {MODEL_TARGET!r} (doit être local, gcs ou mlflow)"
 )
 
+# LOG_LEVEL : niveau de log par défaut pour tout le package (cf.
+# berlue.logging_config.setup_logging) — surchargeable en ligne de commande
+# (--log-level) sur les scripts qui l'exposent. Défaut "INFO".
+LOG_LEVEL = os.environ.get("BERLUE_LOG_LEVEL", "INFO")
+assert LOG_LEVEL in ("ERROR", "WARNING", "INFO", "DEBUG"), (
+    f"❌ LOG_LEVEL invalide : {LOG_LEVEL!r} (doit être ERROR, WARNING, INFO ou DEBUG)"
+)
+
 # EVAL_RUN_TARGET : où le service d'évaluation s'exécute (local ou GCP, ex.
 # Cloud Run Job) — indépendant d'EVAL_STORE_TARGET (où sont stockés les
 # résultats), sauf contrainte dans un seul sens ci-dessous.

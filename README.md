@@ -41,7 +41,7 @@ make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
 | | |
 |---|---|
 | **Setup** (préparer sa machine) | [`local-setup.md`](docs/setup/local-setup.md) · [`ollama-setup.md`](docs/setup/ollama-setup.md) · [`gcp.md`](docs/setup/gcp.md) |
-| **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) |
+| **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) · [`logging.md`](docs/dev/logging.md) |
 | **Pipeline** (comment tourne chaque brique de Berlue) | [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) (orchestrateur) · [`llm.md`](docs/pipeline/llm.md) · [`extraction.md`](docs/pipeline/extraction.md) · [`selfcheck.md`](docs/pipeline/selfcheck.md) · [`rag.md`](docs/pipeline/rag.md) · [`fusion.md`](docs/pipeline/fusion.md) |
 | **Evaluation** (mesurer Berlue face à une baseline) | [`docs/evaluation/`](docs/evaluation/) |
 | **GCP** (composants, authentification, accès équipe) | [`setup/gcp.md`](docs/setup/gcp.md) · [`composants.md`](docs/gcp/composants.md) · [`cloudrun.md`](docs/gcp/cloudrun.md) · [`infra-gpu.md`](docs/gcp/infra-gpu.md) · [`auth.md`](docs/gcp/auth.md) · [`share.md`](docs/gcp/share.md) · [`aletheia-local.md`](docs/gcp/aletheia-local.md) (Aletheia local + Berlue sur GCP) |
