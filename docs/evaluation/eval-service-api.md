@@ -8,9 +8,9 @@ routes publiques séparées, montées sur l'API produit).
 
 Privé (`--no-allow-unauthenticated`, IAM `roles/run.invoker` réservé à
 `sa-berlue`) — pas destiné à être appelé par un site ; piloté uniquement
-via `make` (`cloudrun_eval_service_invoke`, `gcp_up`, `gcp_verify_warm`,
+via `make` (`cloudrun_eval_service_invoke`, `gcp_eval_up`, `gcp_verify_warm`,
 cf. [`cloudrun.md`](../gcp/cloudrun.md) pour le déploiement, le cycle de
-vie `gcp_up`/`gcp_down`, et les exemples `make`). Cette page documente le
+vie `gcp_eval_up`/`gcp_down`, et les exemples `make`). Cette page documente le
 contrat HTTP lui-même — utile pour écrire un nouvel outil contre le
 service, pas pour l'usage courant.
 
@@ -25,7 +25,7 @@ Liveness/readiness — `{"status": "ok"}`, sans authentification particulière
 au-delà de l'accès au service. Répond seulement une fois `lifespan` terminé
 (store + parser construits), donc sert aussi de signal "l'instance est
 vraiment chaude", pas juste "le conteneur a démarré" — cf.
-[`cloudrun.md`](../gcp/cloudrun.md) pour comment `gcp_up` s'en sert.
+[`cloudrun.md`](../gcp/cloudrun.md) pour comment `gcp_eval_up` s'en sert.
 
 ## `POST /invoke`
 
@@ -55,10 +55,10 @@ ci-dessous).
 **`warmup` ne couvre que le LLM** — le préchauffage "process" (imports
 Python, store GCP, split dataset), lui, n'est **jamais** un champ de
 requête : il est automatique, géré par le cycle de vie de l'instance et
-`gcp_up`, pour les deux modes indifféremment (mode 1 en profite tout
+`gcp_eval_up`, pour les deux modes indifféremment (mode 1 en profite tout
 autant que mode 2, même s'il n'y a pas de LLM à charger) — cf.
 [`cloudrun.md`](../gcp/cloudrun.md) pour le détail des 3 paliers que
-`gcp_up` préchauffe.
+`gcp_eval_up` préchauffe.
 
 Réponse : `{"result": ...}` — `result` varie selon la requête, comme le
 retour de la fonction Python équivalente (`run_from_args`, cf.

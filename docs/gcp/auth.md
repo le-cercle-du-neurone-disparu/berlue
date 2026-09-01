@@ -8,10 +8,24 @@ séparément d'un éventuel login navigateur déjà ouvert ailleurs.
 make gcp_auth
 ```
 
-Vérifie via un **vrai appel GCP** (pas juste "un token existe") —
-`gcloud run services list` — et ne relance le login interactif (ouvre le
+Vérifie que la session est réellement utilisable
+(`gcloud auth print-access-token`, qui échoue bien quand le token a expiré
+ou qu'une réauth est exigée) et ne relance le login interactif (ouvre le
 navigateur) que si nécessaire. Étant interactif, à lancer depuis votre
 propre terminal, pas via un script non-interactif.
+
+Ce test ne touche **volontairement aucune API du projet**. L'ancienne
+version interrogeait Cloud Run : sur un projet où `run.googleapis.com`
+n'est pas encore activée — donc exactement le projet neuf que `gcp_setup`
+doit provisionner — elle échouait en accusant l'authentification, `gcloud`
+proposait d'activer l'API de façon interactive, et la recette gelait sur
+une question invisible. Corollaire tenu partout depuis : toute commande
+`gcloud`/`bq` lancée par une recette reçoit `</dev/null`, pour qu'une
+question fasse échouer plutôt que bloquer.
+
+L'accessibilité du **projet** est un second test, distinct (« projet
+inaccessible » n'est pas « pas connecté ») : `make gcp_preflight` enchaîne
+les deux, plus la présence des outils, `GCP_PROJECT` et la facturation.
 
 ```bash
 make gcp_check_cli_auth
@@ -54,6 +68,13 @@ gcloud auth print-access-token --impersonate-service-account=sa-berlue@${GCP_PRO
 gcloud config set auth/impersonate_service_account sa-berlue@${GCP_PROJECT}.iam.gserviceaccount.com
 bq query --use_legacy_sql=false "SELECT 1"
 gcloud config unset auth/impersonate_service_account
+```
+
+Diagnostic complet des accès (impersonation comprise, avec les quelques
+dizaines de secondes de propagation absorbées) :
+
+```bash
+make gcp_doctor
 ```
 
 L'octroi **et** le retrait d'un accès (`cloudrun_sa_grant`/`_revoke`,

@@ -124,7 +124,7 @@ avec `LLM_NUM_PARALLEL` = `CONCURRENCY` testé :
 
 ```bash
 make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42 LLM_CONTEXT_LENGTH=1024 LLM_CPU=8 LLM_MEMORY=32Gi
-make gcp_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
+make gcp_eval_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.8 \
   MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b MODE=generated START=0 END=500 CONCURRENCY=32
 ```
@@ -163,7 +163,7 @@ recommandé dès qu'on vise une vraie concurrence, malgré le surcoût : à
 ## GCP
 
 ```bash
-make gcp_up DATASET=halueval RATIO=0.995 WARM_MODELS="llama3.1:8b"
+make gcp_eval_up DATASET=halueval RATIO=0.995 WARM_MODELS="llama3.1:8b"
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.995 MODEL_ID=llama3.1:8b START=0 END=50
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.995 MODEL_ID=llama3.1:8b START=50 END=100
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.995 MODEL_ID=llama3.1:8b MATRIX=true
@@ -177,11 +177,11 @@ make gcp_down
 ```
 
 Mesuré en conditions réelles (`llama3.1:8b` des deux côtés), instance déjà
-chaude (après `gcp_up`) :
+chaude (après `gcp_eval_up`) :
 
 | Étape | Durée | Détail |
 |---|---|---|
-| `gcp_up` (`berlue-eval` + `berlue-llm`, modèle tiré+chargé) | ~4 min 20 s | one-shot, avant la série de runs |
+| `gcp_eval_up` (`berlue-eval` + `berlue-llm`, modèle tiré+chargé) | ~4 min 20 s | one-shot, avant la série de runs |
 | Mode 1, moitié 1 (50 lignes) | 5,0 s | |
 | Mode 1, moitié 2 (50 lignes) | 4,8 s | |
 | Mode 1, matrice | 6,1 s | 100/100 (split complet) |
@@ -192,7 +192,7 @@ chaude (après `gcp_up`) :
 | Mode 2, baseline | 4,9 s | |
 | Mode 2, matrice baseline | 4,6 s | 50/50 |
 | `gcp_down` | ~30 s | one-shot, en fin de session |
-| **Total (hors `gcp_up`/`gcp_down`)** | **~106 s (~1 min 46 s)** | |
+| **Total (hors `gcp_eval_up`/`gcp_down`)** | **~106 s (~1 min 46 s)** | |
 
 ### Détail par tâche (mode 2, hors cache)
 
@@ -228,7 +228,7 @@ déchargé de la VRAM : la requête suivante échoue avec
 `model 'llama3.1:8b' not found`, il faut re-pull (~100s, téléchargement
 réseau réel, mesuré) avant de pouvoir régénérer. `OLLAMA_KEEP_ALIVE=-1` ne
 protège que contre le déchargement VRAM **pendant que l'instance est
-vivante**, pas contre sa destruction — d'où `gcp_up`/`gcp_down` (min-instances
+vivante**, pas contre sa destruction — d'où `gcp_eval_up`/`gcp_down` (min-instances
 flip explicite) plutôt qu'un `min-instances` laissé actif entre deux
 sessions. Options non implémentées pour éviter le re-pull en usage
 prolongé : bake le modèle dans l'image (plus lourde à builder/pousser, mais
@@ -241,7 +241,7 @@ résiste au scale-to-zero), ou un volume persistant (GCS FUSE) pour
   tier Cloud Run.
 - **Service Ollama** (GPU L4 + 4 CPU/16 Gi) : ~0,67 $/h tant que
   `min-instances=1` — de l'ordre de 0,20-0,30 $ pour une session de 20-30
-  min (`gcp_up` → série de runs → `gcp_down` immédiat). Chiffre approximatif
+  min (`gcp_eval_up` → série de runs → `gcp_down` immédiat). Chiffre approximatif
   (pas de lecture de facturation réelle — `make
   gcp_enable_cost_observability` pour activer l'onglet "Cost" par service
   dans la Console).

@@ -171,14 +171,14 @@ impersonation locale et identité Cloud Run — cf.
 [`auth.md`](../gcp/auth.md)) — mais un vrai chemin d'exécution existe : le
 service Cloud Run `berlue-eval-mocked-service` (`berlue.api.eval_service`,
 `Dockerfile.eval-service`), tourne en continu (`min-instances=1`,
-monté/éteint par `gcp_up`/`gcp_down`) plutôt qu'un conteneur neuf par
+monté/éteint par `gcp_eval_up`/`gcp_down`) plutôt qu'un conteneur neuf par
 exécution — même contrat de flags que la CLI locale, reçus en JSON par un
 endpoint `POST /invoke` :
 
 ```bash
 # DATASET/RATIO ici préchauffent aussi le split de test (cf. cloudrun.md) —
 # à indiquer pour matcher le run visé, sinon le premier vrai appel le repaie
-make gcp_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
+make gcp_eval_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.8 MODEL_ID=llama3.1:8b   # tout le scope, un seul appel
 
 # ou découpé (START/END facultatifs, cf. section dédiée plus haut) :
@@ -210,6 +210,6 @@ OIDC), pas bundlé dans l'image d'éval — détail, IAM, contraintes
 pipeline Berlue exécuté dedans est encore `RandomBerluePipeline`, pas
 `HurluBerlu`.
 
-Détail des cibles (déploiement, `gcp_up`/`gcp_down`, `WARM_MODELS`,
+Détail des cibles (déploiement, `gcp_eval_up`/`gcp_down`, `WARM_MODELS`,
 `gcp_verify_warm`) : [`cloudrun.md`](../gcp/cloudrun.md). Temps mesurés
 local vs GCP pour les deux modes : [`execution-benchmark.md`](execution-benchmark.md).
