@@ -1,6 +1,7 @@
 """Score de divergence SelfCheckGPT par affirmation (méthode NLI officielle)."""
 
 import logging
+import threading
 
 import torch
 from selfcheckgpt.modeling_selfcheck import SelfCheckNLI
@@ -9,8 +10,12 @@ from berlue.core.schemas import Claim, SelfCheckScore
 
 logger = logging.getLogger(__name__)
 
-# Variable globale pour garder le modèle en mémoire (Singleton)
+# Variable globale pour garder le modèle en mémoire (Singleton). Le verrou est
+# nécessaire : `run_eval._run_pool` appelle le pipeline dans un ThreadPoolExecutor,
+# et sans lui deux threads pouvaient charger DeBERTa-large simultanément — double
+# allocation VRAM, avec échec possible.
 _SELFCHECK_NLI_MODEL = None
+_SELFCHECK_NLI_LOCK = threading.Lock()
 
 
 def _get_selfcheck_nli() -> SelfCheckNLI:
@@ -18,13 +23,14 @@ def _get_selfcheck_nli() -> SelfCheckNLI:
 
     global _SELFCHECK_NLI_MODEL
 
+    # Double vérification : le cas courant (déjà chargé) ne prend pas le verrou.
     if _SELFCHECK_NLI_MODEL is None:
-        # Détection automatique du matériel (Nvidia CUDA ou CPU)
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        logger.info("⏳ Initialisation de SelfCheckNLI sur : %s...", device)
-
-        _SELFCHECK_NLI_MODEL = SelfCheckNLI(device=device)
+        with _SELFCHECK_NLI_LOCK:
+            if _SELFCHECK_NLI_MODEL is None:
+                # Détection automatique du matériel (Nvidia CUDA ou CPU)
+                device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                logger.info("⏳ Initialisation de SelfCheckNLI sur : %s...", device)
+                _SELFCHECK_NLI_MODEL = SelfCheckNLI(device=device)
 
     return _SELFCHECK_NLI_MODEL
 

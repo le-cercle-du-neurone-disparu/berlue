@@ -554,10 +554,10 @@ def evaluate_model_generated(
         _maybe_flush_registry()
 
     def _berlue_one(question: str) -> None:
-        # `pipeline.predict` doit être thread-safe pour un `concurrency` > 1 —
-        # vrai pour `BerluePipeline` (appels LLM sans état partagé, comme
-        # `generator_client`/`judge_client` ; `RagRetriever.verify_claim`
-        # n'écrit dans aucun état d'instance partagé non plus).
+        # `pipeline.predict` doit être thread-safe pour un `concurrency` > 1 :
+        # les appels LLM sont sans état partagé, `RagRetriever.verify_claim`
+        # n'écrit dans aucun état d'instance, et le singleton SelfCheckNLI est
+        # protégé par un verrou (cf. `selfcheck.scorer._get_selfcheck_nli`).
         generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
         with timer.measure("Berlue"):
             berlue_verdict = aggregate_verdict(pipeline.predict(question, generated_answer).claims)
