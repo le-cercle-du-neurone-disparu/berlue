@@ -57,9 +57,10 @@ artifact_registry_role: ## Vous accorde la permission de push vers Artifact Regi
 	fi; \
 	echo "🔐 Ajout du rôle Artifact Registry Writer à $$ACCOUNT sur $(ARTIFACT_PROJECT)..."; \
 	gcloud projects add-iam-policy-binding $(ARTIFACT_PROJECT) \
-		--member="user:$$(gcloud config get-value account)" \
+		--member="user:$$ACCOUNT" \
 		--role="roles/artifactregistry.writer" \
-		--condition=None
+		--condition=None \
+		--quiet </dev/null
 
 # Accès par personne, scope = uniquement le dépôt $(ARTIFACTSREPO) (plus fin que
 # artifact_registry_role ci-dessus, qui donne un accès writer projet entier à
@@ -105,6 +106,22 @@ docker_auth_if_available: ## Comme docker_auth, mais se contente d'un avertissem
 	else \
 		echo "⚠️  Docker introuvable — authentification Docker sautée (nécessaire seulement pour build/push des images)."; \
 	fi
+
+# Les 3 images du projet, build + push. Indépendantes de CLOUDRUN_ENV : une
+# seule image API `:prod` est promue d'un environnement à l'autre (cf.
+# cloudrun_deploy), jamais rebuildée par environnement.
+docker_build_push_all: ## Build et push les 3 images (API, service d'éval, Ollama) vers Artifact Registry
+	@command -v docker >/dev/null 2>&1 || { \
+		echo "❌ Docker introuvable — indispensable pour builder les images."; \
+		exit 1; \
+	}
+	@$(MAKE) --no-print-directory docker_build_prod
+	@$(MAKE) --no-print-directory docker_push_prod
+	@$(MAKE) --no-print-directory docker_build_eval_service
+	@$(MAKE) --no-print-directory docker_push_eval_service
+	@$(MAKE) --no-print-directory docker_build_llm
+	@$(MAKE) --no-print-directory docker_push_llm
+	@echo "✅ 3 images à jour dans $(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)."
 
 docker_build_prod: ## Build l'image Docker pour la production (linux/amd64)
 	@echo "🏗️ Build de l'image de production..."

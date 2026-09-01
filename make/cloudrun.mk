@@ -5,8 +5,11 @@
 # nommés $(GAR_IMAGE)-<env>, déployés depuis la même image :prod (build une
 # fois via docker_build_prod/docker_push_prod, promotion progressive
 # test -> staging -> prod). Sélection via CLOUDRUN_ENV=test|staging|prod
-# (défaut test — jamais lu depuis .env, volontairement, pour ne pas risquer un
-# déploiement accidentel vers le mauvais environnement).
+# (défaut test). Absent de .env.sample volontairement : c'est une décision par
+# commande, pas un réglage personnel. Ce n'est qu'une convention, pas un
+# verrou — `?=` laisse gagner une valeur venue de .env ou d'un `export` du
+# shell, vérifié. Passer CLOUDRUN_ENV explicitement en ligne de commande
+# reste le seul usage sur lequel compter.
 
 CLOUDRUN_ENV ?= test
 
@@ -25,7 +28,12 @@ CLOUDRUN_SERVICE_ACCOUNT ?= $(CLOUDRUN_SA_EMAIL)
 # à ajouter ici si `gcloud run deploy` le réclame.
 cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
-	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
+	if [ -z "$$LLM_URL" ]; then \
+		echo "❌ $(CLOUDRUN_LLM_SERVICE) introuvable — l'API partirait avec BERLUE_OLLAMA_HOST vide."; \
+		echo "   👉 make cloudrun_llm_deploy (ou make gcp_deploy, qui respecte l'ordre)"; \
+		exit 1; \
+	fi; \
 	gcloud run deploy $(GAR_IMAGE)-$(CLOUDRUN_ENV) \
 		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
 		--memory $(GAR_MEMORY) \
@@ -280,7 +288,27 @@ cloudrun_llm_delete: ## Supprime le service Ollama (arrête définitivement tout
 		--quiet
 
 # ==============================================================================
-# CYCLE DE VIE — gcp_up / gcp_down
+# DÉPLOIEMENT GROUPÉ
+# ==============================================================================
+# Ordre imposé, pas un choix de présentation : cloudrun_deploy lit l'URL de
+# $(CLOUDRUN_LLM_SERVICE) pour câbler BERLUE_OLLAMA_HOST sur l'API — le LLM
+# doit donc exister avant. Le service d'éval est indépendant des deux.
+#
+# Seule l'API est déclinée par environnement ($(GAR_IMAGE)-<env>, CLOUDRUN_ENV) :
+# le service d'éval et le service Ollama sont uniques pour le projet, partagés
+# par les 3 environnements. `CLOUDRUN_ENV=staging` ne crée donc pas un second
+# berlue-llm, il redéploie seulement l'API dans staging.
+
+cloudrun_deploy_all: gcp_check_cli_auth ## Déploie les 3 services (Ollama, éval, API selon CLOUDRUN_ENV=test|staging|prod) depuis les images déjà poussées, dans l'ordre imposé
+	@echo "🚀 Déploiement des services Cloud Run (CLOUDRUN_ENV=$(CLOUDRUN_ENV))..."
+	@$(MAKE) --no-print-directory cloudrun_llm_deploy
+	@$(MAKE) --no-print-directory cloudrun_eval_service_deploy
+	@$(MAKE) --no-print-directory cloudrun_deploy
+	@echo "✅ Services déployés — tous à min-instances=0 (aucun coût tant qu'on ne les allume pas)."
+	@echo "   👉 make gcp_up (produit) ou make gcp_eval_up (éval) pour les monter et les préchauffer."
+
+# ==============================================================================
+# CYCLE DE VIE — gcp_up / gcp_eval_up / gcp_down
 # ==============================================================================
 # Monte et préchauffe berlue-eval (+ berlue-llm si WARM_MODELS est fourni),
 # à lancer une fois en début de session avant une série de
