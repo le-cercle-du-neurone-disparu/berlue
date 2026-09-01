@@ -27,6 +27,20 @@ CLOUDRUN_SERVICE_ACCOUNT ?= $(CLOUDRUN_SA_EMAIL)
 # moment du premier vrai déploiement — jamais testé contre un projet réel,
 # à ajouter ici si `gcloud run deploy` le réclame.
 cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
+	@# L'API charge l'index FAISS au démarrage (lifespan de berlue/api/fast.py) :
+	@# une version absente du bucket donne un conteneur qui ne boote pas, avec
+	@# l'erreur enfouie dans les logs Cloud Run après plusieurs minutes d'attente.
+	@gcloud storage ls gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/index.faiss >/dev/null 2>&1 </dev/null || { \
+		echo "❌ Index RAG introuvable : gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/index.faiss"; \
+		echo "   Sans lui, $(GAR_IMAGE)-$(CLOUDRUN_ENV) ne démarrera pas."; \
+		echo "   Versions présentes dans le bucket :"; \
+		gcloud storage ls gs://$(RAG_BUCKET_NAME)/faiss/ 2>/dev/null </dev/null | sed -e 's#.*/faiss/#     #' -e 's#/$$##' || echo "     (aucune)"; \
+		echo "   👉 construire et publier le corpus attendu (chemin normal) :"; \
+		echo "      make download_fever_data_full && make build_fever_index && make rag_index_upload"; \
+		echo "   👉 ou, pour un test ponctuel sur un corpus réduit déjà publié :"; \
+		echo "      make cloudrun_deploy RAG_CORPUS_VERSION=<version ci-dessus>"; \
+		exit 1; \
+	}
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
@@ -82,6 +96,9 @@ cloudrun_delete: ## Supprime l'environnement CLOUDRUN_ENV=test|staging|prod (dé
 # RAG_CORPUS_VERSION identifie le sous-dossier actif du bucket
 # (gs://$(RAG_BUCKET_NAME)/faiss/<version>/) — changer de corpus = changer
 # cette valeur puis `make cloudrun_deploy`, sans toucher à l'image.
+# Le corpus complet est le défaut parce que c'est ce qui tourne la plupart du
+# temps ; un corpus réduit ne sert qu'à un test ponctuel, en surchargeant
+# explicitement la variable.
 RAG_CORPUS_VERSION ?= full-145k
 
 rag_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS dédié à l'index RAG s'il n'existe pas déjà (dans BUCKET_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur

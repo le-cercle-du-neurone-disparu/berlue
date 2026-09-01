@@ -141,10 +141,16 @@ echo ""
 echo "Bucket RAG"
 if gcloud storage buckets describe "gs://${RAG_BUCKET_NAME}" --project="$BUCKET_PROJECT" >/dev/null 2>&1 </dev/null; then
     ok "gs://${RAG_BUCKET_NAME} présent"
-    if gcloud storage ls "gs://${RAG_BUCKET_NAME}/faiss/" >/dev/null 2>&1 </dev/null; then
-        ok "index RAG présent (faiss/)"
+    version="${RAG_CORPUS_VERSION:-full-145k}"
+    if gcloud storage ls "gs://${RAG_BUCKET_NAME}/faiss/${version}/index.faiss" >/dev/null 2>&1 </dev/null; then
+        ok "index RAG présent pour RAG_CORPUS_VERSION=${version}"
     else
-        warn "aucun index dans gs://${RAG_BUCKET_NAME}/faiss/ — cf. étapes manuelles ci-dessous"
+        # Un "faiss/ non vide" ne suffit pas : cloudrun_deploy monte un
+        # sous-dossier précis, et l'API ne démarre pas si c'est le mauvais.
+        warn "aucun index pour RAG_CORPUS_VERSION=${version} — l'API ne démarrera pas"
+        present=$(gcloud storage ls "gs://${RAG_BUCKET_NAME}/faiss/" 2>/dev/null </dev/null \
+            | sed -e 's#.*/faiss/##' -e 's#/$##' | tr '\n' ' ')
+        echo "      versions présentes : ${present:-aucune}"
     fi
 else
     ko "gs://${RAG_BUCKET_NAME} absent — make rag_bucket_create"
