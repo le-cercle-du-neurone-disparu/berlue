@@ -19,14 +19,24 @@ cloudrun_enable_api: gcp_check_cli_auth ## Active l'API Cloud Run pour le projet
 # Prérequis : make iam_setup_cloudrun_service_account (une fois, cf. gcp_setup).
 CLOUDRUN_SERVICE_ACCOUNT ?= $(CLOUDRUN_SA_EMAIL)
 
-cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test)
+# Le volume GCS FUSE (--add-volume type=cloud-storage) peut exiger
+# --execution-environment=gen2 selon la version de gcloud/Cloud Run au
+# moment du premier vrai déploiement — jamais testé contre un projet réel,
+# à ajouter ici si `gcloud run deploy` le réclame.
+cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
+	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
 	gcloud run deploy $(GAR_IMAGE)-$(CLOUDRUN_ENV) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(GCP_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
+		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
 		--memory $(GAR_MEMORY) \
+		--cpu $(GAR_CPU) \
+		--timeout=$(GAR_TIMEOUT) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
+		--add-volume=name=rag,type=cloud-storage,bucket=$(RAG_BUCKET_NAME) \
+		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
+		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION) \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
 cloudrun_list: ## Liste tous les services Cloud Run actifs du projet
@@ -53,6 +63,47 @@ cloudrun_delete: ## Supprime l'environnement CLOUDRUN_ENV=test|staging|prod (dé
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--quiet
+
+# ==============================================================================
+# INDEX RAG (bucket GCS dédié — cf. RAG_BUCKET_NAME dans config.mk — monté en
+# volume GCS FUSE par cloudrun_deploy)
+# ==============================================================================
+# Construit à part (make build_fever_index en local), jamais reconstruit au
+# docker build : le ré-embedding du corpus complet est trop coûteux pour
+# tourner à chaque déploiement de code, cf. claude-doc/plan-deploiement-api-gcp.md.
+# RAG_CORPUS_VERSION identifie le sous-dossier actif du bucket
+# (gs://$(RAG_BUCKET_NAME)/faiss/<version>/) — changer de corpus = changer
+# cette valeur puis `make cloudrun_deploy`, sans toucher à l'image.
+RAG_CORPUS_VERSION ?= full-145k
+
+rag_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS dédié à l'index RAG s'il n'existe pas déjà (dans BUCKET_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur
+	@if gcloud storage buckets describe gs://$(RAG_BUCKET_NAME) --project=$(BUCKET_PROJECT) >/dev/null 2>&1; then \
+		echo "✅ Bucket gs://$(RAG_BUCKET_NAME) déjà présent, création sautée."; \
+	else \
+		echo "🪣 Création du bucket gs://$(RAG_BUCKET_NAME)..."; \
+		gcloud storage buckets create gs://$(RAG_BUCKET_NAME) \
+			--location=$(GCP_REGION) \
+			--project=$(BUCKET_PROJECT); \
+	fi
+
+rag_bucket_grant_sa: gcp_check_cli_auth ## Autorise sa-berlue à lire le bucket RAG — requis par le volume GCS FUSE de cloudrun_deploy
+	@echo "🔐 Lecture pour $(CLOUDRUN_SA_EMAIL) sur gs://$(RAG_BUCKET_NAME)..."
+	gcloud storage buckets add-iam-policy-binding gs://$(RAG_BUCKET_NAME) \
+		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+		--role="roles/storage.objectViewer"
+
+rag_bucket_delete: ## Supprime le bucket RAG et tout son contenu (appelé par gcp_destroy)
+	@echo "💣 Suppression du bucket gs://$(RAG_BUCKET_NAME)..."
+	gcloud storage rm --recursive gs://$(RAG_BUCKET_NAME)
+
+rag_index_upload: gcp_check_cli_auth ## Upload l'index FAISS local (data/fever/faiss, cf. make build_fever_index) vers gs://RAG_BUCKET_NAME/faiss/RAG_CORPUS_VERSION
+	@if [ ! -f data/fever/faiss/index.faiss ]; then \
+		echo "❌ data/fever/faiss/index.faiss introuvable — lance d'abord make build_fever_index."; \
+		exit 1; \
+	fi
+	@echo "☁️  Upload vers gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)..."
+	gcloud storage cp -r data/fever/faiss/* gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/
+	@echo "✅ Index disponible sur gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/ — assure-toi que RAG_CORPUS_VERSION=$(RAG_CORPUS_VERSION) au prochain cloudrun_deploy pour le brancher."
 
 # ==============================================================================
 # SERVICE CLOUD RUN — ÉVAL (image berlue-eval-mocked-service, cf. Dockerfile.eval-service)
@@ -230,7 +281,7 @@ cloudrun_llm_delete: ## Supprime le service Ollama (arrête définitivement tout
 
 WARM_MODELS ?=
 
-gcp_up: gcp_check_cli_auth ## Monte et préchauffe berlue-eval (+ berlue-llm si WARM_MODELS="modele1 modele2 ...")
+gcp_up: gcp_check_cli_auth ## Monte et préchauffe berlue-eval (+ berlue-llm et berlue-api-<env> si WARM_MODELS="modele1 modele2 ...")
 	@if [ -n "$(WARM_MODELS)" ]; then \
 		echo "🔥 gcp_up : min-instances=1 sur $(CLOUDRUN_LLM_SERVICE)..."; \
 		gcloud run services update $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1; \
@@ -251,6 +302,16 @@ gcp_up: gcp_check_cli_auth ## Monte et préchauffe berlue-eval (+ berlue-llm si 
 		done; \
 		echo "🔥 gcp_up : min-instances=1 + BERLUE_OLLAMA_HOST=$$LLM_URL sur $(CLOUDRUN_EVAL_SERVICE)..."; \
 		gcloud run services update $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1 --update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL; \
+		echo "🔥 gcp_up : min-instances=1 + BERLUE_OLLAMA_HOST=$$LLM_URL sur $(GAR_IMAGE)-$(CLOUDRUN_ENV)..."; \
+		gcloud run services update $(GAR_IMAGE)-$(CLOUDRUN_ENV) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1 --update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL; \
+		echo "⏳ Attente que $(GAR_IMAGE)-$(CLOUDRUN_ENV) réponde sur /..."; \
+		API_URL=$$(gcloud run services describe $(GAR_IMAGE)-$(CLOUDRUN_ENV) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+		for i in $$(seq 1 60); do \
+			CODE=$$(curl -s -o /dev/null -w "%{http_code}" "$$API_URL/"); \
+			[ "$$CODE" = "200" ] && break; \
+			sleep 2; \
+		done; \
+		echo "✅ $(GAR_IMAGE)-$(CLOUDRUN_ENV) prêt ($$API_URL) — sentence-transformers chargé, plus de téléchargement HuggingFace au prochain /predict."; \
 	else \
 		echo "🔥 gcp_up : min-instances=1 sur $(CLOUDRUN_EVAL_SERVICE)..."; \
 		gcloud run services update $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=1; \
@@ -270,8 +331,16 @@ gcp_up: gcp_check_cli_auth ## Monte et préchauffe berlue-eval (+ berlue-llm si 
 	echo "✅ Split $(DATASET)/$(RATIO) chaud."
 	@echo "✅ gcp_up terminé — cloudrun_eval_service_invoke prêt à l'emploi."
 
-gcp_down: gcp_check_cli_auth ## Redescend berlue-eval et berlue-llm à min-instances=0 (sécurité budget, idempotent, inconditionnel)
-	@echo "🧯 gcp_down : min-instances=0 sur $(CLOUDRUN_EVAL_SERVICE) et $(CLOUDRUN_LLM_SERVICE)..."
+gcp_down: gcp_check_cli_auth ## Redescend berlue-eval, berlue-llm et berlue-api-<env> à min-instances=0 (sécurité budget, idempotent, inconditionnel)
+	@echo "🧯 gcp_down : min-instances=0 sur $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE) et $(GAR_IMAGE)-$(CLOUDRUN_ENV)..."
 	gcloud run services update $(CLOUDRUN_EVAL_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=0
 	gcloud run services update $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=0
+	gcloud run services update $(GAR_IMAGE)-$(CLOUDRUN_ENV) --region $(GCP_REGION) --project $(GCP_PROJECT) --min-instances=0
 	@echo "✅ gcp_down terminé."
+
+gcp_status: ## Affiche min-instances de berlue-eval, berlue-llm et berlue-api-<env> — à vérifier après chaque gcp_down (ne pas se fier au seul fait que la commande a réussi)
+	@echo "📊 min-instances actuel (CLOUDRUN_ENV=$(CLOUDRUN_ENV)) :"
+	@for SVC in $(CLOUDRUN_EVAL_SERVICE) $(CLOUDRUN_LLM_SERVICE) $(GAR_IMAGE)-$(CLOUDRUN_ENV); do \
+		MIN=$$(gcloud run services describe $$SVC --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])" 2>/dev/null); \
+		echo "  $$SVC : min-instances=$${MIN:-0}"; \
+	done

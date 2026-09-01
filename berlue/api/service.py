@@ -1,5 +1,3 @@
-import ollama
-
 from berlue.api.schemas import ClaimResult, PredictInput, PredictOutput
 from berlue.core.schemas import Verdict
 from berlue.llm.client import OllamaClient
@@ -53,16 +51,11 @@ class BerlueService:
 
     def get_available_llms(self) -> list[str]:
         """
-        Récupère la liste réelle des modèles installés dans l'Ollama local.
-        Si Ollama est inaccessible, l'erreur remontera naturellement jusqu'au endpoint FastAPI.
+        Récupère la liste des modèles installés sur le serveur Ollama ciblé
+        (`BERLUE_OLLAMA_HOST`). Passe par `OllamaClient` plutôt que le module
+        `ollama` global : hérite de son auth OIDC, nécessaire quand la cible
+        est un service Cloud Run privé (`berlue-llm`), pas seulement un
+        Ollama local. Si le serveur est inaccessible, l'erreur remontera
+        naturellement jusqu'au endpoint FastAPI.
         """
-        response = ollama.list()
-
-        models_list = response.get("models", []) if isinstance(response, dict) else response.models
-
-        available_names = []
-        for m in models_list:
-            name = m.get("name") if isinstance(m, dict) else m.model
-            available_names.append(name)
-
-        return available_names
+        return OllamaClient().list_models()
