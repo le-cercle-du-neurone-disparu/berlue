@@ -113,7 +113,7 @@ CLOUDRUN_PUBLIC_staging = true
 CLOUDRUN_PUBLIC_prod = true
 
 # Service Cloud Run d'éval (mode batch/CLI exécuté à la demande, tourne en
-# continu avec min-instances=1 — cf. `make gcp_up`/`gcp_down`,
+# continu avec min-instances=1 — cf. `make gcp_eval_up`/`gcp_down`,
 # docs/evaluation/execution-benchmark.md pour pourquoi). "-mocked" : rappel
 # volontaire que le pipeline Berlue exécuté dedans est encore
 # RandomBerluePipeline, pas HurluBerlu (cf. docs/evaluation/run.md).
