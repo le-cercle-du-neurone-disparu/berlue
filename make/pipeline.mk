@@ -214,4 +214,10 @@ pipeline_samples: ## Étapes 1-3 : ajoute l'échantillonnage SelfCheckGPT (K app
 	python -m berlue.pipeline.hurlu_berlu --until samples --question "$(QUESTION)"
 
 pipeline_selfcheck: ## Étapes 1-4 : ajoute le score de divergence SelfCheckGPT
+	python -m berlue.pipeline.hurlu_berlu --until selfcheck --question "$(QUESTION)"
+
+pipeline_rag: ## Étapes 1-5 : ajoute le RAG
+	python -m berlue.pipeline.hurlu_berlu --until rag --question "$(QUESTION)"
+
+pipeline_fusion: ## Étapes 1-6 : ajoute le score de fusion
 	python -m berlue.pipeline.hurlu_berlu --question "$(QUESTION)"
