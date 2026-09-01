@@ -12,7 +12,7 @@ CLOUDRUN_ENV ?= test
 
 cloudrun_enable_api: gcp_check_cli_auth ## Active l'API Cloud Run pour le projet
 	@echo "⚙️ Activation de l'API Cloud Run..."
-	gcloud services enable run.googleapis.com --project=$(GCP_PROJECT)
+	gcloud services enable run.googleapis.com --project=$(GCP_PROJECT) </dev/null
 
 # Compte de service attaché au déploiement — surchargeable (ex. revenir au SA
 # par défaut du projet : `make cloudrun_deploy CLOUDRUN_SERVICE_ACCOUNT=`).
@@ -77,20 +77,22 @@ cloudrun_delete: ## Supprime l'environnement CLOUDRUN_ENV=test|staging|prod (dé
 RAG_CORPUS_VERSION ?= full-145k
 
 rag_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS dédié à l'index RAG s'il n'existe pas déjà (dans BUCKET_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur
-	@if gcloud storage buckets describe gs://$(RAG_BUCKET_NAME) --project=$(BUCKET_PROJECT) >/dev/null 2>&1; then \
+	@if gcloud storage buckets describe gs://$(RAG_BUCKET_NAME) --project=$(BUCKET_PROJECT) >/dev/null 2>&1 </dev/null; then \
 		echo "✅ Bucket gs://$(RAG_BUCKET_NAME) déjà présent, création sautée."; \
 	else \
 		echo "🪣 Création du bucket gs://$(RAG_BUCKET_NAME)..."; \
-		gcloud storage buckets create gs://$(RAG_BUCKET_NAME) \
-			--location=$(GCP_REGION) \
-			--project=$(BUCKET_PROJECT); \
+		$(RETRY) "création du bucket gs://$(RAG_BUCKET_NAME)" \
+			gcloud storage buckets create gs://$(RAG_BUCKET_NAME) \
+				--location=$(GCP_REGION) \
+				--project=$(BUCKET_PROJECT); \
 	fi
 
 rag_bucket_grant_sa: gcp_check_cli_auth ## Autorise sa-berlue à lire le bucket RAG — requis par le volume GCS FUSE de cloudrun_deploy
 	@echo "🔐 Lecture pour $(CLOUDRUN_SA_EMAIL) sur gs://$(RAG_BUCKET_NAME)..."
-	gcloud storage buckets add-iam-policy-binding gs://$(RAG_BUCKET_NAME) \
-		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
-		--role="roles/storage.objectViewer"
+	@$(RETRY) "autorisation de $(CLOUDRUN_SA_EMAIL) sur gs://$(RAG_BUCKET_NAME)" \
+		gcloud storage buckets add-iam-policy-binding gs://$(RAG_BUCKET_NAME) \
+			--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+			--role="roles/storage.objectViewer"
 
 rag_bucket_delete: ## Supprime le bucket RAG et tout son contenu (appelé par gcp_destroy)
 	@echo "💣 Suppression du bucket gs://$(RAG_BUCKET_NAME)..."
@@ -153,6 +155,13 @@ cloudrun_eval_service_url: ## Affiche l'URL du service Cloud Run d'éval
 
 cloudrun_eval_service_logs: ## Logs du service Cloud Run d'éval
 	@echo "📜 Logs de $(CLOUDRUN_EVAL_SERVICE)..."
+cloudrun_eval_service_delete: ## Supprime le service Cloud Run d'éval (appelé par gcp_destroy)
+	@echo "🗑️ Suppression de $(CLOUDRUN_EVAL_SERVICE)..."
+	gcloud run services delete $(CLOUDRUN_EVAL_SERVICE) \
+		--region $(GCP_REGION) \
+		--project $(GCP_PROJECT) \
+		--quiet
+
 	gcloud run services logs read $(CLOUDRUN_EVAL_SERVICE) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \

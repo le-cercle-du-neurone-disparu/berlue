@@ -23,7 +23,7 @@ def main() -> None:
     if args.action == "grant" and not args.role:
         parser.error("--role est requis pour --action=grant")
 
-    current = json.loads(subprocess.check_output(["bq", "show", "--format=prettyjson", args.dataset_ref]))
+    current = json.loads(subprocess.check_output(["bq", "--headless", "show", "--format=prettyjson", args.dataset_ref]))
     access = [entry for entry in current["access"] if entry.get("userByEmail") != args.user]
     if args.action == "grant":
         access.append({"role": args.role, "userByEmail": args.user})
@@ -32,7 +32,7 @@ def main() -> None:
         json.dump({"access": access}, f)
         path = Path(f.name)
     try:
-        subprocess.run(["bq", "update", f"--source={path}", args.dataset_ref], check=True)
+        subprocess.run(["bq", "--headless", "update", f"--source={path}", args.dataset_ref], check=True)
     finally:
         path.unlink()
 
