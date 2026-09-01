@@ -63,9 +63,8 @@ class HurluBerlu:
 
         logger.debug("🧠 Calcul des scores de divergence SelfCheckNLI...")
 
-        for claim in result.claims:
-            score = compute_divergence(claim=claim, samples=result.samples)
-            result.selfcheck_scores.append(score)
+        # Réécrit la liste au lieu d'y ajouter : un double appel dupliquait tout.
+        result.selfcheck_scores = [compute_divergence(claim=claim, samples=result.samples) for claim in result.claims]
         if result.selfcheck_scores:
             avg_divergence = sum(s.divergence_score for s in result.selfcheck_scores) / len(result.selfcheck_scores)
             avg_confidence = 1.0 - avg_divergence
@@ -84,13 +83,8 @@ class HurluBerlu:
 
         logger.debug("🧠 Calcul des verdicts du RAG...")
 
-        for claim in result.claims:
-            logger.info("\n===============================\n")
-            logger.info(f"claim : {claim.text}")
-            logger.info("\n===============================\n")
-
-            verdict = self.retriever.verify_claim(claim=claim)
-            result.rag_scores.append(verdict)
+        # Réécrit la liste au lieu d'y ajouter : un double appel dupliquait tout.
+        result.rag_scores = [self.retriever.verify_claim(claim=claim) for claim in result.claims]
 
         return result
 
