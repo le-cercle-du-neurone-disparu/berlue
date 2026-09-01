@@ -38,21 +38,24 @@ CLOUDRUN_SERVICE_ACCOUNT ?= $(CLOUDRUN_SA_EMAIL)
 # --execution-environment=gen2 selon la version de gcloud/Cloud Run au
 # moment du premier vrai déploiement — jamais testé contre un projet réel,
 # à ajouter ici si `gcloud run deploy` le réclame.
-cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
-	@# L'API charge l'index FAISS au démarrage (lifespan de berlue/api/fast.py) :
-	@# une version absente du bucket donne un conteneur qui ne boote pas, avec
-	@# l'erreur enfouie dans les logs Cloud Run après plusieurs minutes d'attente.
+# Un service qui monte l'index RAG doit d'abord vérifier qu'il existe dans le
+# bucket : sans lui le conteneur ne boote pas (API) ou casse au premier appel
+# (service d'éval), avec l'erreur enfouie dans les logs Cloud Run après
+# plusieurs minutes d'attente. Prérequis de cloudrun_deploy et
+# cloudrun_eval_service_deploy, jamais appelé directement.
+rag_index_check:
 	@gcloud storage ls gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/index.faiss >/dev/null 2>&1 </dev/null || { \
 		echo "❌ Index RAG introuvable : gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/index.faiss"; \
-		echo "   Sans lui, $(GAR_IMAGE)-$(CLOUDRUN_ENV) ne démarrera pas."; \
 		echo "   Versions présentes dans le bucket :"; \
 		gcloud storage ls gs://$(RAG_BUCKET_NAME)/faiss/ 2>/dev/null </dev/null | sed -e 's#.*/faiss/#     #' -e 's#/$$##' || echo "     (aucune)"; \
 		echo "   👉 construire et publier le corpus attendu (chemin normal) :"; \
 		echo "      make download_fever_data_full && make build_fever_index && make rag_index_upload"; \
-		echo "   👉 ou, pour un test ponctuel sur un corpus réduit déjà publié :"; \
-		echo "      make cloudrun_deploy RAG_CORPUS_VERSION=<version ci-dessus>"; \
+		echo "   👉 ou, pour un test ponctuel sur un corpus déjà publié :"; \
+		echo "      make <cible> RAG_CORPUS_VERSION=<version ci-dessus>"; \
 		exit 1; \
 	}
+
+cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
@@ -199,19 +202,41 @@ WARMUP ?= false
 BASELINE ?= false
 COVERAGE ?= false
 
-cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Cloud Run d'éval
-	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE)..."
+# Ressources et modèles du service d'éval. Depuis que `run_eval` construit un
+# vrai `BerluePipeline` (et non plus le mock), ce service charge en mémoire
+# l'index FAISS, le NLI de SelfCheckGPT et le modèle d'embedding : les défauts
+# Cloud Run (512 Mio / 1 vCPU) ne suffisent pas.
+EVAL_MEMORY ?= 8Gi
+EVAL_CPU ?= 4
+# Le mode dataset est séquentiel (pas de --concurrency côté éval) : une tranche
+# de quelques centaines de lignes dépasse les 900s par défaut. Maximum Cloud
+# Run : 3600.
+EVAL_TIMEOUT ?= 3600
+# Modèles réellement appelés par le pipeline sur le service — à ne pas
+# confondre avec MODEL_ID, qui n'est qu'une étiquette de scope en mode dataset.
+# Vides = les défauts de berlue/params.py s'appliquent (pas de valeur dupliquée
+# ici, qui dériverait).
+EVAL_SELFCHECK_MODEL ?=
+EVAL_EXTRACT_MODEL ?=
+EVAL_RAG_MODEL ?=
+
+cloudrun_eval_service_deploy: gcp_check_cli_auth rag_index_check ## Crée ou met à jour le service Cloud Run d'éval — monte l'index RAG (RAG_CORPUS_VERSION) ; EVAL_SELFCHECK_MODEL/EVAL_EXTRACT_MODEL/EVAL_RAG_MODEL pour choisir les modèles du pipeline
+	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE) ($(EVAL_CPU) vCPU/$(EVAL_MEMORY), corpus $(RAG_CORPUS_VERSION))..."
 	gcloud run deploy $(CLOUDRUN_EVAL_SERVICE) \
 		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
+		--cpu=$(EVAL_CPU) \
+		--memory=$(EVAL_MEMORY) \
 		--min-instances=0 \
 		--max-instances=1 \
 		--max=1 \
 		--concurrency=1 \
-		--timeout=900 \
-		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
+		--timeout=$(EVAL_TIMEOUT) \
+		--add-volume=name=rag,type=cloud-storage,bucket=$(RAG_BUCKET_NAME) \
+		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
+		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,USE_MOCK=0,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION)$(if $(EVAL_SELFCHECK_MODEL),$(comma)BERLUE_OLLAMA_MODEL=$(EVAL_SELFCHECK_MODEL),)$(if $(EVAL_EXTRACT_MODEL),$(comma)EXTRACT_MODEL=$(EVAL_EXTRACT_MODEL),)$(if $(EVAL_RAG_MODEL),$(comma)RAG_MODEL=$(EVAL_RAG_MODEL),) \
 		--no-allow-unauthenticated
 	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
 	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \
