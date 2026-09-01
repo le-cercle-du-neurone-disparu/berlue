@@ -10,17 +10,18 @@
 
 firestore_enable_api: gcp_check_cli_auth ## Active l'API Firestore pour le projet
 	@echo "⚙️ Activation de l'API Firestore..."
-	gcloud services enable firestore.googleapis.com --project=$(GCP_PROJECT)
+	gcloud services enable firestore.googleapis.com --project=$(GCP_PROJECT) </dev/null
 
 firestore_create_database: gcp_check_cli_auth ## Crée la base Firestore (mode Native) du projet si elle n'existe pas déjà — une seule par projet
-	@if gcloud firestore databases describe --database='(default)' --project=$(GCP_PROJECT) >/dev/null 2>&1; then \
+	@if gcloud firestore databases describe --database='(default)' --project=$(GCP_PROJECT) >/dev/null 2>&1 </dev/null; then \
 		echo "✅ Base Firestore déjà présente, création sautée."; \
 	else \
 		echo "🔥 Création de la base Firestore (native, $(GCP_REGION))..."; \
-		gcloud firestore databases create \
-			--project=$(GCP_PROJECT) \
-			--location=$(GCP_REGION) \
-			--type=firestore-native; \
+		$(RETRY) "création de la base Firestore" \
+			gcloud firestore databases create \
+				--project=$(GCP_PROJECT) \
+				--location=$(GCP_REGION) \
+				--type=firestore-native; \
 	fi
 
 # Accès par personne sur la base Firestore de l'éval — IAM projet (Firestore

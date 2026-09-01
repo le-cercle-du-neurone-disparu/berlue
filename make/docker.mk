@@ -27,15 +27,20 @@ compose_down: ## Arrête et supprime les conteneurs/réseau docker-compose
 
 artifact_registry_enable_api: gcp_check_cli_auth ## Active l'API Artifact Registry (dans ARTIFACT_PROJECT)
 	@echo "⚙️ Activation de l'API Artifact Registry dans $(ARTIFACT_PROJECT)..."
-	gcloud services enable artifactregistry.googleapis.com --project=$(ARTIFACT_PROJECT)
+	gcloud services enable artifactregistry.googleapis.com --project=$(ARTIFACT_PROJECT) </dev/null
 
-artifact_registry_create: artifact_registry_enable_api ## Crée le dépôt Docker dans Artifact Registry (dans ARTIFACT_PROJECT)
-	@echo "📦 Création du dépôt Artifact Registry $(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT)..."
-	gcloud artifacts repositories create $(ARTIFACTSREPO) \
-		--repository-format=docker \
-		--location=$(GCP_REGION) \
-		--description="Dépôt Docker $(ARTIFACTSREPO) pour le projet $(ARTIFACT_PROJECT)" \
-		--project=$(ARTIFACT_PROJECT) || true
+artifact_registry_create: artifact_registry_enable_api ## Crée le dépôt Docker dans Artifact Registry (dans ARTIFACT_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur
+	@if gcloud artifacts repositories describe $(ARTIFACTSREPO) --location=$(GCP_REGION) --project=$(ARTIFACT_PROJECT) >/dev/null 2>&1 </dev/null; then \
+		echo "✅ Dépôt Artifact Registry $(ARTIFACTSREPO) déjà présent dans $(ARTIFACT_PROJECT), création sautée."; \
+	else \
+		echo "📦 Création du dépôt Artifact Registry $(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT)..."; \
+		$(RETRY) "création du dépôt $(ARTIFACTSREPO)" \
+			gcloud artifacts repositories create $(ARTIFACTSREPO) \
+				--repository-format=docker \
+				--location=$(GCP_REGION) \
+				--description="Dépôt Docker $(ARTIFACTSREPO) pour le projet $(ARTIFACT_PROJECT)" \
+				--project=$(ARTIFACT_PROJECT); \
+	fi
 
 artifact_registry_delete: ## Supprime le dépôt Docker dans Artifact Registry (et toutes les images qu'il contient)
 	@echo "💣 Suppression du dépôt Artifact Registry $(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT)..."
@@ -45,7 +50,12 @@ artifact_registry_delete: ## Supprime le dépôt Docker dans Artifact Registry (
 		--quiet
 
 artifact_registry_role: ## Vous accorde la permission de push vers Artifact Registry (projet ARTIFACT_PROJECT entier)
-	@echo "🔐 Ajout du rôle Artifact Registry Writer à votre compte sur $(ARTIFACT_PROJECT)..."
+	@ACCOUNT="$(GCLOUD_ACTIVE_ACCOUNT)"; \
+	if [ -z "$$ACCOUNT" ]; then \
+		echo "❌ Aucun compte gcloud actif. Lancez : make gcp_auth"; \
+		exit 1; \
+	fi; \
+	echo "🔐 Ajout du rôle Artifact Registry Writer à $$ACCOUNT sur $(ARTIFACT_PROJECT)..."; \
 	gcloud projects add-iam-policy-binding $(ARTIFACT_PROJECT) \
 		--member="user:$$(gcloud config get-value account)" \
 		--role="roles/artifactregistry.writer" \
@@ -84,7 +94,17 @@ artifact_registry_revoke: ## Retire l'accès d'une personne sur Artifact Registr
 
 docker_auth: ## Configure Docker pour s'authentifier auprès de Google Cloud
 	@echo "🔑 Configuration de l'authentification Docker pour GCP..."
-	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev --quiet
+	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev --quiet </dev/null
+
+# Variante utilisée par gcp_setup : un poste qui ne fait que lancer l'éval
+# n'a pas forcément Docker installé, et ça ne doit pas faire échouer tout le
+# provisionnement. gcp_doctor le redira.
+docker_auth_if_available: ## Comme docker_auth, mais se contente d'un avertissement si Docker n'est pas installé
+	@if command -v docker >/dev/null 2>&1; then \
+		$(MAKE) --no-print-directory docker_auth; \
+	else \
+		echo "⚠️  Docker introuvable — authentification Docker sautée (nécessaire seulement pour build/push des images)."; \
+	fi
 
 docker_build_prod: ## Build l'image Docker pour la production (linux/amd64)
 	@echo "🏗️ Build de l'image de production..."
