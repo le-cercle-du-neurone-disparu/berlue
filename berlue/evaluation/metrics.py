@@ -40,7 +40,7 @@ def build_confusion_matrix(ground_truth: list[bool], predictions: list[Verdict])
         if pred == Verdict.PANNE:
             n_pannes += 1
             continue
-        if gt is True:
+        if gt:
             if pred == Verdict.SUPPORTED:
                 gt_true_pred_true += 1
             elif pred == Verdict.NOT_ENOUGH_INFO:
