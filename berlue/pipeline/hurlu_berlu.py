@@ -1,6 +1,6 @@
 import logging
 
-from berlue.core.schemas import PipelineResult, Verdict
+from berlue.core.schemas import PipelineResult, RagJudgment, Verdict
 from berlue.llm.client import OllamaClient
 from berlue.params import OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
 from berlue.pipeline.extraction import do_extraction
@@ -100,8 +100,6 @@ class HurluBerlu:
 if __name__ == "__main__":
     import argparse
 
-    from berlue.core.schemas import Verdict
-
     parser = argparse.ArgumentParser(description="Démo du pipeline HurluBerlu, étape par étape.")
     parser.add_argument(
         "--until",
@@ -109,20 +107,17 @@ if __name__ == "__main__":
         default="fusion",  # Le défaut va jusqu'au bout, c'est à dire la fusion !
         help="S'arrête après cette étape (défaut : fusion).",
     )
-    # parser.add_argument("--question", default="Pourquoi l'eau mouille ?", help="Question posée au LLM.")
     parser.add_argument("--question", default="Has Ryan Gosling visited Africa ?", help="Question posée au LLM.")
-    args = parser.parse_args()
-
-    parser.add_argument("--model", type=str, default=OLLAMA_MODEL, help="Le modèle LLM à utiliser")
-    args = parser.parse_args()
-
-    parser.add_argument("--rag", type=str, default=RAG_MODEL, help="Le modèle LLM à utiliser")
+    parser.add_argument("--model", type=str, default=OLLAMA_MODEL, help="Modèle qui répond et fournit les échantillons")
+    parser.add_argument("--rag", type=str, default=RAG_MODEL, help="Modèle du RAG inversé")
     parser.add_argument(
         "--log-level",
         choices=["ERROR", "WARNING", "INFO", "DEBUG"],
         default=None,
         help="Niveau de log (défaut : BERLUE_LOG_LEVEL, ou INFO).",
     )
+    # Un seul parse_args, après TOUS les add_argument : les trois appels successifs
+    # d'avant faisaient rejeter --model, --rag et --log-level comme inconnus.
     args = parser.parse_args()
 
     from berlue.logging_config import setup_logging
@@ -199,12 +194,15 @@ if __name__ == "__main__":
         if final_result.rag_scores:
             rag_verdict = rag_dict.get(claim.id)
             if rag_verdict:
-                if rag_verdict.verdict == Verdict.SUPPORTED:
-                    rag_alert = "🟢 SUPPORTÉ"
-                elif rag_verdict.verdict == Verdict.CONTRADICTED:
-                    rag_alert = "🔴 CONTREDIT"
-                else:
-                    rag_alert = "⚪ PAS ASSEZ D'INFOS"
+                # Le RAG rend un RagJudgment, pas un Verdict : comparer aux membres de
+                # Verdict ne pouvait jamais être vrai, et la ligne affichait donc
+                # toujours « PAS ASSEZ D'INFOS ».
+                rag_alert = {
+                    RagJudgment.FEVER_CONFIRMS: "🟢 PROUVÉ VRAI (FEVER)",
+                    RagJudgment.FEVER_REFUTES: "🔴 PROUVÉ FAUX (FEVER)",
+                    RagJudgment.LIKELY_TRUE: "🟢 PROBABLEMENT VRAI",
+                    RagJudgment.LIKELY_FALSE: "🔴 PROBABLEMENT FAUX",
+                }.get(rag_verdict.verdict, "⚪ PAS ASSEZ D'INFOS")
 
                 print(f"      ↳ 📚 [RAG]       : {rag_alert} | Confiance : {rag_verdict.confidence:.2f}")
 
