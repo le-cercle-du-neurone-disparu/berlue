@@ -13,7 +13,7 @@ from berlue.core.schemas import Verdict
 from berlue.evaluation.gcp_result_store import GcpResultStore
 from berlue.evaluation.result_store import EvalScope
 
-pytestmark = pytest.mark.functional
+pytestmark = pytest.mark.gcp
 
 MODEL_ID = "pytest-gcp-smoke-test"
 
