@@ -76,7 +76,7 @@ class OllamaClient:
             names.append(name)
         return names
 
-    def generate(self, prompt: str, temperature: float = BASE_TEMPERATURE, num_predict: int | None = None) -> str:
+    def generate(self, prompt: str, temperature: float | None = None, num_predict: int | None = None) -> str:
         """Génère une réponse pour `prompt` à la température donnée. Chaque
         appel est indépendant (endpoint `/api/generate`, stateless) — pas
         d'historique de conversation entre deux appels, même consécutifs sur
@@ -92,6 +92,10 @@ class OllamaClient:
         un appel de génération resté bloqué plus de 120s de cette façon).
         À fixer à chaque appel dont la longueur attendue est connue."""
 
+        # `None` (le défaut) veut dire « celle du client » ; une valeur explicite prime.
+        # Avec `BASE_TEMPERATURE` en défaut de signature, `temperature` n'était jamais
+        # `None` et `self.temperature` n'était jamais lue : la température passée au
+        # constructeur — donc celle du payload de l'API — ne faisait rien.
         final_temp = temperature if temperature is not None else self.temperature
         options = {"temperature": final_temp}
         if num_predict is not None:

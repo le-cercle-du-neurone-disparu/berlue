@@ -155,3 +155,23 @@ def test_generate_many_returns_k_real_answers_from_ollama():
 
     assert len(results) == 2
     assert all(isinstance(r, str) and r.strip() for r in results)
+
+
+def test_la_temperature_du_constructeur_est_utilisee(monkeypatch):
+    """`OllamaClient(temperature=...)` doit s'appliquer aux appels qui n'en
+    passent pas : c'est par là que l'API transmettait la température du payload,
+    et elle était silencieusement ignorée."""
+    vues = []
+
+    class FakeClient:
+        def generate(self, model, prompt, options):
+            vues.append(options["temperature"])
+            return {"response": "ok"}
+
+    client = OllamaClient(temperature=0.7)
+    monkeypatch.setattr(client, "client", FakeClient())
+
+    client.generate("q")
+    client.generate("q", temperature=0.1)
+
+    assert vues == [0.7, 0.1], "défaut = celle du client, valeur explicite = prioritaire"
