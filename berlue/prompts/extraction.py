@@ -1,30 +1,42 @@
 # berlue/prompts/extraction.py
 # ruff: noqa: E501
 
-EXTRACT_SYSTEM_PROMPT = """You are an expert in linguistic and factual analysis. Your task is to break down the provided text into a list of verifiable, self-contained claims.
+EXTRACT_SYSTEM_PROMPT = """You are a strict data extraction AI. Your ONLY job is to extract factual claims from the <answer> based on the context of the <question>.
 
-STRICT RULES:
-1. PRESERVE LOGICAL CONNECTIONS: Do not over-segment the text. Keep cause-and-effect, conditional, or consequential relationships intact ("because", "since", "when", "causing").
-2. SMART PRONOUN RESOLUTION: Each claim must be understandable out of context. Replace a pronoun with the explicit entity ONLY if the subject is missing from the claim. If the main subject is already clearly named in the sentence, keep the other pronouns so the sentence remains natural.
-3. ABSOLUTE FIDELITY: Do not invent anything and do not correct the text. If the text asserts an absurdity or an error, extract that absurd claim as is, exactly as written, without attempting to make it logical.
-4. FORMAT: You must respond ONLY with a strict JSON array containing strings.
+CRITICAL BANS (FAILING THESE WILL BREAK THE SYSTEM):
+- NEVER extract or repeat the <question>.
+- NEVER include conversational words like "Yes", "No", "Oui", "Non".
+- NEVER use pronouns ("he", "she", "il", "elle", "ce"). You MUST replace them with the real entity name from the <question>.
 
-=== EXAMPLE ===
+EXTRACTION RULES:
+1. CORE SYNTHESIS (CLAIM 1): If the <answer> implies a direct Yes/No response to the <question>, your FIRST claim must explicitly state that overarching fact (e.g., if Q: "Did X go to Y?", claim 1 is "X went to Y.").
+2. ATOMIC DETAILS: Split the remaining details into standalone facts.
+3. DATABASE LANGUAGE: You MUST translate and output all final claims in ENGLISH, because they will be checked against an English knowledge base.
+4. FORMAT: Strict JSON array of strings.
 
-Text to analyze:
-"Marie Curie is a physicist. She discovered radium because she worked tirelessly. This discovery earned her a Nobel Prize."
+=== EXAMPLES ===
 
+<question>Ryan Gosling a-t-il déjà été en Afrique?</question>
+<answer>Oui, il a participé à la campagne "All In for Kids" en 2014, qui a aidé les enfants de l'Afrique du Sud.</answer>
+JSON Response:
+[
+    "Ryan Gosling has been to Africa.",
+    "Ryan Gosling participated in the 'All In for Kids' campaign in 2014.",
+    "The 'All In for Kids' campaign in 2014 helped children in South Africa."
+]
+
+<question>Qui est Marie Curie et qu'a-t-elle fait ?</question>
+<answer>Elle est physicienne. Elle a découvert le radium parce qu'elle a travaillé sans relâche.</answer>
 JSON Response:
 [
     "Marie Curie is a physicist.",
-    "Marie Curie discovered radium because she worked tirelessly.",
-    "The discovery of radium earned Marie Curie a Nobel Prize."
+    "Marie Curie discovered radium because she worked tirelessly."
 ]
 
-=== END OF EXAMPLE ===
+=== END OF EXAMPLES ===
 
-Text to analyze:
-"{answer_text}"
+<question>{question}</question>
+<answer>{answer_text}</answer>
 
 JSON Response:
 """

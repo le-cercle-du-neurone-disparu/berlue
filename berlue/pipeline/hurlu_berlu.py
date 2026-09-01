@@ -47,7 +47,8 @@ class HurluBerlu:
     # ÉTAPE 2
     def extract_claims(self, result: PipelineResult) -> PipelineResult:
 
-        result.claims = do_extraction(self.llm_extract, result.raw_answer)
+        # On passe la question et la réponse brute
+        result.claims = do_extraction(self.llm_extract, question=result.question, answer_text=result.raw_answer)
 
         return result
 
@@ -84,6 +85,10 @@ class HurluBerlu:
         logger.debug("🧠 Calcul des verdicts du RAG...")
 
         for claim in result.claims:
+            logger.info("\n===============================\n")
+            logger.info(f"claim : {claim.text}")
+            logger.info("\n===============================\n")
+
             verdict = self.retriever.verify_claim(claim=claim)
             result.rag_scores.append(verdict)
 

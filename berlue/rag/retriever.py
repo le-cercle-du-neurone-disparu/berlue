@@ -18,9 +18,11 @@ logger = logging.getLogger(__name__)
 # "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
 # garde que SUPPORTS/REFUTES) ; gardé ici pour les retours anticipés de verify_claim.
 FEVER_LABEL_TO_VERDICT = {
-    "SUPPORTS": Verdict.SUPPORTED,
-    "REFUTES": Verdict.CONTRADICTED,
-    "NOT ENOUGH INFO": Verdict.NOT_ENOUGH_INFO,
+    "FEVER_CONFIRMS": Verdict.SUPPORTED,
+    "FEVER_REFUTES": Verdict.CONTRADICTED,
+    "LIKELY_TRUE": Verdict.SUPPORTED,
+    "LIKELY_FALSE": Verdict.CONTRADICTED,
+    "I_DONT_KNOW": Verdict.NOT_ENOUGH_INFO,
 }
 
 
@@ -56,6 +58,10 @@ class RagRetriever:
         # 1. Génération l'embedding de l'affirmation
         claim_embedding = self.model.encode(claim.text, convert_to_numpy=True).reshape(1, -1)
 
+        logger.info("\n===============================\n")
+        logger.info(f"claim : {claim.text}")
+        logger.info("\n===============================\n")
+
         # 2. Recherche dans l'index
         distances, indices = self.index.search(claim_embedding, top_k)
 
@@ -79,11 +85,19 @@ class RagRetriever:
         # 1. Récupération des preuves (le contexte)
         evidences = self.retrieve(claim, top_k=3)  # Top 3 est souvent suffisant pour un LLM
 
+        logger.info("\n===============================\n")
+        logger.info(f"evidences : {evidences}")
+        logger.info("\n===============================\n")
+
         if not evidences:
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
 
         # 2. Préparation du contexte (on ajoute un index pour que le LLM puisse citer facilement)
-        context_texts = "\n".join([f"[Preuve {i}] {ev['text']}" for i, ev in enumerate(evidences)])
+        context_texts = "\n".join([f"[Excerpt {i}] {ev['text']}" for i, ev in enumerate(evidences)])
+
+        logger.info("\n===============================\n")
+        logger.info(f"chunks : {context_texts}")
+        logger.info("\n===============================\n")
 
         # 3. Construction du prompt blindé anti-hallucination
         prompt = RAG_SYSTEM_PROMPT.format(claim_text=claim.text, context_texts=context_texts)
@@ -95,7 +109,16 @@ class RagRetriever:
             clean_json_str = match.group(0) if match else "{}"
             llm_result = json.loads(clean_json_str)
 
+            logger.info("\n=========== llm_result ===============\n")
+            logger.info(f"{llm_result}")
+            logger.info("\n===============================\n")
+
             verdict_str = llm_result.get("verdict", "NOT ENOUGH INFO")
+
+            logger.info("\n=========== verdict_str ===============\n")
+            logger.info(f"{verdict_str}")
+            logger.info("\n===============================\n")
+
             confidence = float(llm_result.get("confidence", 0.0))
             used_idx = llm_result.get("used_evidence_index")
 

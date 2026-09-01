@@ -53,7 +53,4 @@ def train_baseline(out_path: str = NLI_BASELINE_PATH, train_ratio: float = TRAIN
 
 
 if __name__ == "__main__":
-    from berlue.logging_config import setup_logging
-
-    setup_logging()
     train_baseline()
