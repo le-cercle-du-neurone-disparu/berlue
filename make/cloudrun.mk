@@ -323,8 +323,8 @@ cloudrun_deploy_all: gcp_check_cli_auth ## Déploie les 3 services (Ollama, éva
 #
 # Les trois cibles passent par scripts/cloudrun_set_min.sh : un service pas
 # encore déployé est ignoré avec un avertissement, jamais une erreur qui
-# empêcherait de traiter les suivants (côté gcp_down, ça laissait un service
-# allumé — et facturé).
+# empêcherait de traiter les suivants — côté gcp_down, un service non traité
+# reste allumé, donc facturé.
 # ⚠️ Coûte tant que c'est en l'air — ne pas oublier gcp_down.
 
 WARM_MODELS ?=
