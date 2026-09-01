@@ -92,11 +92,16 @@ class RagRetriever:
         if not evidences:
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
 
-        # 2. Préparation du contexte (on ajoute un index pour que le LLM puisse citer facilement)
-        context_texts = "\n".join([f"[Excerpt {i}] {ev['text']}" for i, ev in enumerate(evidences)])
+        # 2. Préparation du contexte (liste de dictionnaires convertie en chaîne formatée)
+        # On inclut l'index pour la traçabilité, le texte, et surtout le statut de vérité (label)
+        context_list = []
+        for i, ev in enumerate(evidences):
+            context_list.append({"excerpt_index": i, "text": ev["text"], "fever_label": ev["label"]})
+
+        context_texts = json.dumps(context_list, ensure_ascii=False, indent=2)
 
         logger.info("\n===============================\n")
-        logger.info(f"chunks : {context_texts}")
+        logger.info(f"chunks JSON : \n{context_texts}")
         logger.info("\n===============================\n")
 
         # 3. Construction du prompt blindé anti-hallucination
