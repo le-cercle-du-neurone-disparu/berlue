@@ -10,13 +10,33 @@
 GCP_CLI_AUTH_CACHE_FILE = /tmp/.berlue-gcp-cli-auth-ok-$(GCP_PROJECT)
 GCP_AUTH_CACHE_MINUTES = 10
 
-# Vrai appel gcloud (CLI) — utilisé par gcp_auth (fix si besoin) et
-# gcp_check_cli_auth (échoue si besoin), pour ne pas dupliquer le test.
-_gcp_check_cli_auth:
-	@gcloud run services list --project=$(GCP_PROJECT) --region=$(GCP_REGION) >/dev/null 2>&1
+# Compte gcloud actuellement actif — jamais `gcloud config get-value account`,
+# vide (ou "(unset)") tant que personne n'a positionné core/account, ce qui
+# produit un membre IAM `user:` que gcloud rejette. Évalué dans la recette et
+# pas au parse : un $(shell ...) ici coûterait un appel gcloud à chaque `make`,
+# y compris `make help`.
+GCLOUD_ACTIVE_ACCOUNT = $$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -n1)
 
-gcp_auth: ## Authentifie la session gcloud CLI via un vrai appel GCP, et ne relance le login que si nécessaire
-	@echo "🔎 Vérification de l'authentification gcloud (CLI) — appel réel à Cloud Run..."
+# Vérifie que la session gcloud est utilisable — SANS toucher à une API du
+# projet. L'ancien test (`gcloud run services list`) échouait sur un projet
+# où run.googleapis.com n'est pas encore activée, donc exactement sur le
+# projet neuf que gcp_setup doit provisionner : message trompeur ("non
+# authentifiée"), login inutile, et gcp_setup bloqué par son propre
+# prérequis. Pire, gcloud propose alors d'activer l'API de façon interactive
+# ("Would you like to enable and retry?") : sans `</dev/null` la recette
+# gèle en attendant une réponse invisible. `print-access-token` ne dépend
+# que du credential lui-même et échoue bien quand la session a expiré.
+_gcp_check_cli_auth:
+	@gcloud auth print-access-token >/dev/null 2>&1 </dev/null
+
+# Deuxième niveau, distinct du premier : le projet existe-t-il et m'est-il
+# accessible ? (cloudresourcemanager répond sans activation préalable.) Un
+# projet inconnu n'est pas une session expirée — deux causes, deux messages.
+_gcp_check_project:
+	@gcloud projects describe $(GCP_PROJECT) >/dev/null 2>&1 </dev/null
+
+gcp_auth: ## Authentifie la session gcloud CLI, et ne relance le login que si nécessaire
+	@echo "🔎 Vérification de la session gcloud (CLI)..."
 	@if $(MAKE) --no-print-directory _gcp_check_cli_auth; then \
 		echo "✅ CLI gcloud déjà authentifiée."; \
 	else \
@@ -35,32 +55,135 @@ gcp_check_cli_auth: ## Vérifie que la session gcloud CLI est authentifiée, éc
 	}; \
 	touch $(GCP_CLI_AUTH_CACHE_FILE)
 
-gcp_destroy: gcp_check_cli_auth ## Supprime TOUT ce qui a été déployé sur GCP pour Berlue (3 environnements Cloud Run + dépôt Artifact Registry et ses images + bucket RAG) — demande confirmation
+gcp_preflight: ## Vérifie tout ce qui doit être vrai AVANT de provisionner (outils, GCP_PROJECT, session, projet accessible, facturation) — prérequis de gcp_setup, échoue en nommant la cause
+	@echo "🔎 Pré-vol..."
+	@command -v gcloud >/dev/null 2>&1 || { \
+		echo "❌ gcloud introuvable. Installez le Google Cloud SDK : https://cloud.google.com/sdk/docs/install"; \
+		exit 1; \
+	}
+	@command -v bq >/dev/null 2>&1 || { \
+		echo "❌ bq introuvable (livré avec le Google Cloud SDK) : gcloud components install bq"; \
+		exit 1; \
+	}
+	@if [ -z "$(GCP_PROJECT)" ]; then \
+		echo "❌ GCP_PROJECT est vide — renseignez-le dans .env (cf. make local_setup, docs/setup/local-setup.md)."; \
+		exit 1; \
+	fi
+	@$(MAKE) --no-print-directory _gcp_check_cli_auth || { \
+		echo "❌ Session gcloud absente ou expirée. Lancez : make gcp_auth"; \
+		exit 1; \
+	}
+	@$(MAKE) --no-print-directory _gcp_check_project || { \
+		echo "❌ Projet '$(GCP_PROJECT)' inaccessible ou inexistant (ce n'est PAS un problème d'authentification)."; \
+		echo "   Vérifiez GCP_PROJECT dans .env, ou listez vos projets : make gcp_project_list"; \
+		exit 1; \
+	}
+	@ACCOUNT="$(GCLOUD_ACTIVE_ACCOUNT)"; \
+	if [ -z "$$ACCOUNT" ]; then \
+		echo "❌ Aucun compte gcloud actif. Lancez : make gcp_auth"; \
+		exit 1; \
+	fi; \
+	echo "✅ Compte actif : $$ACCOUNT — projet : $(GCP_PROJECT)"
+	@BILLING=$$(gcloud beta billing projects describe $(GCP_PROJECT) --format="value(billingEnabled)" 2>/dev/null </dev/null); \
+	if [ "$$BILLING" = "True" ]; then \
+		echo "✅ Facturation active sur $(GCP_PROJECT)."; \
+	elif [ -z "$$BILLING" ]; then \
+		echo "⚠️  Facturation non vérifiable (droits insuffisants sur le compte de facturation, ou 'gcloud beta' absent) — on continue."; \
+	else \
+		echo "❌ Aucun compte de facturation lié à $(GCP_PROJECT) : Cloud Run, Artifact Registry et GCS refuseront tout."; \
+		echo "   👉 https://console.cloud.google.com/billing/linkedaccount?project=$(GCP_PROJECT)"; \
+		exit 1; \
+	fi
+	@CURRENT=$$(gcloud config get-value project 2>/dev/null); \
+	if [ -z "$$CURRENT" ] || [ "$$CURRENT" = "(unset)" ]; then \
+		echo "⚙️  gcloud n'a pas de projet par défaut — on positionne $(GCP_PROJECT)."; \
+		gcloud config set project $(GCP_PROJECT) >/dev/null 2>&1 </dev/null; \
+	elif [ "$$CURRENT" != "$(GCP_PROJECT)" ]; then \
+		echo "⚠️  Projet gcloud par défaut ($$CURRENT) différent de GCP_PROJECT ($(GCP_PROJECT))."; \
+		echo "   Sans effet ici (toutes les cibles passent --project), laissé tel quel volontairement."; \
+	fi
+	@echo "✅ Pré-vol OK."
+
+# API activées en un seul appel plutôt qu'une par cible : `gcloud services
+# enable` accepte une liste, et une seule opération à attendre au lieu de
+# cinq. artifactregistry est à part (elle vit dans ARTIFACT_PROJECT, pas
+# forcément GCP_PROJECT), appoptimize aussi (confort, cf. gcp_setup).
+#
+# iam/iamcredentials/cloudresourcemanager/storage sont listées par principe :
+# mesurées "DISABLED" sur un projet où l'impersonation, la création de compte
+# de service, les bindings IAM et les buckets fonctionnent pourtant — GCP les
+# traite comme disponibles sans activation explicite. Les activer ne coûte
+# rien et rend la dépendance lisible ; n'en attendre aucun déblocage.
+GCP_APIS = \
+	run.googleapis.com \
+	firestore.googleapis.com \
+	bigquery.googleapis.com \
+	compute.googleapis.com \
+	iam.googleapis.com \
+	iamcredentials.googleapis.com \
+	cloudresourcemanager.googleapis.com \
+	storage.googleapis.com
+
+gcp_enable_apis: gcp_check_cli_auth ## Active en un seul appel toutes les API dont Berlue dépend (+ Artifact Registry dans ARTIFACT_PROJECT)
+	@echo "⚙️ Activation des API dans $(GCP_PROJECT)..."
+	gcloud services enable $(GCP_APIS) --project=$(GCP_PROJECT) </dev/null
+	@$(MAKE) --no-print-directory artifact_registry_enable_api
+
+gcp_destroy: gcp_check_cli_auth ## Supprime tout ce qui est DÉPLOYÉ sur GCP pour Berlue (les 5 services Cloud Run + dépôt Artifact Registry et ses images + bucket RAG) — garde les données d'éval, cf. gcp_destroy_all
 	@echo "⚠️  Ceci va supprimer DÉFINITIVEMENT :"
 	@echo "   - Les services Cloud Run : $(GAR_IMAGE)-test, $(GAR_IMAGE)-staging, $(GAR_IMAGE)-prod"
+	@echo "   - Les services Cloud Run : $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE)"
 	@echo "   - Le dépôt Artifact Registry : $(ARTIFACTSREPO) (et toutes les images qu'il contient)"
 	@echo "   - Le bucket RAG : $(RAG_BUCKET_NAME) (et l'index qu'il contient)"
+	@echo "   Conservés : Firestore, BigQuery, $(CLOUDRUN_SA_EMAIL) (cf. make gcp_destroy_all)."
 	@read -p "Confirmer la suppression ? (taper 'oui' pour continuer) " confirm && [ "$$confirm" = "oui" ] || { echo "Annulé."; exit 1; }
 	@$(MAKE) --no-print-directory cloudrun_delete CLOUDRUN_ENV=test || true
 	@$(MAKE) --no-print-directory cloudrun_delete CLOUDRUN_ENV=staging || true
 	@$(MAKE) --no-print-directory cloudrun_delete CLOUDRUN_ENV=prod || true
+	@$(MAKE) --no-print-directory cloudrun_eval_service_delete || true
+	@$(MAKE) --no-print-directory cloudrun_llm_delete || true
 	@$(MAKE) --no-print-directory artifact_registry_delete || true
 	@$(MAKE) --no-print-directory rag_bucket_delete || true
 	@echo "✅ Suppression terminée."
 
-gcp_setup: gcp_check_cli_auth ## Provisionne l'infra GCP nécessaire au projet Berlue (API Firestore/BigQuery/Cloud Run/Compute + Firestore + dataset BigQuery + service account Cloud Run + observabilité des coûts + bucket RAG) — tout ce qui est gratuit et anticipable, jamais gcp_up/gcp_down (ça, c'est le coût variable à la demande)
-	@echo "🚀 Mise en place de l'infra GCP..."
-	@$(MAKE) --no-print-directory firestore_enable_api
-	@$(MAKE) --no-print-directory bigquery_enable_api
-	@$(MAKE) --no-print-directory cloudrun_enable_api
-	@$(MAKE) --no-print-directory gcp_enable_compute
+gcp_destroy_all: gcp_check_cli_auth ## gcp_destroy + Firestore, dataset BigQuery et compte de service — annule gcp_setup ET DÉTRUIT LES DONNÉES D'ÉVAL (confirmation par l'ID du projet)
+	@echo "🚨 Ceci va supprimer tout ce que supprime gcp_destroy, PLUS :"
+	@echo "   - La base Firestore (default) — TOUT le cache de prédictions d'éval"
+	@echo "   - Le dataset BigQuery $(BQ_DATASET) — TOUTES les matrices d'éval"
+	@echo "   - Le compte de service $(CLOUDRUN_SA_EMAIL)"
+	@echo "   Ces données ne sont récupérables par aucune commande de ce dépôt."
+	@read -p "Pour confirmer, tapez l'ID du projet ($(GCP_PROJECT)) : " confirm && [ "$$confirm" = "$(GCP_PROJECT)" ] || { echo "Annulé."; exit 1; }
+	@$(MAKE) --no-print-directory gcp_destroy
+	@echo "💣 Suppression de la base Firestore (default)..."
+	@gcloud firestore databases delete --database="(default)" --project=$(GCP_PROJECT) --quiet </dev/null || true
+	@$(MAKE) --no-print-directory bigquery_delete_dataset || true
+	@echo "💣 Suppression du compte de service $(CLOUDRUN_SA_EMAIL)..."
+	@gcloud iam service-accounts delete $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) --quiet </dev/null || true
+	@echo "✅ Projet ramené à son état d'avant gcp_setup."
+
+gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (API, Firestore, BigQuery, compte de service, Artifact Registry + auth Docker, bucket RAG) — rejouable ; ne build aucune image et ne crée aucun service Cloud Run (coût variable, cf. cloudrun.md)
+	@echo "🚀 Mise en place de l'infra GCP sur $(GCP_PROJECT)..."
+	@$(MAKE) --no-print-directory gcp_enable_apis
 	@$(MAKE) --no-print-directory firestore_create_database
 	@$(MAKE) --no-print-directory bigquery_create_dataset
 	@$(MAKE) --no-print-directory iam_setup_cloudrun_service_account
-	@$(MAKE) --no-print-directory gcp_enable_cost_observability
+	@$(MAKE) --no-print-directory artifact_registry_create
+	@$(MAKE) --no-print-directory artifact_registry_role
+	@$(MAKE) --no-print-directory docker_auth_if_available
 	@$(MAKE) --no-print-directory rag_bucket_create
 	@$(MAKE) --no-print-directory rag_bucket_grant_sa
-	@echo "✅ Infra GCP prête."
+	@$(MAKE) --no-print-directory gcp_enable_cost_observability || \
+		echo "⚠️  Observabilité des coûts non activée (confort, sans impact sur le reste) — make gcp_enable_cost_observability pour réessayer."
+	@echo ""
+	@$(MAKE) --no-print-directory gcp_doctor
+
+gcp_deploy: gcp_check_cli_auth ## Build + push les 3 images PUIS déploie les 3 services (CLOUDRUN_ENV=test|staging|prod, défaut test) — le barreau entre gcp_setup (l'infra) et gcp_up (allumer)
+	@echo "📦 Build/push des images puis déploiement (CLOUDRUN_ENV=$(CLOUDRUN_ENV))..."
+	@$(MAKE) --no-print-directory docker_build_push_all
+	@$(MAKE) --no-print-directory cloudrun_deploy_all
+
+gcp_doctor: ## Vérifie brique par brique que l'infra GCP est réellement utilisable (n'échoue pas à la première erreur) et rappelle ce qui reste à faire à la main
+	@bash scripts/gcp_doctor.sh
 
 gcp_project_list: ## Liste tous les projets GCP disponibles pour votre compte
 	@echo "📋 Listing des projets GCP..."
@@ -137,46 +260,57 @@ iam_setup_service_account: ## Crée le compte de service et lui assigne les rôl
 		--quiet
 
 iam_setup_cloudrun_service_account: gcp_check_cli_auth ## Crée $(CLOUDRUN_SA_NAME) (compte de service Cloud Run) et lui donne les droits Firestore/BigQuery nécessaires à EVAL_STORE_TARGET=gcp
-	@if gcloud iam service-accounts describe $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) >/dev/null 2>&1; then \
+	@if gcloud iam service-accounts describe $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) >/dev/null 2>&1 </dev/null; then \
 		echo "✅ Compte de service $(CLOUDRUN_SA_EMAIL) déjà présent, création sautée."; \
 	else \
 		echo "🤖 Création du compte de service $(CLOUDRUN_SA_EMAIL)..."; \
 		gcloud iam service-accounts create $(CLOUDRUN_SA_NAME) \
 			--display-name="Berlue Cloud Run (éval GCP)" \
-			--project=$(GCP_PROJECT); \
+			--project=$(GCP_PROJECT) </dev/null; \
 	fi
+	@# Un compte de service tout juste créé n'est pas immédiatement visible des
+	@# commandes suivantes (cohérence éventuelle) : les bindings ci-dessous
+	@# échouent alors en "does not exist". Invisible sur un projet déjà
+	@# provisionné, où le SA existe depuis longtemps.
+	@$(RETRY) "propagation de $(CLOUDRUN_SA_EMAIL)" \
+		gcloud iam service-accounts describe $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) --format="value(email)"
 	@echo "🔐 Firestore lecture/écriture (datastore.user), restreint à la base (default)..."
 	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
 		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
 		--role="roles/datastore.user" \
 		--condition="$(FIRESTORE_CONDITION)" \
-		--quiet
+		--quiet </dev/null
 	@echo "🔐 BigQuery — lecture/écriture des données (dataEditor)..."
 	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
 		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
 		--role="roles/bigquery.dataEditor" \
 		--condition=None \
-		--quiet
+		--quiet </dev/null
 	@echo "🔐 BigQuery — exécution de requêtes (jobUser — sans lui, dataEditor seul ne permet pas de lancer une requête MERGE/SELECT)..."
 	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
 		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
 		--role="roles/bigquery.jobUser" \
 		--condition=None \
-		--quiet
-	@echo "🔐 Autorise votre compte à déployer Cloud Run avec ce service account (iam.serviceAccountUser, sur le SA lui-même)..."
+		--quiet </dev/null
+	@ACCOUNT="$(GCLOUD_ACTIVE_ACCOUNT)"; \
+	if [ -z "$$ACCOUNT" ]; then \
+		echo "❌ Aucun compte gcloud actif — impossible de vous accorder les droits sur $(CLOUDRUN_SA_EMAIL). Lancez : make gcp_auth"; \
+		exit 1; \
+	fi; \
+	echo "🔐 Autorise $$ACCOUNT à déployer Cloud Run avec ce service account (iam.serviceAccountUser, sur le SA lui-même)..."; \
 	gcloud iam service-accounts add-iam-policy-binding $(CLOUDRUN_SA_EMAIL) \
-		--member="user:$$(gcloud config get-value account)" \
+		--member="user:$$ACCOUNT" \
 		--role="roles/iam.serviceAccountUser" \
 		--project=$(GCP_PROJECT) \
 		--condition=None \
-		--quiet
-	@echo "🔐 Autorise votre compte à tester ce service account par impersonation (iam.serviceAccountTokenCreator — distinct de serviceAccountUser, qui ne permet que de l'attacher à Cloud Run) : 'gcloud auth print-access-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL)'..."
+		--quiet </dev/null; \
+	echo "🔐 Autorise $$ACCOUNT à tester ce service account par impersonation (iam.serviceAccountTokenCreator — distinct de serviceAccountUser, qui ne permet que de l'attacher à Cloud Run) : 'gcloud auth print-access-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL)'..."; \
 	gcloud iam service-accounts add-iam-policy-binding $(CLOUDRUN_SA_EMAIL) \
-		--member="user:$$(gcloud config get-value account)" \
+		--member="user:$$ACCOUNT" \
 		--role="roles/iam.serviceAccountTokenCreator" \
 		--project=$(GCP_PROJECT) \
 		--condition=None \
-		--quiet
+		--quiet </dev/null
 
 # Accès par personne sur sa-berlue lui-même (pas sur Firestore/BigQuery
 # directement — cf. firestore_grant/bigquery_grant pour ça). CLOUDRUN_SA_ROLE
