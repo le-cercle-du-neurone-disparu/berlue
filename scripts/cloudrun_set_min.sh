@@ -40,11 +40,11 @@ current=$(gcloud run services describe "$service" \
 # déploiement complet (~1 min), ni à gonfler l'historique de révisions, ni —
 # côté GPU — à jeter le modèle déjà chargé en VRAM (disque éphémère).
 #
-# Le saut exige une valeur POSITIVEMENT lue : une lecture vide (annotation
-# absente, ou appel qui n'a rien renvoyé) ne doit jamais faire conclure "déjà
-# à la bonne valeur". Sur gcp_down cela annoncerait une extinction qui n'a pas
-# eu lieu, en laissant le service facturé. Dans le doute, on applique.
-if [ "$#" -eq 0 ] && [ -n "$current" ] && [ "$current" = "$min" ]; then
+# Cloud Run RETIRE l'annotation minScale quand min-instances vaut 0 : une
+# valeur vide ici signifie donc 0, pas "illisible". Le cas illisible est déjà
+# traité au-dessus, par le code de retour de `describe` — si on arrive ici,
+# la lecture a réussi.
+if [ "$#" -eq 0 ] && [ "${current:-0}" = "$min" ]; then
     echo "   ✅ $service : déjà à min-instances=$min"
     exit 0
 fi
