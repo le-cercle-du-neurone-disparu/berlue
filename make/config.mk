@@ -26,6 +26,9 @@ RETRY = bash scripts/gcp_retry.sh
 # un service pas encore déployé :
 #   $(CLOUDRUN_SET_MIN) <service> <n> [args gcloud...]
 CLOUDRUN_SET_MIN = bash scripts/cloudrun_set_min.sh
+# Vérifie qu'un service ne fait plus tourner d'instance, et le supprime sinon :
+#   $(CLOUDRUN_ENSURE_DOWN) <service>
+CLOUDRUN_ENSURE_DOWN = bash scripts/cloudrun_ensure_down.sh
 
 # --- Python & environnement local ---
 PYTHON_VERSION = 3.14.6
@@ -112,14 +115,12 @@ CLOUDRUN_PUBLIC_test = true
 CLOUDRUN_PUBLIC_staging = true
 CLOUDRUN_PUBLIC_prod = true
 
-# Service Cloud Run d'éval (mode batch/CLI exécuté à la demande, tourne en
-# continu avec min-instances=1 — cf. `make gcp_eval_up`/`gcp_down`,
-# docs/evaluation/execution-benchmark.md pour pourquoi). "-mocked" : rappel
-# volontaire que le pipeline Berlue exécuté dedans est encore
-# RandomBerluePipeline, pas HurluBerlu (cf. docs/evaluation/run.md).
-# Renommer une fois le vrai pipeline branché.
-GAR_EVAL_SERVICE_IMAGE = berlue-eval-mocked-service
-CLOUDRUN_EVAL_SERVICE = berlue-eval-mocked-service
+# Service Cloud Run d'éval (mode batch/CLI exécuté à la demande, monté à
+# min-instances=1 le temps d'une session — cf. `make gcp_eval_up`/`gcp_down`,
+# docs/evaluation/execution-benchmark.md pour pourquoi). Exécute le vrai
+# pipeline Berlue (HurluBerlu, via BerluePipeline), cf. run_eval.py.
+GAR_EVAL_SERVICE_IMAGE = berlue-eval
+CLOUDRUN_EVAL_SERVICE = berlue-eval
 
 # Service Cloud Run Ollama, appelé par le service d'éval en mode
 # généré, API) — cf. Dockerfile.llm, docs/gcp/infra-gpu.md.

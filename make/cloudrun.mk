@@ -13,6 +13,11 @@
 
 CLOUDRUN_ENV ?= test
 
+# Règle commune aux 3 services : --max-instances=1 (jamais de montée en
+# charge, le budget prime sur le débit) et --min-instances=0 au déploiement
+# (rien de garanti chaud, donc rien de facturé). Seuls gcp_up/gcp_eval_up
+# passent min à 1, le temps d'une session ; gcp_down le remet à 0.
+
 cloudrun_enable_api: gcp_check_cli_auth ## Active l'API Cloud Run pour le projet
 	@echo "⚙️ Activation de l'API Cloud Run..."
 	gcloud services enable run.googleapis.com --project=$(GCP_PROJECT) </dev/null
@@ -53,6 +58,8 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		--memory $(GAR_MEMORY) \
 		--cpu $(GAR_CPU) \
 		--timeout=$(GAR_TIMEOUT) \
+		--min-instances=0 \
+		--max-instances=1 \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
@@ -133,14 +140,13 @@ rag_index_upload: gcp_check_cli_auth ## Upload l'index FAISS local (data/fever/f
 	@echo "✅ Index disponible sur gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/ — assure-toi que RAG_CORPUS_VERSION=$(RAG_CORPUS_VERSION) au prochain cloudrun_deploy pour le brancher."
 
 # ==============================================================================
-# SERVICE CLOUD RUN — ÉVAL (image berlue-eval-mocked-service, cf. Dockerfile.eval-service)
+# SERVICE CLOUD RUN — ÉVAL (image berlue-eval, cf. Dockerfile.eval-service)
 # ==============================================================================
-# Tourne en continu (min-instances flip via gcp_eval_up/gcp_down) plutôt qu'un
-# conteneur neuf par exécution — remplace l'ancien Job (`berlue-eval-mocked`,
-# déprécié : cf. docs/evaluation/execution-benchmark.md pour la mesure qui a
-# motivé ce choix — ~65% du temps d'un run Job était du scheduling Cloud Run
-# Jobs pur, ~21% des imports Python tiers, les deux payés une seule fois par
-# instance ici au lieu de à chaque exécution). Un seul endpoint `/invoke` —
+# Service qui reste en vie entre deux appels (min-instances basculé par
+# gcp_eval_up/gcp_down) plutôt qu'un conteneur neuf par exécution : le
+# scheduling Cloud Run et les imports Python tiers sont ainsi payés une fois
+# par instance et non à chaque run — mesures dans
+# docs/evaluation/execution-benchmark.md. Un seul endpoint `/invoke` —
 # `berlue/api/eval_service.py`, mêmes flags que la CLI en JSON.
 
 # Mêmes variables scope que evaluate_model/evaluate_model_generated
@@ -159,6 +165,7 @@ cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le serv
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
+		--min-instances=0 \
 		--max-instances=1 \
 		--concurrency=1 \
 		--timeout=900 \
@@ -260,6 +267,7 @@ cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollam
 		--memory=$(LLM_MEMORY) \
 		--concurrency=$(LLM_CONCURRENCY) \
 		--set-env-vars=OLLAMA_NUM_PARALLEL=$(LLM_NUM_PARALLEL)$(if $(LLM_CONTEXT_LENGTH),$(comma)OLLAMA_CONTEXT_LENGTH=$(LLM_CONTEXT_LENGTH),) \
+		--min-instances=0 \
 		--max-instances=1 \
 		--timeout=600 \
 		--port=11434 \
@@ -415,17 +423,36 @@ gcp_eval_up: cloudrun_llm_up ## Monte berlue-eval ET berlue-llm à min-instances
 	fi
 	@echo "✅ gcp_eval_up terminé — cloudrun_eval_service_invoke prêt à l'emploi."
 
-gcp_down: gcp_check_cli_auth ## Redescend berlue-eval, berlue-llm et berlue-api-<env> à min-instances=0 (sécurité budget, idempotent, inconditionnel — un service absent est ignoré, pas bloquant)
-	@echo "🧯 gcp_down : min-instances=0 sur $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE) et $(GAR_IMAGE)-$(CLOUDRUN_ENV)..."
+# Traitement volontairement différencié entre le GPU et les services CPU,
+# fondé sur deux mesures (01/09) :
+#
+#   - berlue-llm facture 60 s par minute au repos (le GPU impose CPU toujours
+#     alloué) : une instance idle coûte plein tarif, et min-instances=0 ne la
+#     tue pas. La suppression est le seul arrêt garanti -> systématique.
+#   - berlue-api/berlue-eval ne facturent qu'à la requête : une instance idle
+#     n'y coûte quasiment rien. Les supprimer ferait perdre l'historique des
+#     métriques — vérifié : après suppression puis recréation sous le même
+#     nom, les séries reviennent à zéro sur toute la période précédente.
+#     Elles ne sont donc supprimées qu'en dernier recours, si une instance
+#     survit anormalement à DOWN_GRACE_SECONDS.
+DOWN_GRACE_SECONDS ?= 180
+
+gcp_down: gcp_check_cli_auth ## Éteint tout : supprime berlue-llm (GPU, seul arrêt garanti) et redescend berlue-eval/berlue-api-<env> à min-instances=0, en les supprimant si une instance survit à DOWN_GRACE_SECONDS (défaut 180s)
+	@echo "🧯 gcp_down : min-instances=0 sur $(CLOUDRUN_EVAL_SERVICE) et $(GAR_IMAGE)-$(CLOUDRUN_ENV)..."
 	@$(CLOUDRUN_SET_MIN) $(CLOUDRUN_EVAL_SERVICE) 0
-	@$(CLOUDRUN_SET_MIN) $(CLOUDRUN_LLM_SERVICE) 0
 	@$(CLOUDRUN_SET_MIN) $(GAR_IMAGE)-$(CLOUDRUN_ENV) 0
+	@echo "🗑️  $(CLOUDRUN_LLM_SERVICE) (GPU) : suppression systématique — une instance idle y coûte plein tarif."
+	@$(MAKE) --no-print-directory cloudrun_llm_delete 2>/dev/null || echo "   ✅ $(CLOUDRUN_LLM_SERVICE) déjà absent."
+	@echo "🔎 Vérification des instances CPU réellement en vie (≤ $(DOWN_GRACE_SECONDS)s par service)..."
+	@$(CLOUDRUN_ENSURE_DOWN) $(CLOUDRUN_EVAL_SERVICE)
+	@$(CLOUDRUN_ENSURE_DOWN) $(GAR_IMAGE)-$(CLOUDRUN_ENV)
 	@echo "✅ gcp_down terminé."
 
-gcp_status: ## Affiche min-instances de berlue-eval, berlue-llm et berlue-api-<env> — à vérifier après chaque gcp_down (ne pas se fier au seul fait que la commande a réussi)
-	@echo "📊 min-instances actuel (CLOUDRUN_ENV=$(CLOUDRUN_ENV)) :"
+gcp_status: ## Affiche, pour chaque service, min-instances (configuration) ET le nombre d'instances réellement en vie (facturées) — les deux ne disent pas la même chose
+	@echo "📊 État (CLOUDRUN_ENV=$(CLOUDRUN_ENV)) — min-instances = configuration, instances = réellement en vie :"
 	@for SVC in $(CLOUDRUN_EVAL_SERVICE) $(CLOUDRUN_LLM_SERVICE) $(GAR_IMAGE)-$(CLOUDRUN_ENV); do \
 		MIN=$$(gcloud run services describe $$SVC --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])" 2>/dev/null </dev/null) \
 			|| { echo "  $$SVC : non déployé"; continue; }; \
-		echo "  $$SVC : min-instances=$${MIN:-0}"; \
+		LIVE=$$(bash scripts/cloudrun_instances.sh $$SVC); \
+		echo "  $$SVC : min-instances=$${MIN:-0}, instances en vie=$$LIVE"; \
 	done

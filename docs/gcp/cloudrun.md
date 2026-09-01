@@ -9,8 +9,37 @@ son coût et ses commandes. Compte de service commun (`sa-berlue`) :
 | Commande | Monte à `min-instances=1` | Pour |
 |---|---|---|
 | `make gcp_up` | `berlue-api-<env>` + `berlue-llm` | le produit : Aletheia → API → LLM |
-| `make gcp_eval_up` | `berlue-eval-mocked-service` + `berlue-llm` | l'évaluation : `/invoke` → LLM |
-| `make gcp_down` | *(les 3 à 0)* | fin de session, toujours |
+| `make gcp_eval_up` | `berlue-eval` + `berlue-llm` | l'évaluation : `/invoke` → LLM |
+| `make gcp_down` | *(éteint tout, cf. ci-dessous)* | fin de session, toujours |
+
+### Ce que `gcp_down` fait exactement
+
+**`min-instances=0` n'éteint pas une instance déjà démarrée** : elle passe
+`idle` et Cloud Run la garde le temps qu'il juge utile. D'où un traitement
+différencié, fondé sur deux mesures :
+
+| Service | Facturation au repos | Traitement par `gcp_down` |
+|---|---|---|
+| `berlue-llm` | **60 s par minute** — le GPU impose CPU toujours alloué, une instance idle coûte plein tarif | **supprimé systématiquement** : c'est le seul arrêt garanti |
+| `berlue-api-<env>`, `berlue-eval` | à la requête seulement — l'idle ne coûte quasiment rien | `min-instances=0`, puis suppression **seulement** si une instance survit à `DOWN_GRACE_SECONDS` (défaut 180 s) |
+
+Les services CPU ne sont pas supprimés d'office parce qu'on y perdrait
+l'historique des métriques : vérifié en conditions réelles, après suppression
+puis recréation sous le même nom, les séries Cloud Monitoring reviennent à
+zéro sur toute la période précédente, et la numérotation des révisions repart
+à `-00001`.
+
+Recréer un service supprimé ne rebuilde aucune image : `make cloudrun_deploy_all`
+(~3-4 min), les images restant dans Artifact Registry.
+
+```bash
+make gcp_status                          # min-instances (config) ET instances réellement en vie
+make gcp_down DOWN_GRACE_SECONDS=300     # délai de grâce allongé
+```
+
+`gcp_status` affiche les deux colonnes volontairement : la configuration ne
+dit rien des instances en vie, et s'y fier fait conclure à tort qu'un service
+est éteint.
 
 `berlue-llm` est commun aux deux — les deux chemins appellent le LLM — et il
 est monté dans les deux cas : **c'est le GPU L4, ~0,67 $/h dès la première
@@ -33,8 +62,12 @@ lui échoue désormais explicitement, au lieu de partir avec un
 `BERLUE_OLLAMA_HOST` vide.
 
 Ce que ça ne fait pas : allumer quoi que ce soit. Les services sortent de
-là à `min-instances=0` — c'est `gcp_up`/`gcp_eval_up` qui forcent une instance chaude, et
-c'est lui qui coûte.
+là à `min-instances=0` — c'est `gcp_up`/`gcp_eval_up` qui forcent une instance
+chaude, et c'est lui qui coûte.
+
+Les trois services sont déployés en **`--min-instances=0 --max-instances=1`** :
+jamais de montée en charge (le budget prime sur le débit), jamais rien de
+garanti chaud au déploiement.
 
 Seule l'API est déclinée par environnement. Le service d'éval et le service
 Ollama sont uniques pour le projet, partagés par les trois environnements :
@@ -46,7 +79,7 @@ autre environnement), inutile de rebuilder :
 make cloudrun_deploy CLOUDRUN_ENV=staging
 ```
 
-## Service d'éval (`berlue-eval-mocked-service`)
+## Service d'éval (`berlue-eval`)
 
 `berlue.evaluation.run_eval`, servi par `berlue.api.eval_service`
 (`uvicorn`, `Dockerfile.eval-service`) — un seul endpoint `POST /invoke`
@@ -89,12 +122,10 @@ le store GCP — pas besoin du service pour ça).
    `WARM_MODELS` ne décide pas **si** le GPU s'allume, seulement ce qui y
    est préchargé.
 
-`gcp_down` redescend toujours `berlue-eval-mocked-service`, `berlue-llm` et
-`berlue-api-<env>` (`CLOUDRUN_ENV`, défaut `test`) à `min-instances=0`,
-inconditionnellement (idempotent, pas d'état à suivre entre les deux
-commandes). Un service pas encore déployé est ignoré avec un avertissement
-et n'interrompt plus la série — auparavant le premier service absent
-laissait les suivants allumés, donc facturés. Cf.
+`gcp_down` traite toujours les trois services (`CLOUDRUN_ENV`, défaut
+`test`), idempotent et sans état à suivre entre deux commandes — détail du
+traitement différencié plus haut. Un service pas encore déployé est ignoré
+avec un avertissement, sans interrompre la série. Cf.
 [`aletheia-local.md`](aletheia-local.md) pour le workflow complet avec
 Aletheia en local.
 

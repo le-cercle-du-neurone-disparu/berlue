@@ -1,7 +1,7 @@
 # API d'évaluation — calcul
 
 Deux endpoints (`berlue/api/eval_service.py`, servis par le service Cloud
-Run `berlue-eval-mocked-service`) qui **déclenchent du calcul** — remplir
+Run `berlue-eval`) qui **déclenchent du calcul** — remplir
 le cache, construire une matrice, lire une couverture, ou purger — plutôt
 que de consulter des résultats déjà en cache (ça, c'est [`api.md`](api.md),
 routes publiques séparées, montées sur l'API produit).

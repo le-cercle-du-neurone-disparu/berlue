@@ -1,7 +1,7 @@
 # Benchmark d'exécution — local vs GCP
 
 Mesure du temps et du coût de chaque étape d'un scope d'éval minimal, en
-local et sur GCP (service Cloud Run `berlue-eval-mocked-service` + service
+local et sur GCP (service Cloud Run `berlue-eval` + service
 Ollama `berlue-llm`) — sert de référence pour estimer le coût d'un run à
 plus grande échelle. Scope utilisé partout : `dataset=halueval`,
 `ratio=0.995` (50 questions de test, 100 lignes mode 1 — cf.

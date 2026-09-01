@@ -95,6 +95,6 @@ make docker_build_llm docker_push_llm
 make cloudrun_llm_deploy
 ```
 
-`berlue-api-<env>` et `berlue-eval-mocked-service` restent en CPU (coût
+`berlue-api-<env>` et `berlue-eval` restent en CPU (coût
 largement inférieur) — `gcp_down` seul y est suffisant en pratique, pas
 besoin d'un équivalent `delete` systématique.

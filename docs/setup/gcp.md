@@ -103,7 +103,7 @@ make gcp_deploy                           # les images + les 3 services (CLOUDRU
 make gcp_up       WARM_MODELS="llama3.1:8b"   # produit    : berlue-api-<env> + berlue-llm
 make gcp_eval_up  WARM_MODELS="llama3.1:8b"   # évaluation : berlue-eval      + berlue-llm
 
-make gcp_down                             # éteint les 3, en fin de session
+make gcp_down                             # éteint tout, en fin de session
 ```
 
 `gcp_deploy` = `docker_build_push_all` (les 3 images) puis
@@ -112,8 +112,9 @@ d'abord, parce que le déploiement de l'API lit son URL pour câbler
 `BERLUE_OLLAMA_HOST`). Les services créés sont à `min-instances=0` — ils
 existent, ils ne coûtent rien tant qu'aucune requête n'arrive et tant que
 `gcp_up`/`gcp_eval_up` n'ont pas forcé une instance chaude. Ces deux-là
-montent chacun `berlue-llm` (le GPU) en plus de leur service : détail et
-répartition dans [`cloudrun.md`](../gcp/cloudrun.md).
+montent chacun `berlue-llm` (le GPU) en plus de leur service ; `gcp_down`
+supprime ce dernier systématiquement, seul arrêt garanti de la facturation
+GPU. Détail et justification dans [`cloudrun.md`](../gcp/cloudrun.md).
 
 Seule l'API est déclinée par environnement (`berlue-api-test/staging/prod`) :
 le service d'éval et le service Ollama sont **uniques pour le projet** et
