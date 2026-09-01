@@ -1,3 +1,5 @@
+import logging
+
 from berlue.core.schemas import PipelineResult, Verdict
 from berlue.llm.client import OllamaClient
 from berlue.params import OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
@@ -6,6 +8,8 @@ from berlue.pipeline.fusion import do_fusion
 from berlue.rag.retriever import RagRetriever
 from berlue.selfcheck.sampler import sample_responses
 from berlue.selfcheck.scorer import compute_divergence
+
+logger = logging.getLogger(__name__)
 
 
 class HurluBerlu:
@@ -56,7 +60,7 @@ class HurluBerlu:
     # ÉTAPE 4
     def evaluate_selfcheck(self, result: PipelineResult) -> PipelineResult:
 
-        print("   🧠 Calcul des scores de divergence SelfCheckNLI...")
+        logger.debug("🧠 Calcul des scores de divergence SelfCheckNLI...")
 
         for claim in result.claims:
             score = compute_divergence(claim=claim, samples=result.samples)
@@ -65,9 +69,11 @@ class HurluBerlu:
             avg_divergence = sum(s.divergence_score for s in result.selfcheck_scores) / len(result.selfcheck_scores)
             avg_confidence = 1.0 - avg_divergence
             alert = "🔴" if avg_divergence > 0.5 else "🟢"
-            print(
-                f"\n   {alert} [SelfCheck GLOBAL] Divergence moyenne : {avg_divergence:.2f} |"
-                f"Confiance : {avg_confidence:.2f}\n"
+            logger.debug(
+                "%s [SelfCheck GLOBAL] Divergence moyenne : %.2f | Confiance : %.2f",
+                alert,
+                avg_divergence,
+                avg_confidence,
             )
 
         return result
@@ -75,7 +81,7 @@ class HurluBerlu:
     # ÉTAPE 5
     def evaluate_rag(self, result: PipelineResult) -> PipelineResult:
 
-        print("   🧠 Calcul des verdicts du RAG...")
+        logger.debug("🧠 Calcul des verdicts du RAG...")
 
         for claim in result.claims:
             verdict = self.retriever.verify_claim(claim=claim)
@@ -115,7 +121,17 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     parser.add_argument("--rag", type=str, default=RAG_MODEL, help="Le modèle LLM à utiliser")
+    parser.add_argument(
+        "--log-level",
+        choices=["ERROR", "WARNING", "INFO", "DEBUG"],
+        default=None,
+        help="Niveau de log (défaut : BERLUE_LOG_LEVEL, ou INFO).",
+    )
     args = parser.parse_args()
+
+    from berlue.logging_config import setup_logging
+
+    setup_logging(args.log_level)
 
     print("🚀 Démarrage du pipeline HurluBerlu...")
     pipeline = HurluBerlu(
