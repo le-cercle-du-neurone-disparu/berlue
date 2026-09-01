@@ -58,9 +58,15 @@ Ce que ça ne fait pas : allumer quoi que ce soit. Les services sortent de
 là à `min-instances=0` — c'est `gcp_up`/`gcp_eval_up` qui forcent une instance
 chaude, et c'est lui qui coûte.
 
-Les trois services sont déployés en **`--min-instances=0 --max-instances=1`** :
-jamais de montée en charge (le budget prime sur le débit), jamais rien de
-garanti chaud au déploiement.
+Les trois services sont déployés avec **une instance maximum** et rien de
+garanti chaud : le budget prime sur le débit.
+
+Le plafond se règle à **deux niveaux distincts**, et les recettes posent les
+deux : `--max-instances=1` porte sur la révision, `--max=1` sur le service
+(« across all revisions »). C'est `--max` que la console affiche dans
+« Scaling: Auto (Min, Max) » — sans lui elle annonce `Max: 3` alors que la
+révision est bien plafonnée à 1, ce qui rend le garde-fou budget illisible
+depuis l'interface.
 
 Seule l'API est déclinée par environnement. Le service d'éval et le service
 Ollama sont uniques pour le projet, partagés par les trois environnements :
