@@ -13,10 +13,17 @@
 
 CLOUDRUN_ENV ?= test
 
-# Règle commune aux 3 services : --max-instances=1 (jamais de montée en
-# charge, le budget prime sur le débit) et --min-instances=0 au déploiement
-# (rien de garanti chaud, donc rien de facturé). Seuls gcp_up/gcp_eval_up
-# passent min à 1, le temps d'une session ; gcp_down le remet à 0.
+# Règle commune aux 3 services : jamais plus d'une instance (le budget prime
+# sur le débit), rien de garanti chaud au déploiement.
+#
+# Le plafond se règle à DEUX niveaux distincts dans Cloud Run, et il faut les
+# deux : --max-instances porte sur la révision, --max sur le service (« across
+# all revisions »). C'est --max que la console affiche dans « Scaling: Auto
+# (Min, Max) » — sans lui elle annonce 3 alors que la révision est bien
+# plafonnée à 1, ce qui rend le garde-fou budget illisible.
+#
+# Seuls gcp_up/gcp_eval_up montent min-instances à 1, le temps d'une session ;
+# gcp_down supprime les services.
 
 cloudrun_enable_api: gcp_check_cli_auth ## Active l'API Cloud Run pour le projet
 	@echo "⚙️ Activation de l'API Cloud Run..."
@@ -60,6 +67,7 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		--timeout=$(GAR_TIMEOUT) \
 		--min-instances=0 \
 		--max-instances=1 \
+		--max=1 \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
@@ -167,6 +175,7 @@ cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le serv
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
 		--min-instances=0 \
 		--max-instances=1 \
+		--max=1 \
 		--concurrency=1 \
 		--timeout=900 \
 		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
@@ -269,6 +278,7 @@ cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollam
 		--set-env-vars=OLLAMA_NUM_PARALLEL=$(LLM_NUM_PARALLEL)$(if $(LLM_CONTEXT_LENGTH),$(comma)OLLAMA_CONTEXT_LENGTH=$(LLM_CONTEXT_LENGTH),) \
 		--min-instances=0 \
 		--max-instances=1 \
+		--max=1 \
 		--timeout=600 \
 		--port=11434 \
 		--no-allow-unauthenticated
