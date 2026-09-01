@@ -1,8 +1,10 @@
+import logging
 from pathlib import Path
 
 import pandas as pd
-from colorama import Fore, Style
 from google.cloud import bigquery
+
+logger = logging.getLogger(__name__)
 
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -31,10 +33,10 @@ def get_data_with_cache(gcp_project: str, query: str, cache_path: Path, data_has
     Stocke dans `cache_path` si récupéré depuis BigQuery, pour une utilisation future.
     """
     if cache_path.is_file():
-        print(Fore.BLUE + "\nChargement des données depuis le CSV local..." + Style.RESET_ALL)
+        logger.info("Chargement des données depuis le CSV local...")
         df = pd.read_csv(cache_path, header="infer" if data_has_header else None)
     else:
-        print(Fore.BLUE + "\nChargement des données depuis le serveur BigQuery..." + Style.RESET_ALL)
+        logger.info("Chargement des données depuis le serveur BigQuery...")
         client = bigquery.Client(project=gcp_project)
         query_job = client.query(query)
         result = query_job.result()
@@ -46,7 +48,7 @@ def get_data_with_cache(gcp_project: str, query: str, cache_path: Path, data_has
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             df.to_csv(cache_path, header=data_has_header, index=False)
 
-    print(f"✅ Données chargées, avec la forme {df.shape}")
+    logger.info("✅ Données chargées, avec la forme %s", df.shape)
 
     return df
 
@@ -58,7 +60,7 @@ def load_data_to_bq(data: pd.DataFrame, gcp_project: str, bq_dataset: str, table
     """
     assert isinstance(data, pd.DataFrame)
     full_table_name = f"{gcp_project}.{bq_dataset}.{table}"
-    print(Fore.BLUE + f"\nSauvegarde des données dans BigQuery @ {full_table_name}...:" + Style.RESET_ALL)
+    logger.info("Sauvegarde des données dans BigQuery @ %s...:", full_table_name)
 
     # Corrige les noms de colonnes au format accepté par BigQuery (ne peut pas commencer par un chiffre)
     data.columns = [
@@ -72,10 +74,10 @@ def load_data_to_bq(data: pd.DataFrame, gcp_project: str, bq_dataset: str, table
     write_mode = "WRITE_TRUNCATE" if truncate else "WRITE_APPEND"
     job_config = bigquery.LoadJobConfig(write_disposition=write_mode)
 
-    print(f"\n{'Écriture de' if truncate else 'Ajout à'} {full_table_name} ({data.shape[0]} lignes)")
+    logger.info("%s %s (%d lignes)", "Écriture de" if truncate else "Ajout à", full_table_name, data.shape[0])
 
     # Charge les données
     job = client.load_table_from_dataframe(data, full_table_name, job_config=job_config)
     job.result()  # attend la fin du job
 
-    print(f"✅ Données sauvegardées dans bigquery, avec la forme {data.shape}")
+    logger.info("✅ Données sauvegardées dans bigquery, avec la forme %s", data.shape)

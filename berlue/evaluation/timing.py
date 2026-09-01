@@ -8,6 +8,11 @@ cours de route) avec un timestamp epoch UTC, directement comparable aux
 `lastTransitionTime` des conditions d'exécution Cloud Run Jobs (mêmes
 horodatages, lisibles via `gcloud logging read` sur les logs
 `cloudaudit.googleapis.com%2Fsystem_event`).
+
+Volontairement en `print()`, pas `logging` (cf. docs/dev/logging.md) : les
+tout premiers appels (`run_eval.py` mesure jusqu'au coût de ses propres
+imports) ont lieu avant que `setup_logging()` ait pu tourner — sans handler
+configuré, `logger.info()` serait silencieusement avalé à ce stade.
 """
 
 import time

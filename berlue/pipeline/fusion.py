@@ -1,11 +1,16 @@
+import logging
+
 from berlue.core.schemas import FusedVerdict, PipelineResult, Verdict
+
+logger = logging.getLogger(__name__)
+
 
 def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck: float = 0.3) -> PipelineResult:
     """
     Dernière étape : combine les scores RAG et SelfCheckGPT pour statuer sur chaque affirmation.
     Prend en compte les 5 nouveaux statuts RAG pour affiner l'explication et la confiance.
     """
-    print("\n🧬 [Fusion] Début de la synthèse des résultats...")
+    logger.info("🧬 [Fusion] Début de la synthèse des résultats...")
 
     rag_dict = {v.claim_id: v for v in result.rag_scores}
     sc_dict = {s.claim_id: s for s in result.selfcheck_scores}

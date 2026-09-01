@@ -1,6 +1,7 @@
 """Indexation du corpus FEVER en base vectorielle (FAISS). À lancer une fois avant la démo."""
 
 import json
+import logging
 import pickle
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from tqdm import tqdm
 
 from berlue.params import FEVER_DATA_PATH, RAG_EMBEDDING_MODEL, RAG_VECTOR_DB_PATH
 
+logger = logging.getLogger(__name__)
+
 
 def load_fever_data(fever_path: str) -> pd.DataFrame:
     """Charge le dataset FEVER depuis un fichier JSONL."""
@@ -21,7 +24,7 @@ def load_fever_data(fever_path: str) -> pd.DataFrame:
             if line.strip():
                 data.append(json.loads(line))
     df = pd.DataFrame(data)
-    print(f"✅ Chargé {len(df)} exemples depuis {fever_path}")
+    logger.info("✅ Chargé %d exemples depuis %s", len(df), fever_path)
     return df
 
 
@@ -37,11 +40,11 @@ def build_index(
 
     # 2. Filtrer : ne garder que les exemples avec preuves
     filtered = df[df["label"].isin(["SUPPORTS", "REFUTES"]) & (df["id"] != -1)]
-    print(f"🔍 {len(filtered)} exemples avec preuves conservés")
+    logger.info("🔍 %d exemples avec preuves conservés", len(filtered))
 
     # 3. Charger le modèle d'embedding
     model = SentenceTransformer(embedding_model)
-    print(f"🤖 Modèle d'embedding : {embedding_model}")
+    logger.info("🤖 Modèle d'embedding : %s", embedding_model)
 
     # 4. Générer les embeddings en batch
     claims = filtered["claim"].tolist()
@@ -56,13 +59,13 @@ def build_index(
         embeddings.append(emb)
 
     embeddings = np.vstack(embeddings)
-    print(f"📊 Embeddings générés : {embeddings.shape}")
+    logger.info("📊 Embeddings générés : %s", embeddings.shape)
 
     # 5. Créer l'index FAISS
     dim = embeddings.shape[1]
     index = faiss.IndexFlatL2(dim)
     index.add(embeddings)
-    print(f"📁 Index FAISS créé avec {index.ntotal} vecteurs")
+    logger.info("📁 Index FAISS créé avec %d vecteurs", index.ntotal)
 
     # 6. Sauvegarder l'index et les métadonnées
     out_path = Path(out_path)
@@ -79,8 +82,11 @@ def build_index(
     with open(out_path / "metadata.pkl", "wb") as f:
         pickle.dump(metadata, f)
 
-    print(f"✅ Index sauvegardé dans {out_path}")
+    logger.info("✅ Index sauvegardé dans %s", out_path)
 
 
 if __name__ == "__main__":
+    from berlue.logging_config import setup_logging
+
+    setup_logging()
     build_index()

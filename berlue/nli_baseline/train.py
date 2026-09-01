@@ -5,6 +5,7 @@ partie de HaluEval/TruthfulQA, utilisé comme baseline de comparaison par
 Params utilisés (`berlue.params`) : `NLI_BASELINE_PATH`, `TRAIN_RATIO`.
 """
 
+import logging
 import os
 from pathlib import Path
 
@@ -16,13 +17,15 @@ from sklearn.pipeline import Pipeline
 from berlue.evaluation.data import load_labeled_examples, split_train_test
 from berlue.params import NLI_BASELINE_PATH, TRAIN_RATIO
 
+logger = logging.getLogger(__name__)
+
 
 def train_baseline(out_path: str = NLI_BASELINE_PATH, train_ratio: float = TRAIN_RATIO) -> None:
     """Entraîne un TfidfVectorizer + LogisticRegression sur le texte
     question+réponse d'une partie de HaluEval/TruthfulQA et sauvegarde le modèle
     avec joblib vers `out_path` (défaut : `params.NLI_BASELINE_PATH`).
     """
-    print("⏳ Chargement et découpage des données...")
+    logger.info("⏳ Chargement et découpage des données...")
     examples = load_labeled_examples()
     train_examples, _test_examples = split_train_test(examples, train_ratio)
 
@@ -30,7 +33,7 @@ def train_baseline(out_path: str = NLI_BASELINE_PATH, train_ratio: float = TRAIN
     x_train = [f"{ex['question']} {ex['answer']}" for ex in train_examples]
     y_train = [ex["ground_truth_label"] for ex in train_examples]
 
-    print("🧠 Création et entraînement du pipeline NLI (TF-IDF + LogReg)...")
+    logger.info("🧠 Création et entraînement du pipeline NLI (TF-IDF + LogReg)...")
 
     pipeline = Pipeline(
         [
@@ -46,8 +49,11 @@ def train_baseline(out_path: str = NLI_BASELINE_PATH, train_ratio: float = TRAIN
 
     # Sauvegarde
     joblib.dump(pipeline, out_path)
-    print(f"✅ Modèle baseline sauvegardé avec succès dans : {out_path}")
+    logger.info("✅ Modèle baseline sauvegardé avec succès dans : %s", out_path)
 
 
 if __name__ == "__main__":
+    from berlue.logging_config import setup_logging
+
+    setup_logging()
     train_baseline()

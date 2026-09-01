@@ -1,9 +1,13 @@
 """Score de divergence SelfCheckGPT par affirmation (méthode NLI officielle)."""
 
+import logging
+
 import torch
 from selfcheckgpt.modeling_selfcheck import SelfCheckNLI
 
 from berlue.core.schemas import Claim, SelfCheckScore
+
+logger = logging.getLogger(__name__)
 
 # Variable globale pour garder le modèle en mémoire (Singleton)
 _SELFCHECK_NLI_MODEL = None
@@ -18,7 +22,7 @@ def _get_selfcheck_nli() -> SelfCheckNLI:
         # Détection automatique du matériel (Nvidia CUDA ou CPU)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        print(f"⏳ Initialisation de SelfCheckNLI sur : {device}...")
+        logger.info("⏳ Initialisation de SelfCheckNLI sur : %s...", device)
 
         _SELFCHECK_NLI_MODEL = SelfCheckNLI(device=device)
 
@@ -45,5 +49,5 @@ def compute_divergence(claim: Claim, samples: list[str]) -> SelfCheckScore:
 
     # scores est un tableau numpy (ex: [0.334014]), on extrait la première valeur
     divergence = float(scores[0])
-    print(f"divergence = {divergence}")
+    logger.debug("divergence = %s", divergence)
     return SelfCheckScore(claim_id=claim.id, divergence_score=divergence, confidence=1.0 - divergence)

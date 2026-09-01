@@ -8,6 +8,7 @@ Params utilisés (`berlue.params`) : `EVAL_DATASETS`, `HALUEVAL_URL`,
 `HALUEVAL_DATA_PATH`, `TRUTHFULQA_URL`, `TRUTHFULQA_DATA_PATH`, `TRAIN_RATIO`.
 """
 
+import logging
 import os
 import random
 
@@ -24,6 +25,8 @@ from berlue.params import (
     TRUTHFULQA_URL,
 )
 
+logger = logging.getLogger(__name__)
+
 KNOWN_DATASETS = ("halueval", "truthfulqa")
 
 
@@ -33,10 +36,10 @@ def download_dataset(url: str, local_path: str) -> str:
     (`load_labeled_examples`) et les cibles `make download_*`.
     """
     if os.path.exists(local_path):
-        print(f"✅ {local_path} déjà présent, téléchargement sauté.")
+        logger.info("✅ %s déjà présent, téléchargement sauté.", local_path)
         return local_path
 
-    print(f"⬇️  Téléchargement de {url} -> {local_path}...")
+    logger.info("⬇️  Téléchargement de %s -> %s...", url, local_path)
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
     response = requests.get(url)
@@ -44,7 +47,7 @@ def download_dataset(url: str, local_path: str) -> str:
     with open(local_path, "wb") as f:
         f.write(response.content)
 
-    print(f"✅ Téléchargement terminé : {local_path}")
+    logger.info("✅ Téléchargement terminé : %s", local_path)
     return local_path
 
 
@@ -82,7 +85,7 @@ def load_labeled_examples(
     # ==========================================
     if "halueval" in datasets:
         halueval_path = download_dataset(halueval_url, halueval_path)
-        print(f"📥 Chargement de HaluEval depuis : {halueval_path}")
+        logger.info("📥 Chargement de HaluEval depuis : %s", halueval_path)
         df_he = pd.read_json(halueval_path, lines=True)
 
         # Extraction des exemples CORRECTS
@@ -107,7 +110,7 @@ def load_labeled_examples(
     # ==========================================
     if "truthfulqa" in datasets:
         truthfulqa_path = download_dataset(truthfulqa_url, truthfulqa_path)
-        print(f"📥 Chargement de TruthfulQA depuis : {truthfulqa_path}")
+        logger.info("📥 Chargement de TruthfulQA depuis : %s", truthfulqa_path)
         rows = pd.read_csv(truthfulqa_path).to_dict(orient="records")
 
         # Une ligne par variante de réponse (`Correct Answers`/`Incorrect Answers`
@@ -124,7 +127,7 @@ def load_labeled_examples(
         # Ajout à la liste globale
         all_examples.extend(tqa_examples)
 
-    print(f"✅ Chargement terminé : {len(all_examples)} exemples normalisés au total.")
+    logger.info("✅ Chargement terminé : %d exemples normalisés au total.", len(all_examples))
     return all_examples
 
 
@@ -185,8 +188,9 @@ def split_train_test(
 
     train_examples = balance_classes(train_examples, seed)
 
-    print(
-        f"🔀 Split sans leakage (par question) : {len(train_examples)} (train, équilibré 50/50) / "
-        f"{len(test_examples)} (test, proportion d'origine)."
+    logger.info(
+        "🔀 Split sans leakage (par question) : %d (train, équilibré 50/50) / %d (test, proportion d'origine).",
+        len(train_examples),
+        len(test_examples),
     )
     return train_examples, test_examples
