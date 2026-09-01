@@ -129,37 +129,36 @@ gcp_enable_apis: gcp_check_cli_auth ## Active en un seul appel toutes les API do
 	gcloud services enable $(GCP_APIS) --project=$(GCP_PROJECT) </dev/null
 	@$(MAKE) --no-print-directory artifact_registry_enable_api
 
-gcp_destroy: gcp_check_cli_auth ## Supprime tout ce qui est DÉPLOYÉ sur GCP pour Berlue (les 5 services Cloud Run + dépôt Artifact Registry et ses images + bucket RAG) — garde les données d'éval, cf. gcp_destroy_all
-	@echo "⚠️  Ceci va supprimer DÉFINITIVEMENT :"
-	@echo "   - Les services Cloud Run : $(GAR_IMAGE)-test, $(GAR_IMAGE)-staging, $(GAR_IMAGE)-prod"
-	@echo "   - Les services Cloud Run : $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE)"
-	@echo "   - Le dépôt Artifact Registry : $(ARTIFACTSREPO) (et toutes les images qu'il contient)"
-	@echo "   - Le bucket RAG : $(RAG_BUCKET_NAME) (et l'index qu'il contient)"
-	@echo "   Conservés : Firestore, BigQuery, $(CLOUDRUN_SA_EMAIL) (cf. make gcp_destroy_all)."
-	@read -p "Confirmer la suppression ? (taper 'oui' pour continuer) " confirm && [ "$$confirm" = "oui" ] || { echo "Annulé."; exit 1; }
+gcp_destroy: gcp_check_cli_auth ## Revert complet de gcp_setup ET de gcp_deploy — supprime les 5 services Cloud Run, le dépôt d'images, le bucket RAG, Firestore, le dataset BigQuery et sa-berlue (avec ses rôles). DÉTRUIT LES DONNÉES D'ÉVAL, confirmation par l'ID du projet.
+	@echo "🚨 Ceci va supprimer DÉFINITIVEMENT sur $(GCP_PROJECT) :"
+	@echo "   - Les 5 services Cloud Run : $(GAR_IMAGE)-test/staging/prod, $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE)"
+	@echo "   - Le dépôt Artifact Registry $(ARTIFACTSREPO) (et ses images), plus votre droit de push"
+	@echo "   - Le bucket RAG $(RAG_BUCKET_NAME) (et l'index qu'il contient)"
+	@echo "   - La base Firestore (default) — TOUT le cache de prédictions d'éval"
+	@echo "   - Le dataset BigQuery $(BQ_DATASET) — TOUTES les matrices d'éval"
+	@echo "   - Le compte de service $(CLOUDRUN_SA_EMAIL) et ses rôles projet"
+	@echo "   Ces données ne sont récupérables par aucune commande de ce dépôt."
+	@echo "   Couvre donc aussi tout ce qu'ont fait gcp_deploy (images + services) et"
+	@echo "   gcp_up/gcp_eval_up (instances chaudes, redescendues avant suppression)."
+	@echo "   Restent en place : les API activées (gratuites, les désactiver n'est pas"
+	@echo "   sans risque pour le reste du projet) et vos images Docker LOCALES."
+	@read -p "Pour confirmer, tapez l'ID du projet ($(GCP_PROJECT)) : " confirm && [ "$$confirm" = "$(GCP_PROJECT)" ] || { echo "Annulé."; exit 1; }
+	@# gcp_down d'abord : si une suppression échoue plus bas, rien ne reste à
+	@# min-instances=1 (donc facturé) parce qu'un gcp_up/gcp_eval_up traînait.
+	@$(MAKE) --no-print-directory gcp_down || true
 	@$(MAKE) --no-print-directory cloudrun_delete CLOUDRUN_ENV=test || true
 	@$(MAKE) --no-print-directory cloudrun_delete CLOUDRUN_ENV=staging || true
 	@$(MAKE) --no-print-directory cloudrun_delete CLOUDRUN_ENV=prod || true
 	@$(MAKE) --no-print-directory cloudrun_eval_service_delete || true
 	@$(MAKE) --no-print-directory cloudrun_llm_delete || true
 	@$(MAKE) --no-print-directory artifact_registry_delete || true
+	@$(MAKE) --no-print-directory artifact_registry_role_revoke || true
 	@$(MAKE) --no-print-directory rag_bucket_delete || true
-	@echo "✅ Suppression terminée."
-
-gcp_destroy_all: gcp_check_cli_auth ## gcp_destroy + Firestore, dataset BigQuery et compte de service — annule gcp_setup ET DÉTRUIT LES DONNÉES D'ÉVAL (confirmation par l'ID du projet)
-	@echo "🚨 Ceci va supprimer tout ce que supprime gcp_destroy, PLUS :"
-	@echo "   - La base Firestore (default) — TOUT le cache de prédictions d'éval"
-	@echo "   - Le dataset BigQuery $(BQ_DATASET) — TOUTES les matrices d'éval"
-	@echo "   - Le compte de service $(CLOUDRUN_SA_EMAIL)"
-	@echo "   Ces données ne sont récupérables par aucune commande de ce dépôt."
-	@read -p "Pour confirmer, tapez l'ID du projet ($(GCP_PROJECT)) : " confirm && [ "$$confirm" = "$(GCP_PROJECT)" ] || { echo "Annulé."; exit 1; }
-	@$(MAKE) --no-print-directory gcp_destroy
 	@echo "💣 Suppression de la base Firestore (default)..."
 	@gcloud firestore databases delete --database="(default)" --project=$(GCP_PROJECT) --quiet </dev/null || true
 	@$(MAKE) --no-print-directory bigquery_delete_dataset || true
-	@echo "💣 Suppression du compte de service $(CLOUDRUN_SA_EMAIL)..."
-	@gcloud iam service-accounts delete $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) --quiet </dev/null || true
-	@echo "✅ Projet ramené à son état d'avant gcp_setup."
+	@$(MAKE) --no-print-directory iam_teardown_cloudrun_service_account || true
+	@echo "✅ Projet ramené à son état d'avant gcp_setup (hors API, laissées activées)."
 
 gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (API, Firestore, BigQuery, compte de service, Artifact Registry + auth Docker, bucket RAG) — rejouable ; ne build aucune image et ne crée aucun service Cloud Run (coût variable, cf. cloudrun.md)
 	@echo "🚀 Mise en place de l'infra GCP sur $(GCP_PROJECT)..."
@@ -311,6 +310,33 @@ iam_setup_cloudrun_service_account: gcp_check_cli_auth ## Crée $(CLOUDRUN_SA_NA
 		--project=$(GCP_PROJECT) \
 		--condition=None \
 		--quiet </dev/null
+
+# Contrepartie exacte d'iam_setup_cloudrun_service_account. Les bindings de
+# niveau PROJET doivent être retirés AVANT la suppression du compte de
+# service : supprimer le SA d'abord laisse dans la policy du projet des
+# entrées orphelines `deleted:serviceAccount:...?uid=...` que plus rien ne
+# nettoie. Les deux bindings posés sur le SA lui-même (serviceAccountUser,
+# serviceAccountTokenCreator) disparaissent avec lui, eux.
+iam_teardown_cloudrun_service_account: gcp_check_cli_auth ## Retire les rôles projet de sa-berlue puis supprime le compte de service (appelée par gcp_destroy)
+	@echo "🔓 Retrait des rôles projet de $(CLOUDRUN_SA_EMAIL)..."
+	@gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+		--role="roles/datastore.user" \
+		--condition="$(FIRESTORE_CONDITION)" \
+		--quiet </dev/null || true
+	@gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+		--role="roles/bigquery.dataEditor" \
+		--condition=None \
+		--quiet </dev/null || true
+	@gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+		--role="roles/bigquery.jobUser" \
+		--condition=None \
+		--quiet </dev/null || true
+	@echo "💣 Suppression du compte de service $(CLOUDRUN_SA_EMAIL)..."
+	@gcloud iam service-accounts delete $(CLOUDRUN_SA_EMAIL) \
+		--project=$(GCP_PROJECT) --quiet </dev/null || true
 
 # Accès par personne sur sa-berlue lui-même (pas sur Firestore/BigQuery
 # directement — cf. firestore_grant/bigquery_grant pour ça). CLOUDRUN_SA_ROLE
