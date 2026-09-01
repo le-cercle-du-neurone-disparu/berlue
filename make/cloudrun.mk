@@ -206,8 +206,13 @@ COVERAGE ?= false
 # vrai `BerluePipeline` (et non plus le mock), ce service charge en mémoire
 # l'index FAISS, le NLI de SelfCheckGPT et le modèle d'embedding : les défauts
 # Cloud Run (512 Mio / 1 vCPU) ne suffisent pas.
+# Le service d'éval n'a pas de GPU : SelfCheckNLI (DeBERTa-large, 435M
+# paramètres, K passages par affirmation), l'embedding des affirmations et la
+# recherche FAISS exhaustive tournent tous sur ces vCPU. Le GPU de berlue-llm
+# étant facturé pendant tout ce temps, un vCPU d'éval supplémentaire (~0,024
+# $/h) est très vite rentable face au L4 (~0,67 $/h) qui attend.
 EVAL_MEMORY ?= 8Gi
-EVAL_CPU ?= 4
+EVAL_CPU ?= 8
 # Le mode dataset est séquentiel (pas de --concurrency côté éval) : une tranche
 # de quelques centaines de lignes dépasse les 900s par défaut. Maximum Cloud
 # Run : 3600.
