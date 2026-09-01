@@ -127,6 +127,7 @@ class RagRetriever:
 
             confidence = float(llm_result.get("confidence", 0.0))
             used_idx = llm_result.get("used_evidence_index")
+            used_idx = used_idx[0] if isinstance(used_idx, list) else used_idx
 
             # Si le LLM n'a pas assez d'infos, on ne renvoie AUCUNE preuve
             if (
