@@ -20,6 +20,7 @@ Params utilisés (`berlue.params`) : `MLOPS_DB_PATH`.
 """
 
 import hashlib
+import json
 import os
 import sqlite3
 from contextlib import closing
@@ -29,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from berlue.api.schemas import ConfusionMatrix, ConfusionRow
 from berlue.core.schemas import Verdict
+from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
 
 if TYPE_CHECKING:
     from berlue.evaluation.gcp_result_store import GcpResultStore
@@ -126,6 +128,29 @@ class LocalResultStore:
                 verdict TEXT NOT NULL,
                 computed_at TEXT NOT NULL,
                 UNIQUE(dataset, ratio, model_id, pipeline_version, eval_version, question_hash, answer_hash)
+            )
+            """
+        )
+
+        # Signaux du pipeline AVANT fusion (affirmations, verdicts RAG, scores
+        # SelfCheck). Ne dépend pas d'`eval_version` : la méthodologie d'éval n'a
+        # aucune influence sur ce que le RAG et SelfCheck produisent pour un couple
+        # (question, réponse) donné. Les garder permet de rejouer la fusion avec
+        # d'autres `FUSION_*` sans rappeler le moindre modèle.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS eval_signals (
+                dataset TEXT NOT NULL,
+                ratio REAL NOT NULL,
+                model_id TEXT NOT NULL,
+                pipeline_version TEXT NOT NULL,
+                question_hash TEXT NOT NULL,
+                answer_hash TEXT NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                signals TEXT NOT NULL,
+                computed_at TEXT NOT NULL,
+                UNIQUE(dataset, ratio, model_id, pipeline_version, question_hash, answer_hash)
             )
             """
         )
@@ -296,6 +321,51 @@ class LocalResultStore:
                     answer,
                     int(ground_truth_label),
                     verdict.value,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            conn.commit()
+        return cursor.rowcount > 0
+
+    def get_signals(self, scope: EvalScope, question: str, answer: str) -> dict | None:
+        """Signaux pré-fusion déjà en cache, ou `None`. Un cache hit signifie qu'on ne
+        rappelle ni le RAG ni SelfCheck : seule la fusion sera recalculée."""
+        key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                """
+                SELECT signals FROM eval_signals
+                WHERE dataset=? AND ratio=? AND model_id=? AND pipeline_version=?
+                  AND question_hash=? AND answer_hash=?
+                """,
+                (*key.values(), _hash(question), _hash(answer)),
+            ).fetchone()
+        if not row:
+            return None
+        signals = json.loads(row[0])
+        # Un format plus ancien est traité comme une absence : mieux vaut recalculer
+        # que relire de travers.
+        return signals if signals.get("format_version") == SIGNALS_FORMAT_VERSION else None
+
+    def put_signals(self, scope: EvalScope, question: str, answer: str, signals: dict) -> bool:
+        """Stocke les signaux pré-fusion s'ils ne sont pas déjà en cache. Retourne
+        `True` si c'est une nouvelle entrée."""
+        key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(
+                """
+                INSERT OR IGNORE INTO eval_signals
+                (dataset, ratio, model_id, pipeline_version, question_hash, answer_hash,
+                 question, answer, signals, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    *key.values(),
+                    _hash(question),
+                    _hash(answer),
+                    question,
+                    answer,
+                    json.dumps(signals, ensure_ascii=False),
                     datetime.now(UTC).isoformat(),
                 ),
             )
@@ -894,11 +964,15 @@ class LocalResultStore:
         dans une table (ex. `pipeline_version` pour les tables
         `*_baseline_generated`) est ignoré pour cette table plutôt que de ne
         rien supprimer. `scope` limite à "results" (résultats individuels,
-        5 tables), "matrices" (3 tables), ou "all" (les 8, défaut). Retourne
-        le nombre de lignes supprimées par table.
+        5 tables), "matrices" (3 tables), "signals" (les signaux pré-fusion
+        seuls), "fusion" (prédictions + matrice du mode 1, en **gardant** les
+        signaux — de quoi rejouer la seule fusion avec d'autres `FUSION_*` sans
+        rappeler RAG ni SelfCheck), ou "all" (les 9, défaut). Retourne le nombre
+        de lignes supprimées par table.
         """
-        if scope not in ("all", "results", "matrices"):
-            raise ValueError(f"❌ scope de purge invalide : {scope!r} (doit être all, results ou matrices)")
+        scopes_valides = ("all", "results", "matrices", "signals", "fusion")
+        if scope not in scopes_valides:
+            raise ValueError(f"❌ scope de purge invalide : {scope!r} (doit être {', '.join(scopes_valides)})")
 
         mode1_filters = {
             "dataset": dataset,
@@ -908,6 +982,8 @@ class LocalResultStore:
             "eval_version": eval_version,
         }
         mode1_gen_filters = {**mode1_filters, "generation_version": generation_version}
+        # Les signaux ne portent pas d'eval_version (cf. création de la table).
+        signals_filters = {k: v for k, v in mode1_filters.items() if k != "eval_version"}
         answer_filters = {"model_id": model_id, "generation_version": generation_version}
         judge_filters = {**answer_filters, "judge_model": judge_model, "eval_version": eval_version}
         baseline_filters = {
@@ -925,14 +1001,20 @@ class LocalResultStore:
                 where_clause, params = _where_from_filters(filters)
                 return conn.execute(f"DELETE FROM {table} {where_clause}", params).rowcount
 
-            if scope in ("all", "results"):
+            if scope in ("all", "results", "fusion"):
                 counts["predictions_deleted"] = delete("eval_predictions", mode1_filters)
+            if scope in ("all", "results"):
                 counts["llm_answers_deleted"] = delete("llm_answers", answer_filters)
                 counts["judge_verdicts_deleted"] = delete("judge_verdicts", judge_filters)
                 counts["berlue_generated_deleted"] = delete("eval_berlue_generated", mode1_gen_filters)
                 counts["baseline_generated_deleted"] = delete("eval_baseline_generated", baseline_filters)
-            if scope in ("all", "matrices"):
+            if scope in ("all", "signals"):
+                counts["signals_deleted"] = delete("eval_signals", signals_filters)
+            if scope in ("all", "matrices", "fusion"):
                 counts["matrices_deleted"] = delete("eval_matrices", mode1_filters)
+            # Les matrices du mode 2 ne sont pas des sorties de fusion du mode 1 :
+            # "fusion" ne doit pas y toucher.
+            if scope in ("all", "matrices"):
                 counts["matrices_generated_berlue_deleted"] = delete(
                     "eval_matrices_generated_berlue", mode1_gen_filters
                 )

@@ -1,11 +1,14 @@
 """Tests pour `berlue.evaluation.result_store` — SQLite sur fichier temporaire
 (`tmp_path`), aucune infra externe requise."""
 
+from dataclasses import replace
+
 import pytest
 
 from berlue.api.schemas import ConfusionMatrix, ConfusionRow
 from berlue.core.schemas import Verdict
 from berlue.evaluation.result_store import EvalScope, LocalResultStore, get_result_store
+from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
 
 
 def _store(tmp_path) -> LocalResultStore:
@@ -250,6 +253,7 @@ def test_purge_covers_mode_2_tables(tmp_path):
     assert result == {
         "predictions_deleted": 0,
         "matrices_deleted": 0,
+        "signals_deleted": 0,
         "llm_answers_deleted": 1,
         "judge_verdicts_deleted": 1,
         "berlue_generated_deleted": 1,
@@ -428,3 +432,88 @@ def test_get_result_store_gcp_dispatches_to_gcp_store(monkeypatch):
 def test_get_result_store_invalid_target():
     with pytest.raises(ValueError, match="EVAL_STORE_TARGET invalide"):
         get_result_store("not_a_target")
+
+
+# --- Cache des signaux pré-fusion -------------------------------------------
+
+
+def _signals(divergence: float = 0.3) -> dict:
+    """Signaux minimaux au format de `berlue.evaluation.signals`."""
+    return {
+        "format_version": SIGNALS_FORMAT_VERSION,
+        "raw_answer": "une réponse",
+        "panne": None,
+        "claims": [{"id": "c1", "text": "Une affirmation."}],
+        "rag_scores": [{"claim_id": "c1", "verdict": "likely_true", "confidence": 0.9, "evidence": None}],
+        "selfcheck_scores": [{"claim_id": "c1", "divergence_score": divergence, "confidence": 1 - divergence}],
+    }
+
+
+def test_signals_absents_puis_en_cache(tmp_path):
+    store = _store(tmp_path)
+    scope = _scope()
+    assert store.get_signals(scope, "q", "a") is None
+    assert store.put_signals(scope, "q", "a", _signals()) is True
+    assert store.get_signals(scope, "q", "a") == _signals()
+
+
+def test_put_signals_n_ecrase_pas_une_entree_existante(tmp_path):
+    """Deux workers sur la même question ne doivent pas se marcher dessus."""
+    store = _store(tmp_path)
+    scope = _scope()
+    store.put_signals(scope, "q", "a", _signals(divergence=0.1))
+    assert store.put_signals(scope, "q", "a", _signals(divergence=0.9)) is False
+    assert store.get_signals(scope, "q", "a")["selfcheck_scores"][0]["divergence_score"] == 0.1
+
+
+def test_signals_ignores_si_le_format_a_change(tmp_path):
+    """Une entrée d'un format plus ancien est un cache miss, pas une relecture
+    approximative."""
+    store = _store(tmp_path)
+    scope = _scope()
+    perimes = {**_signals(), "format_version": SIGNALS_FORMAT_VERSION - 1}
+    store.put_signals(scope, "q", "a", perimes)
+    assert store.get_signals(scope, "q", "a") is None
+
+
+def test_signals_ignorent_eval_version(tmp_path):
+    """La méthodologie d'éval n'a aucune influence sur ce que le RAG et SelfCheck
+    produisent : changer d'eval_version ne doit pas invalider les signaux."""
+    store = _store(tmp_path)
+    store.put_signals(_scope(), "q", "a", _signals())
+    autre = _scope()
+    autre = replace(autre, eval_version="v99")
+    assert store.get_signals(autre, "q", "a") == _signals()
+
+
+def test_purge_fusion_garde_les_signaux(tmp_path):
+    """Le geste de calibration : on purge la fusion, on garde de quoi la rejouer
+    sans rappeler le moindre modèle."""
+    store = _store(tmp_path)
+    scope = _scope()
+    store.put_signals(scope, "q", "a", _signals())
+    store.put_prediction(scope, "q", "a", True, Verdict.SUPPORTED)
+    store.put_matrix(scope, _matrix(), n_examples=1)
+
+    result = store.purge(scope="fusion")
+
+    assert result == {"predictions_deleted": 1, "matrices_deleted": 1}
+    assert store.get_verdict(scope, "q", "a") is None
+    assert store.get_matrix(scope) is None
+    assert store.get_signals(scope, "q", "a") == _signals()
+
+
+def test_purge_signals_ne_touche_qu_aux_signaux(tmp_path):
+    store = _store(tmp_path)
+    scope = _scope()
+    store.put_signals(scope, "q", "a", _signals())
+    store.put_prediction(scope, "q", "a", True, Verdict.SUPPORTED)
+
+    assert store.purge(scope="signals") == {"signals_deleted": 1}
+    assert store.get_signals(scope, "q", "a") is None
+    assert store.get_verdict(scope, "q", "a") == Verdict.SUPPORTED
+
+
+def test_purge_scope_invalide(tmp_path):
+    with pytest.raises(ValueError, match="scope de purge invalide"):
+        _store(tmp_path).purge(scope="n-importe-quoi")

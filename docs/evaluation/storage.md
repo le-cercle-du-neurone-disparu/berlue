@@ -57,10 +57,25 @@ par table :
 | Table | Mode | Valeur | Clé |
 |---|---|---|---|
 | `eval_predictions` | 1 | Verdict Berlue sur la réponse du dataset | `dataset, ratio, model_id, pipeline_version, eval_version, question_hash, answer_hash` |
+| `eval_signals` | 1 | Signaux Berlue **avant** fusion (affirmations, verdicts RAG, scores SelfCheck) | `dataset, ratio, model_id, pipeline_version, question_hash, answer_hash` |
 | `llm_answers` | 2 | Réponse générée par le LLM sous test | `model_id, generation_version, question_hash` |
 | `judge_verdicts` | 2 | Verdict du LLM-juge sur la réponse générée | `model_id, generation_version, judge_model, eval_version, question_hash` |
 | `eval_berlue_generated` | 2 | Verdict Berlue sur la réponse générée | `dataset, ratio, model_id, pipeline_version, generation_version, eval_version, question_hash` |
 | `eval_baseline_generated` | 2 | Verdict baseline NLI sur la réponse générée | `dataset, ratio, model_id, generation_version, eval_version, question_hash` |
+
+`eval_signals` n'est pas indexée sur `eval_version` : la méthodologie d'éval
+n'a aucune influence sur ce que le RAG et SelfCheck produisent pour un couple
+(question, réponse) donné. Cette table existe pour découpler le coût du
+calcul de celui de la décision — les signaux valent plusieurs appels LLM,
+la fusion qui les consomme est une fonction pure et instantanée. D'où le
+geste de calibration :
+
+```bash
+# purge la fusion en gardant les signaux
+make evaluate_model_purge PURGE_SCOPE=fusion PIPELINE_VERSION=<version> ...
+# relance : RAG et SelfCheck sortent du cache, seule la fusion recalcule
+BERLUE_FUSION_DIVERGENCE_NEUTRE=0.7 make evaluate_model_all ...
+```
 
 `llm_answers`/`judge_verdicts` ne sont indexées ni sur `dataset`/`ratio`
 (une réponse générée pour une question donnée ne dépend pas du scope qui

@@ -57,6 +57,7 @@ Params utilisés (`berlue.params`) : `EVAL_FIRESTORE_PROJECT`,
 `EVAL_BIGQUERY_PROJECT`, `BQ_DATASET`, `EVAL_SERVICE_ACCOUNT`.
 """
 
+import json
 import os
 import subprocess
 import threading
@@ -72,6 +73,7 @@ from google.cloud import bigquery
 from berlue.api.schemas import ConfusionMatrix
 from berlue.core.schemas import Verdict
 from berlue.evaluation.result_store import EvalScope, _hash, _matrix_row_to_object, _matrix_to_values
+from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
 from berlue.evaluation.timing import mark
 from berlue.params import BQ_DATASET, EVAL_BIGQUERY_PROJECT, EVAL_FIRESTORE_PROJECT, EVAL_SERVICE_ACCOUNT
 
@@ -415,6 +417,42 @@ class GcpResultStore:
         key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version", "eval_version")
         return _doc_id(*key.values(), _hash(question), _hash(answer))
 
+    def get_signals(self, scope: EvalScope, question: str, answer: str) -> dict | None:
+        """Signaux pré-fusion déjà en cache, ou `None`. Un cache hit signifie qu'on ne
+        rappelle ni le RAG ni SelfCheck : seule la fusion sera recalculée."""
+        doc = self.fs.get("eval_signals", self._signals_id(scope, question, answer))
+        if not doc:
+            return None
+        signals = json.loads(doc["signals"])
+        # Un format plus ancien est traité comme une absence : mieux vaut recalculer
+        # que relire de travers.
+        return signals if signals.get("format_version") == SIGNALS_FORMAT_VERSION else None
+
+    def put_signals(self, scope: EvalScope, question: str, answer: str, signals: dict) -> bool:
+        """Stocke les signaux pré-fusion s'ils ne sont pas déjà en cache."""
+        key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")
+        created = self.fs.create(
+            "eval_signals",
+            self._signals_id(scope, question, answer),
+            {
+                **key,
+                "question": question,
+                "answer": answer,
+                # Sérialisé en une chaîne plutôt qu'en map imbriquée : Firestore ne
+                # sait pas indexer des tableaux d'objets, et rien ici n'est requêté
+                # autrement que par identifiant de document.
+                "signals": json.dumps(signals, ensure_ascii=False),
+                "computed_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        if created:
+            self._register_new_row("eval_signals", key)
+        return created
+
+    def _signals_id(self, scope: EvalScope, question: str, answer: str) -> str:
+        key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")
+        return _doc_id(*key.values(), _hash(question), _hash(answer))
+
     def list_predictions(self, scope: EvalScope) -> list[dict]:
         key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version", "eval_version")
         docs = self.fs.query("eval_predictions", key)
@@ -735,8 +773,9 @@ class GcpResultStore:
         judge_model: str | None = None,
         scope: str = "all",
     ) -> dict[str, int]:
-        if scope not in ("all", "results", "matrices"):
-            raise ValueError(f"❌ scope de purge invalide : {scope!r} (doit être all, results ou matrices)")
+        scopes_valides = ("all", "results", "matrices", "signals", "fusion")
+        if scope not in scopes_valides:
+            raise ValueError(f"❌ scope de purge invalide : {scope!r} (doit être {', '.join(scopes_valides)})")
 
         mode1_filters = _non_null(
             dataset=dataset,
@@ -746,6 +785,8 @@ class GcpResultStore:
             eval_version=eval_version,
         )
         mode1_gen_filters = _non_null(**mode1_filters, generation_version=generation_version)
+        # Les signaux ne portent pas d'eval_version (cf. LocalResultStore._create_tables).
+        signals_filters = {k: v for k, v in mode1_filters.items() if k != "eval_version"}
         answer_filters = _non_null(model_id=model_id, generation_version=generation_version)
         judge_filters = _non_null(**answer_filters, judge_model=judge_model, eval_version=eval_version)
         baseline_filters = _non_null(
@@ -764,9 +805,13 @@ class GcpResultStore:
         self.flush_registry()
 
         counts: dict[str, int] = {}
-        if scope in ("all", "results"):
+        if scope in ("all", "results", "fusion"):
             counts["predictions_deleted"] = self.fs.delete_matching("eval_predictions", mode1_filters)
             self.fs.delete_matching("_scope_registry", {"table": "eval_predictions", **mode1_filters})
+        if scope in ("all", "signals"):
+            counts["signals_deleted"] = self.fs.delete_matching("eval_signals", signals_filters)
+            self.fs.delete_matching("_scope_registry", {"table": "eval_signals", **signals_filters})
+        if scope in ("all", "results"):
             counts["llm_answers_deleted"] = self.fs.delete_matching("llm_answers", answer_filters)
             self.fs.delete_matching("_scope_registry", {"table": "llm_answers", **answer_filters})
             counts["judge_verdicts_deleted"] = self.fs.delete_matching("judge_verdicts", judge_filters)
@@ -775,8 +820,11 @@ class GcpResultStore:
             self.fs.delete_matching("_scope_registry", {"table": "eval_berlue_generated", **mode1_gen_filters})
             counts["baseline_generated_deleted"] = self.fs.delete_matching("eval_baseline_generated", baseline_filters)
             self.fs.delete_matching("_scope_registry", {"table": "eval_baseline_generated", **baseline_filters})
-        if scope in ("all", "matrices"):
+        if scope in ("all", "matrices", "fusion"):
             counts["matrices_deleted"] = self._purge_bigquery("eval_matrices", mode1_filters)
+        # Les matrices du mode 2 ne sont pas des sorties de fusion du mode 1 :
+        # "fusion" ne doit pas y toucher.
+        if scope in ("all", "matrices"):
             counts["matrices_generated_berlue_deleted"] = self._purge_bigquery(
                 "eval_matrices_generated_berlue", mode1_gen_filters
             )

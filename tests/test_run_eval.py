@@ -7,7 +7,7 @@ import time
 import pytest
 
 from berlue.api.schemas import ClaimResult, LLMConfig, PredictOutput
-from berlue.core.schemas import Verdict
+from berlue.core.schemas import Claim, PipelineResult, RagJudgment, RagVerdict, SelfCheckScore, Verdict
 from berlue.evaluation.result_store import EvalScope, LocalResultStore
 from berlue.evaluation.run_eval import (
     _StepTimer,
@@ -811,3 +811,85 @@ def test_evaluate_baseline_generated_prints_detailed_timer_summary(tmp_path, cap
     output = capsys.readouterr().out
     assert "⏱" in output
     assert "baseline NLI" in output
+
+
+# --- Cache des signaux pré-fusion -------------------------------------------
+
+
+class FakeSignalsPipeline:
+    """Pipeline découpé comme `BerluePipeline` : compte séparément les appels
+    coûteux (signaux) et les appels instantanés (fusion)."""
+
+    def __init__(self, status: str = "green"):
+        self.status = status
+        self.signals_calls: list[tuple[str, str]] = []
+        self.fuse_calls = 0
+
+    def compute_signals(self, question: str, answer: str | None = None) -> PipelineResult:
+        self.signals_calls.append((question, answer))
+        claim = Claim(id="c1", text="Une affirmation.", source_answer=answer or "")
+        result = PipelineResult(question=question, raw_answer=answer or "", claims=[claim])
+        result.rag_scores.append(RagVerdict(claim_id="c1", verdict=RagJudgment.LIKELY_TRUE, confidence=0.9))
+        result.selfcheck_scores.append(SelfCheckScore(claim_id="c1", divergence_score=0.1, confidence=0.9))
+        return result
+
+    def fuse(self, result: PipelineResult, llm: LLMConfig | None = None) -> PredictOutput:
+        self.fuse_calls += 1
+        return PredictOutput(
+            question=result.question,
+            llm_used=llm or LLMConfig(),
+            full_llm_answer=result.raw_answer,
+            claims=[
+                ClaimResult(
+                    claim_text=c.text,
+                    status=self.status,
+                    fusion_score=1.0,
+                    evidence_source="test",
+                    evidence_text="",
+                )
+                for c in result.claims
+            ],
+        )
+
+    def predict(self, question: str, answer: str | None = None, llm: LLMConfig | None = None) -> PredictOutput:
+        return self.fuse(self.compute_signals(question, answer), llm)
+
+
+def test_evaluate_model_met_les_signaux_en_cache(tmp_path):
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+    scope = _scope()
+    pipeline = FakeSignalsPipeline()
+
+    evaluate_model(pipeline, scope=scope, store=store, test_examples=_examples(2))
+
+    assert len(pipeline.signals_calls) == 2
+    assert store.get_signals(scope, "q0", "a0") is not None
+
+
+def test_rejouer_la_fusion_ne_rappelle_pas_rag_ni_selfcheck(tmp_path):
+    """Le geste de calibration : purger la fusion, relancer. Les signaux sortent du
+    cache, seule la fusion est réellement recalculée."""
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+    scope = _scope()
+    pipeline = FakeSignalsPipeline()
+    examples = _examples(3)
+
+    evaluate_model(pipeline, scope=scope, store=store, test_examples=examples)
+    store.purge(scope="fusion")
+    evaluate_model(pipeline, scope=scope, store=store, test_examples=examples)
+
+    assert len(pipeline.signals_calls) == 3, "RAG et SelfCheck n'auraient pas dû être rappelés"
+    assert pipeline.fuse_calls == 6, "la fusion, elle, doit bien avoir été rejouée"
+
+
+def test_pipeline_sans_decoupe_retombe_sur_predict(tmp_path):
+    """`RandomBerluePipeline` et les faux pipelines n'exposent que `predict` : la
+    boucle d'éval doit continuer de fonctionner sans cache de signaux."""
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+    scope = _scope()
+    pipeline = FakePipeline()
+
+    evaluate_model(pipeline, scope=scope, store=store, test_examples=_examples(2))
+
+    assert len(pipeline.calls) == 2
+    assert store.get_signals(scope, "q0", "a0") is None

@@ -40,21 +40,25 @@ class BerluePipeline:
             retriever=retriever or RagRetriever(llm_client=OllamaClient(model=RAG_MODEL, temperature=0.0)),
         )
 
-    def predict(self, question: str, answer: str | None = None, llm: LLMConfig | None = None) -> PredictOutput:
-        """Même signature que `RandomBerluePipeline.predict` — `llm` n'est
-        pas utilisé (contrairement à `BerlueService.predict`, le modèle sous
-        test est figé à la construction de ce pipeline, pas par appel).
+    def compute_signals(self, question: str, answer: str | None = None) -> PipelineResult:
+        """Tout le pipeline **sauf** la fusion : extraction, échantillons, SelfCheck,
+        RAG. C'est la partie coûteuse (un appel LLM par affirmation côté RAG, K
+        échantillons côté SelfCheck), et c'est elle qu'on met en cache — la fusion
+        qui la consomme est une fonction pure, instantanée, qu'on veut pouvoir
+        rejouer avec d'autres `FUSION_*` sans repayer ces appels.
         """
         result = (
             PipelineResult(question=question, raw_answer=answer)
             if answer is not None
             else self._pipeline.generate_response(question)
         )
-
         result = self._pipeline.extract_claims(result)
         result = self._pipeline.generate_samples(result)
         result = self._pipeline.evaluate_selfcheck(result)
-        result = self._pipeline.evaluate_rag(result)
+        return self._pipeline.evaluate_rag(result)
+
+    def fuse(self, result: PipelineResult, llm: LLMConfig | None = None) -> PredictOutput:
+        """Fusion seule, depuis des signaux fraîchement calculés ou relus du cache."""
         result = self._pipeline.fuse_results(result)
 
         claims = [
@@ -69,5 +73,12 @@ class BerluePipeline:
         ]
 
         return PredictOutput(
-            question=question, llm_used=llm or LLMConfig(), full_llm_answer=result.raw_answer, claims=claims
+            question=result.question, llm_used=llm or LLMConfig(), full_llm_answer=result.raw_answer, claims=claims
         )
+
+    def predict(self, question: str, answer: str | None = None, llm: LLMConfig | None = None) -> PredictOutput:
+        """Même signature que `RandomBerluePipeline.predict` — `llm` n'est pas utilisé
+        (contrairement à `BerlueService.predict`, le modèle sous test est figé à la
+        construction de ce pipeline, pas par appel).
+        """
+        return self.fuse(self.compute_signals(question, answer), llm)
