@@ -11,6 +11,15 @@ from berlue.logging_config import setup_logging
 from berlue.params import EXTRACT_MODEL, RAG_MODEL, USE_MOCK
 
 setup_logging()
+
+httpx_logger = logging.getLogger("httpx")
+httpx_logger.setLevel(logging.WARNING)
+httpx_logger.propagate = False
+
+httpcore_logger = logging.getLogger("httpcore")
+httpcore_logger.setLevel(logging.WARNING)
+httpcore_logger.propagate = False
+
 logger = logging.getLogger(__name__)
 
 

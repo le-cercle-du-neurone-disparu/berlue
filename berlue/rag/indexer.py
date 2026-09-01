@@ -86,7 +86,4 @@ def build_index(
 
 
 if __name__ == "__main__":
-    from berlue.logging_config import setup_logging
-
-    setup_logging()
     build_index()

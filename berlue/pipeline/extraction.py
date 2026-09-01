@@ -10,17 +10,17 @@ from berlue.params import EXTRACT_SYSTEM_PROMPT
 logger = logging.getLogger(__name__)
 
 
-def do_extraction(llm_extract: OllamaClient, answer_text: str) -> list[Claim]:
-    """Découpe une réponse en affirmations atomiques, indépendantes et résolues."""
+def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) -> list[Claim]:
+    """Découpe une réponse en affirmations atomiques, indépendantes et dont les pronoms sont résolus."""
     if not answer_text or not answer_text.strip():
         return []
 
-    prompt = EXTRACT_SYSTEM_PROMPT.format(answer_text=answer_text)
+    # On injecte maintenant la question ET la réponse dans le prompt
+    prompt = EXTRACT_SYSTEM_PROMPT.format(question=question, answer_text=answer_text)
 
     raw_response = llm_extract.generate(prompt=prompt, temperature=0.0)
 
     # 1. Extraction robuste du tableau JSON
-    # On cherche tout ce qui est entre crochets [ ... ]
     match = re.search(r"\[.*\]", raw_response, re.DOTALL)
 
     if not match:

@@ -961,8 +961,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     mark("CLI parsée")
 
-    from berlue.logging_config import setup_logging
-
-    setup_logging(args.log_level)
-
     run_from_args(args)
