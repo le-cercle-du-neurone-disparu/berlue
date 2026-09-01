@@ -58,6 +58,7 @@ Params utilisés (`berlue.params`) : `EVAL_FIRESTORE_PROJECT`,
 """
 
 import json
+import logging
 import os
 import subprocess
 import threading
@@ -276,6 +277,9 @@ def _from_value(fv: dict):
 
 def _from_fields(fields: dict) -> dict:
     return {k: _from_value(v) for k, v in fields.items()}
+
+
+logger = logging.getLogger(__name__)
 
 
 def _non_null(**kwargs) -> dict:
@@ -804,31 +808,52 @@ class GcpResultStore:
         # incrément en cours au passage.
         self.flush_registry()
 
+        # Si AUCUN des filtres demandés ne s'applique à une table, on l'exclut : la
+        # suppression y serait non bornée alors qu'on a demandé quelque chose de précis
+        # (cf. LocalResultStore.purge). Un filtre partiellement applicable, lui, reste
+        # honoré — purger un scope complet doit atteindre les tables qui n'ont pas tous
+        # ses axes.
+        demandes = _non_null(
+            dataset=dataset,
+            ratio=ratio,
+            model_id=model_id,
+            pipeline_version=pipeline_version,
+            generation_version=generation_version,
+            eval_version=eval_version,
+            judge_model=judge_model,
+        )
+
+        def concerne(filters: dict) -> bool:
+            """Vrai si au moins un filtre demandé s'applique à cette table."""
+            return not demandes or any(k in filters for k in demandes)
+
+        def firestore(table: str, filters: dict) -> int:
+            if not concerne(filters):
+                return 0
+            n = self.fs.delete_matching(table, filters)
+            self.fs.delete_matching("_scope_registry", {"table": table, **filters})
+            return n
+
+        def bigquery(table: str, filters: dict) -> int:
+            return self._purge_bigquery(table, filters) if concerne(filters) else 0
+
         counts: dict[str, int] = {}
         if scope in ("all", "results", "fusion"):
-            counts["predictions_deleted"] = self.fs.delete_matching("eval_predictions", mode1_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_predictions", **mode1_filters})
+            counts["predictions_deleted"] = firestore("eval_predictions", mode1_filters)
         if scope in ("all", "signals"):
-            counts["signals_deleted"] = self.fs.delete_matching("eval_signals", signals_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_signals", **signals_filters})
+            counts["signals_deleted"] = firestore("eval_signals", signals_filters)
         if scope in ("all", "results"):
-            counts["llm_answers_deleted"] = self.fs.delete_matching("llm_answers", answer_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "llm_answers", **answer_filters})
-            counts["judge_verdicts_deleted"] = self.fs.delete_matching("judge_verdicts", judge_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "judge_verdicts", **judge_filters})
-            counts["berlue_generated_deleted"] = self.fs.delete_matching("eval_berlue_generated", mode1_gen_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_berlue_generated", **mode1_gen_filters})
-            counts["baseline_generated_deleted"] = self.fs.delete_matching("eval_baseline_generated", baseline_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_baseline_generated", **baseline_filters})
+            counts["llm_answers_deleted"] = firestore("llm_answers", answer_filters)
+            counts["judge_verdicts_deleted"] = firestore("judge_verdicts", judge_filters)
+            counts["berlue_generated_deleted"] = firestore("eval_berlue_generated", mode1_gen_filters)
+            counts["baseline_generated_deleted"] = firestore("eval_baseline_generated", baseline_filters)
         if scope in ("all", "matrices", "fusion"):
-            counts["matrices_deleted"] = self._purge_bigquery("eval_matrices", mode1_filters)
+            counts["matrices_deleted"] = bigquery("eval_matrices", mode1_filters)
         # Les matrices du mode 2 ne sont pas des sorties de fusion du mode 1 :
         # "fusion" ne doit pas y toucher.
         if scope in ("all", "matrices"):
-            counts["matrices_generated_berlue_deleted"] = self._purge_bigquery(
-                "eval_matrices_generated_berlue", mode1_gen_filters
-            )
-            counts["matrices_generated_baseline_deleted"] = self._purge_bigquery(
+            counts["matrices_generated_berlue_deleted"] = bigquery("eval_matrices_generated_berlue", mode1_gen_filters)
+            counts["matrices_generated_baseline_deleted"] = bigquery(
                 "eval_matrices_generated_baseline", baseline_filters
             )
         return counts

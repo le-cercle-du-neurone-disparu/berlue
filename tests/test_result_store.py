@@ -517,3 +517,21 @@ def test_purge_signals_ne_touche_qu_aux_signaux(tmp_path):
 def test_purge_scope_invalide(tmp_path):
     with pytest.raises(ValueError, match="scope de purge invalide"):
         _store(tmp_path).purge(scope="n-importe-quoi")
+
+
+def test_purge_n_efface_pas_les_tables_que_le_filtre_ne_concerne_pas(tmp_path):
+    """Un filtre renseigné mais absent d'une table doit EXCLURE cette table, pas
+    devenir un joker : `--purge-pipeline-version X` a déjà vidé intégralement
+    `llm_answers` et `judge_verdicts`, qui n'ont pas cette colonne."""
+    store = _store(tmp_path)
+    store.put_generated_answer("m", "v1", "q", "une réponse générée")
+    store.put_judge_verdict("m", "v1", "judge-1", "v1", "q", Verdict.SUPPORTED)
+    store.put_prediction(_scope(pipeline_version="cible"), "q", "a", True, Verdict.SUPPORTED)
+
+    result = store.purge(pipeline_version="cible")
+
+    assert result["predictions_deleted"] == 1, "la table visée doit bien être purgée"
+    assert result["llm_answers_deleted"] == 0
+    assert result["judge_verdicts_deleted"] == 0
+    assert store.get_generated_answer("m", "v1", "q") == "une réponse générée"
+    assert store.get_judge_verdict("m", "v1", "judge-1", "v1", "q") == Verdict.SUPPORTED

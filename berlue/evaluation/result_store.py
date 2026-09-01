@@ -21,6 +21,7 @@ Params utilisés (`berlue.params`) : `MLOPS_DB_PATH`.
 
 import hashlib
 import json
+import logging
 import os
 import sqlite3
 from contextlib import closing
@@ -35,6 +36,8 @@ from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
 if TYPE_CHECKING:
     from berlue.evaluation.gcp_result_store import GcpResultStore
 from berlue.params import EVAL_STORE_TARGET, MLOPS_DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def _hash(text: str) -> str:
@@ -960,10 +963,18 @@ class LocalResultStore:
         scope: str = "all",
     ) -> dict[str, int]:
         """Supprime ce qui correspond aux filtres fournis — chaque filtre
-        omis (`None`) est un joker. Un filtre sans colonne correspondante
-        dans une table (ex. `pipeline_version` pour les tables
-        `*_baseline_generated`) est ignoré pour cette table plutôt que de ne
-        rien supprimer. `scope` limite à "results" (résultats individuels,
+        omis (`None`) est un joker.
+
+        Un filtre sans colonne correspondante dans une table est ignoré **pour
+        cette table** — purger un scope complet doit atteindre les tables qui
+        n'ont pas tous ses axes (ex. `eval_baseline_generated` n'a pas de
+        `pipeline_version`).
+
+        En revanche, si **aucun** des filtres demandés ne s'applique à une table,
+        elle est **exclue** : la suppression y serait non bornée alors qu'on a
+        demandé quelque chose de précis. Sans cette garde,
+        `--purge-pipeline-version X` vidait intégralement `llm_answers` et
+        `judge_verdicts`, qui n'ont pas cette colonne. `scope` limite à "results" (résultats individuels,
         5 tables), "matrices" (3 tables), "signals" (les signaux pré-fusion
         seuls), "fusion" (prédictions + matrice du mode 1, en **gardant** les
         signaux — de quoi rejouer la seule fusion avec d'autres `FUSION_*` sans
@@ -994,10 +1005,34 @@ class LocalResultStore:
             "eval_version": eval_version,
         }
 
+        # Tous les filtres explicitement demandés, quelle que soit la table.
+        demandes = {
+            k: v
+            for k, v in (
+                ("dataset", dataset),
+                ("ratio", ratio),
+                ("model_id", model_id),
+                ("pipeline_version", pipeline_version),
+                ("generation_version", generation_version),
+                ("eval_version", eval_version),
+                ("judge_model", judge_model),
+            )
+            if v is not None
+        }
+
         counts: dict[str, int] = {}
         with closing(self._connect()) as conn:
 
             def delete(table: str, filters: dict) -> int:
+                # Aucun des filtres demandés ne s'applique à cette table : la
+                # suppression y serait non bornée, on s'abstient.
+                if demandes and not any(k in filters for k in demandes):
+                    logger.info(
+                        "⏭️  %s non purgée : aucun des filtres demandés (%s) ne s'y applique.",
+                        table,
+                        ", ".join(demandes),
+                    )
+                    return 0
                 where_clause, params = _where_from_filters(filters)
                 return conn.execute(f"DELETE FROM {table} {where_clause}", params).rowcount
 
