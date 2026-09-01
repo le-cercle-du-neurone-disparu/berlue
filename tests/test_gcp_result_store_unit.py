@@ -24,7 +24,7 @@ def test_running_on_cloud_run_true_for_service(monkeypatch):
 
 def test_running_on_cloud_run_true_for_job(monkeypatch):
     monkeypatch.delenv("K_SERVICE", raising=False)
-    monkeypatch.setenv("CLOUD_RUN_JOB", "berlue-eval-mocked")
+    monkeypatch.setenv("CLOUD_RUN_JOB", "berlue-eval")
     assert gcp._running_on_cloud_run() is True
 
 

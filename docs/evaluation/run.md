@@ -163,13 +163,13 @@ Séquence réelle testée (les deux modes, génération scindée en tranches
 pour simuler plusieurs workers sur le même scope) :
 [`execution-benchmark.md`](execution-benchmark.md#local).
 
-## GCP — service Cloud Run (`berlue-eval-mocked-service`)
+## GCP — service Cloud Run (`berlue-eval`)
 
 `EVAL_RUN_TARGET=gcp` reste un paramètre validé sans effet direct sur le
 code Python lui-même (`GcpResultStore` bascule déjà seul entre
 impersonation locale et identité Cloud Run — cf.
 [`auth.md`](../gcp/auth.md)) — mais un vrai chemin d'exécution existe : le
-service Cloud Run `berlue-eval-mocked-service` (`berlue.api.eval_service`,
+service Cloud Run `berlue-eval` (`berlue.api.eval_service`,
 `Dockerfile.eval-service`), tourne en continu (`min-instances=1`,
 monté/éteint par `gcp_eval_up`/`gcp_down`) plutôt qu'un conteneur neuf par
 exécution — même contrat de flags que la CLI locale, reçus en JSON par un
@@ -205,10 +205,6 @@ mesurés).
 service Cloud Run séparé, `berlue-llm` (GPU L4, privé, appelé via jeton
 OIDC), pas bundlé dans l'image d'éval — détail, IAM, contraintes
 (scale-to-zero) : [`cloudrun.md`](../gcp/cloudrun.md).
-
-**"-mocked" dans le nom de l'image d'éval** : rappel volontaire que le
-pipeline Berlue exécuté dedans est encore `RandomBerluePipeline`, pas
-`HurluBerlu`.
 
 Détail des cibles (déploiement, `gcp_eval_up`/`gcp_down`, `WARM_MODELS`,
 `gcp_verify_warm`) : [`cloudrun.md`](../gcp/cloudrun.md). Temps mesurés
