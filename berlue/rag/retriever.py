@@ -9,7 +9,7 @@ from pathlib import Path
 import faiss
 from sentence_transformers import SentenceTransformer
 
-from berlue.core.schemas import Claim, Evidence, RagVerdict, Verdict
+from berlue.core.schemas import Claim, Evidence, RagVerdict, Verdict, RagJudgment
 from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 # "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
 # garde que SUPPORTS/REFUTES) ; gardé ici pour les retours anticipés de verify_claim.
 FEVER_LABEL_TO_VERDICT = {
-    "FEVER_CONFIRMS": Verdict.SUPPORTED,
-    "FEVER_REFUTES": Verdict.CONTRADICTED,
-    "LIKELY_TRUE": Verdict.SUPPORTED,
-    "LIKELY_FALSE": Verdict.CONTRADICTED,
-    "I_DONT_KNOW": Verdict.NOT_ENOUGH_INFO,
+    "FEVER_CONFIRMS": RagJudgment.FEVER_CONFIRMS,
+    "FEVER_REFUTES": RagJudgment.FEVER_REFUTES,
+    "LIKELY_TRUE": RagJudgment.LIKELY_TRUE,
+    "LIKELY_FALSE": RagJudgment.LIKELY_FALSE,
+    "NOT ENOUGH INFO": RagJudgment.I_DONT_KNOWN,
+    "I_DONT_KNOW": RagJudgment.I_DONT_KNOWN,
 }
 
 
@@ -148,7 +149,7 @@ class RagRetriever:
 
             return RagVerdict(
                 claim_id=claim.id,
-                verdict=FEVER_LABEL_TO_VERDICT.get(verdict_str, Verdict.NOT_ENOUGH_INFO),
+                verdict=FEVER_LABEL_TO_VERDICT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
                 confidence=confidence,
                 evidence=final_evidence,
             )
