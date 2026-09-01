@@ -9,7 +9,7 @@ from pathlib import Path
 import faiss
 from sentence_transformers import SentenceTransformer
 
-from berlue.core.schemas import Claim, Evidence, RagVerdict, Verdict, RagJudgment
+from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict, Verdict
 from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
 
 logger = logging.getLogger(__name__)
