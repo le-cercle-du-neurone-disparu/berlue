@@ -354,6 +354,36 @@ cloudrun_llm_url: ## Affiche l'URL du service Ollama
 		--project $(GCP_PROJECT) \
 		--format "value(status.url)"
 
+# Gestion explicite de ce qui occupe la VRAM de berlue-llm. `Dockerfile.llm`
+# fixe OLLAMA_KEEP_ALIVE=-1 (un modèle chargé ne se décharge jamais tout seul)
+# et OLLAMA_MAX_LOADED_MODELS vaut 3 sur un L4 unique : au-delà de 3 modèles,
+# Ollama évince tout seul et paie un rechargement (11-35s mesuré) en pleine
+# exécution — le déclencheur décrit dans docs/gcp/infra-gpu.md. Enchaîner
+# plusieurs runs sur des tailles de modèle différentes demande donc de
+# décharger explicitement, plutôt que de subir l'éviction.
+llm_models_ps: gcp_check_cli_auth ## Liste les modèles actuellement chargés en VRAM sur berlue-llm (et leur échéance)
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	curl -sf "$$URL/api/ps" -H "Authorization: Bearer $$TOKEN" | python3 -m json.tool
+
+llm_model_load: gcp_check_cli_auth ## Charge MODEL en VRAM sur berlue-llm et l'y épingle (req : MODEL=nom:tag)
+	@if [ -z "$(MODEL)" ]; then echo "❌ MODEL manquant. 👉 make llm_model_load MODEL=qwen2.5:14b"; exit 1; fi
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	echo "⬇️  Pull de $(MODEL) si absent du disque..."; \
+	curl -sf -X POST "$$URL/api/pull" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$(MODEL)\",\"stream\":false}" > /dev/null; \
+	echo "🔥 Chargement de $(MODEL) en VRAM (keep_alive=-1)..."; \
+	curl -sf -X POST "$$URL/api/generate" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$(MODEL)\",\"keep_alive\":-1}" > /dev/null; \
+	echo "✅ $(MODEL) chargé et épinglé."
+
+llm_model_unload: gcp_check_cli_auth ## Décharge MODEL de la VRAM de berlue-llm sans le supprimer du disque (req : MODEL=nom:tag)
+	@if [ -z "$(MODEL)" ]; then echo "❌ MODEL manquant. 👉 make llm_model_unload MODEL=qwen2.5:14b"; exit 1; fi
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	echo "🧯 Déchargement de $(MODEL) (keep_alive=0)..."; \
+	curl -sf -X POST "$$URL/api/generate" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$(MODEL)\",\"keep_alive\":0}" > /dev/null; \
+	echo "✅ $(MODEL) déchargé (toujours sur disque, rechargement sans re-pull)."
+
 ollama_load_test_gcp: gcp_check_cli_auth ## Stress-test de charge sur berlue-llm (cf. scripts/ollama_load_test.py) — nécessite le service déjà chaud (make gcp_up ou gcp_eval_up, WARM_MODELS="...")
 	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
 	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
