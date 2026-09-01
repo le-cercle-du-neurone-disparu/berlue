@@ -1,5 +1,3 @@
-import logging
-
 from berlue.core.schemas import FusedVerdict, PipelineResult, RagJudgment, Verdict
 
 # --- Seuils de la zone "sans preuve FEVER" ---
@@ -12,6 +10,7 @@ VALIDATED_THRESHOLD = 0.60
 CONVERGENCE_BONUS = 0.05
 # Facteur de décote appliqué au signal RAG quand SelfCheck est indisponible (pas de second avis)
 SINGLE_SIGNAL_DISCOUNT = 0.7
+
 
 
 def _rag_directional_belief(rag_judgment: RagJudgment, rag_confidence: float) -> float:
@@ -50,6 +49,9 @@ def do_fusion(
 
     for claim in result.claims:
         rag = rag_dict.get(claim.id)
+        print(
+        f"DEBUG FUSION: verdict={rag.verdict if rag else None} (type: {type(rag.verdict if rag else None)})"
+    )
         sc = sc_dict.get(claim.id)
 
         sc_available = sc is not None
@@ -57,6 +59,7 @@ def do_fusion(
 
         evidence = None
         rag_judgment = rag.verdict if rag else RagJudgment.I_DONT_KNOWN
+        print(f"le jugement de rag c'est :{rag_judgment}")
 
         # --- CAS 1 : FEVER prouve que c'est vrai ---
         if rag_judgment == RagJudgment.FEVER_CONFIRMS:

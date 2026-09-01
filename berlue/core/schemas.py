@@ -45,7 +45,7 @@ class RagVerdict:
     """Sortie du module RAG inversé pour une affirmation. (rag/)"""
 
     claim_id: str
-    verdict: Verdict
+    verdict: RagJudgment
     confidence: float  # 0.0 - 1.0
     evidence: Evidence | None = None
 
