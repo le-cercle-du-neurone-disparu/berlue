@@ -76,6 +76,39 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION) \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
+# Accès par personne sur les services Cloud Run du projet. CLOUDRUN_ROLE =
+# viewer (consulter services, révisions et logs — défaut) ou operator
+# (roles/run.developer : déployer ET supprimer, donc lancer gcp_deploy et
+# gcp_down). Pas de rôle GCP prédéfini qui donnerait la suppression sans le
+# déploiement — les deux vont ensemble.
+CLOUDRUN_ROLE ?= viewer
+
+cloudrun_grant: ## Donne l'accès à une personne sur les services Cloud Run (USER=email requis, CLOUDRUN_ROLE=viewer|operator, défaut viewer)
+	@if [ -z "$(USER)" ]; then \
+		echo "❌ ERREUR : USER manquant."; \
+		echo "👉 Essayez : make cloudrun_grant USER=personne@example.com CLOUDRUN_ROLE=operator"; \
+		exit 1; \
+	fi
+	@echo "🔐 Ajout de l'accès Cloud Run '$(CLOUDRUN_ROLE)' pour $(USER) sur $(GCP_PROJECT)..."
+	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
+		--member="user:$(USER)" \
+		--role="roles/run.$(if $(filter operator,$(CLOUDRUN_ROLE)),developer,viewer)" \
+		--condition=None \
+		--quiet </dev/null
+
+cloudrun_revoke: ## Retire l'accès d'une personne sur les services Cloud Run (USER=email requis, CLOUDRUN_ROLE doit correspondre au rôle accordé)
+	@if [ -z "$(USER)" ]; then \
+		echo "❌ ERREUR : USER manquant."; \
+		echo "👉 Essayez : make cloudrun_revoke USER=personne@example.com CLOUDRUN_ROLE=operator"; \
+		exit 1; \
+	fi
+	@echo "🔓 Retrait de l'accès Cloud Run '$(CLOUDRUN_ROLE)' pour $(USER) sur $(GCP_PROJECT)..."
+	gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+		--member="user:$(USER)" \
+		--role="roles/run.$(if $(filter operator,$(CLOUDRUN_ROLE)),developer,viewer)" \
+		--condition=None \
+		--quiet </dev/null
+
 cloudrun_list: ## Liste tous les services Cloud Run actifs du projet
 	@echo "📋 Listing des services Cloud Run..."
 	gcloud run services list --project $(GCP_PROJECT)
