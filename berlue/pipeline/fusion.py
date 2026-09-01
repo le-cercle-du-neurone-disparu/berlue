@@ -23,7 +23,7 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
         coherence = 1.0 - sc.divergence_score if sc else 0.5
 
         # On extrait la valeur du verdict RAG en texte (gère les Enum et les strings)
-        rag_verdict = str(rag.verdict).split('.')[-1] if rag else "I_DONT_KNOW"
+        rag_verdict = str(rag.verdict).split(".")[-1] if rag else "I_DONT_KNOW"
 
         # 2. Application de l'arbre de décision
         if rag_verdict == "FEVER_CONFIRMS":
@@ -48,7 +48,10 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
             final_verdict = Verdict.CONTRADICTED
             # Si c'est LIKELY_FALSE, une faible cohérence (hallucination SelfCheck) renforce l'idée que c'est faux
             final_conf = (rag.confidence * weight_rag) + ((1.0 - coherence) * weight_selfcheck)
-            explanation = "Absente de FEVER, mais jugée invraisemblable (hallucination probable) selon les connaissances générales."
+            explanation = (
+                "Absente de FEVER, mais jugée invraisemblable (hallucination probable) "
+                "selon les connaissances générales."
+            )
             evidence = None
 
         else:
@@ -58,12 +61,16 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
                 # Le générateur s'est contredit dans ses propres réponses.
                 final_verdict = Verdict.CONTRADICTED
                 final_conf = 1.0 - coherence
-                explanation = "Hallucination détectée : aucune information disponible et le modèle se contredit lui-même."
+                explanation = (
+                    "Hallucination détectée : aucune information disponible et le modèle se contredit lui-même."
+                )
             else:
                 # Le générateur est très cohérent, mais on a zéro preuve.
                 final_verdict = Verdict.NOT_ENOUGH_INFO
                 final_conf = coherence
-                explanation = "L'affirmation semble cohérente, mais manque de sources et sort des connaissances générales."
+                explanation = (
+                    "L'affirmation semble cohérente, mais manque de sources et sort des connaissances générales."
+                )
             evidence = None
 
         # Petite sécurité pour être sûr que la confiance reste entre 0.0 et 1.0
