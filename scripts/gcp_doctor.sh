@@ -71,52 +71,81 @@ else
     ko "artifactregistry.googleapis.com désactivée dans $ARTIFACT_PROJECT — make artifact_registry_enable_api"
 fi
 
-# --- Firestore ---------------------------------------------------------------
+# --- Existence des ressources -------------------------------------------------
 echo ""
-echo "Firestore (cache des résultats d'éval)"
+echo "Ressources de l'éval"
 if gcloud firestore databases describe --database='(default)' --project="$GCP_PROJECT" >/dev/null 2>&1 </dev/null; then
-    ok "base (default) présente"
-    probe "lecture"  make --no-print-directory firestore_test_read
-    probe "écriture" make --no-print-directory firestore_test_write
+    ok "base Firestore (default) présente"
 else
-    ko "base (default) absente — make firestore_create_database"
+    ko "base Firestore (default) absente — make firestore_create_database"
 fi
-
-# --- BigQuery ----------------------------------------------------------------
-echo ""
-echo "BigQuery (matrices d'éval)"
 if bq --headless show --project_id="$GCP_PROJECT" "${BQ_DATASET:-berlue}" >/dev/null 2>&1 </dev/null; then
-    ok "dataset ${BQ_DATASET:-berlue} présent"
-    probe "lecture"  make --no-print-directory bigquery_test_read
-    probe "écriture" make --no-print-directory bigquery_test_write
+    ok "dataset BigQuery ${BQ_DATASET:-berlue} présent"
 else
-    ko "dataset ${BQ_DATASET:-berlue} absent — make bigquery_create_dataset"
+    ko "dataset BigQuery ${BQ_DATASET:-berlue} absent — make bigquery_create_dataset"
 fi
 
-# --- Compte de service -------------------------------------------------------
-# L'impersonation est le seul chemin d'auth du runtime (cf. docs/gcp/auth.md) :
-# si elle échoue, l'éval en local contre GCP ne marchera pas, quoi que disent
-# les autres lignes. Les bindings IAM mettent jusqu'à ~1 min à se propager,
-# d'où le retry plutôt qu'un verdict immédiat après un gcp_setup.
+# --- Identité testée : sa-berlue, pas vous -------------------------------------
+# Firestore et BigQuery sont toujours lus/écrits en impersonant sa-berlue, en
+# local comme sur Cloud Run (cf. berlue/evaluation/gcp_result_store.py et
+# docs/gcp/auth.md). Sonder avec le compte humain ne dit donc rien d'utile :
+# un Owner passe même sans que sa-berlue ait ses droits, et quelqu'un sans
+# accès direct échoue alors que l'éval fonctionnerait très bien.
 echo ""
-echo "Compte de service ${CLOUDRUN_SA_EMAIL:-sa-berlue}"
+echo "Accès de ${CLOUDRUN_SA_EMAIL:-sa-berlue} (l'identité qui compte au runtime)"
 if gcloud iam service-accounts describe "$CLOUDRUN_SA_EMAIL" --project="$GCP_PROJECT" >/dev/null 2>&1 </dev/null; then
-    ok "présent"
-    IMPERSONATION_OK=0
-    for i in 1 2 3 4 5 6; do
-        if gcloud auth print-access-token --impersonate-service-account="$CLOUDRUN_SA_EMAIL" >/dev/null 2>&1 </dev/null; then
-            IMPERSONATION_OK=1
-            break
-        fi
-        [ "$i" -lt 6 ] && sleep 10
-    done
-    if [ "$IMPERSONATION_OK" = "1" ]; then
-        ok "impersonation (roles/iam.serviceAccountTokenCreator)"
-    else
-        ko "impersonation refusée après ~1 min — make iam_setup_cloudrun_service_account"
-    fi
+    ok "compte de service présent"
 else
-    ko "absent — make iam_setup_cloudrun_service_account"
+    ko "compte de service absent — make iam_setup_cloudrun_service_account"
+fi
+SA_TOKEN=$(gcloud auth print-access-token \
+    --impersonate-service-account="$CLOUDRUN_SA_EMAIL" 2>/dev/null </dev/null || true)
+
+if [ -z "$SA_TOKEN" ]; then
+    ko "impersonation impossible — sondes Firestore/BigQuery non exécutées (make iam_setup_cloudrun_service_account)"
+else
+    ok "impersonation (roles/iam.serviceAccountTokenCreator)"
+
+    FS_URL="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents/_access_probe/probe"
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$FS_URL" -H "Authorization: Bearer $SA_TOKEN")
+    case "$code" in
+        200|404) ok "Firestore : lecture (http $code)" ;;
+        *)       ko "Firestore : lecture refusée (http $code)" ;;
+    esac
+
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X PATCH "$FS_URL" \
+        -H "Authorization: Bearer $SA_TOKEN" -H "Content-Type: application/json" \
+        -d '{"fields": {"ok": {"booleanValue": true}}}')
+    if [ "$code" = "200" ]; then
+        curl -s -X DELETE "$FS_URL" -H "Authorization: Bearer $SA_TOKEN" >/dev/null
+        ok "Firestore : écriture"
+    else
+        ko "Firestore : écriture refusée (http $code)"
+    fi
+
+    BQ_API="https://bigquery.googleapis.com/bigquery/v2/projects/${GCP_PROJECT}"
+    code=$(curl -s -o /dev/null -w "%{http_code}" \
+        "${BQ_API}/datasets/${BQ_DATASET:-berlue}" -H "Authorization: Bearer $SA_TOKEN")
+    if [ "$code" = "200" ]; then
+        ok "BigQuery : lecture du dataset ${BQ_DATASET:-berlue}"
+    else
+        ko "BigQuery : lecture refusée (http $code)"
+    fi
+
+    # Écriture ET exécution de requête d'un coup : dataEditor seul ne suffit
+    # pas à lancer un job, il faut aussi jobUser (cf. iam_setup_cloudrun_service_account).
+    probe_sql="CREATE OR REPLACE TABLE \`${GCP_PROJECT}.${BQ_DATASET:-berlue}._access_probe\` AS SELECT 1 AS ok"
+    code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${BQ_API}/queries" \
+        -H "Authorization: Bearer $SA_TOKEN" -H "Content-Type: application/json" \
+        -d "{\"query\": \"${probe_sql}\", \"useLegacySql\": false}")
+    if [ "$code" = "200" ]; then
+        curl -s -o /dev/null -X POST "${BQ_API}/queries" \
+            -H "Authorization: Bearer $SA_TOKEN" -H "Content-Type: application/json" \
+            -d "{\"query\": \"DROP TABLE \\\`${GCP_PROJECT}.${BQ_DATASET:-berlue}._access_probe\\\`\", \"useLegacySql\": false}"
+        ok "BigQuery : écriture et exécution de requête"
+    else
+        ko "BigQuery : écriture refusée (http $code)"
+    fi
 fi
 
 # --- Artifact Registry -------------------------------------------------------
