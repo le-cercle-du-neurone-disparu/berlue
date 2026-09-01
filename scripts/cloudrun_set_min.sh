@@ -29,7 +29,7 @@ shift 2
 
 current=$(gcloud run services describe "$service" \
     --region "$GCP_REGION" --project "$GCP_PROJECT" \
-    --format="value(spec.template.metadata.annotations['"'"'autoscaling.knative.dev/minScale'"'"'])" \
+    --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])" \
     2>/dev/null </dev/null) || {
     echo "   ⚠️  $service n'existe pas — ignoré (make gcp_deploy pour le créer)."
     exit 0
@@ -37,8 +37,14 @@ current=$(gcloud run services describe "$service" \
 
 # `services update` crée une révision même quand rien ne change : sans réglage
 # supplémentaire à appliquer, une valeur déjà correcte n'a pas à repayer un
-# déploiement complet (~1 min) ni à gonfler l'historique de révisions.
-if [ "$#" -eq 0 ] && [ "${current:-0}" = "$min" ]; then
+# déploiement complet (~1 min), ni à gonfler l'historique de révisions, ni —
+# côté GPU — à jeter le modèle déjà chargé en VRAM (disque éphémère).
+#
+# Le saut exige une valeur POSITIVEMENT lue : une lecture vide (annotation
+# absente, ou appel qui n'a rien renvoyé) ne doit jamais faire conclure "déjà
+# à la bonne valeur". Sur gcp_down cela annoncerait une extinction qui n'a pas
+# eu lieu, en laissant le service facturé. Dans le doute, on applique.
+if [ "$#" -eq 0 ] && [ -n "$current" ] && [ "$current" = "$min" ]; then
     echo "   ✅ $service : déjà à min-instances=$min"
     exit 0
 fi
