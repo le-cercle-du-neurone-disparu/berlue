@@ -18,14 +18,11 @@ GCP_AUTH_CACHE_MINUTES = 10
 GCLOUD_ACTIVE_ACCOUNT = $$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -n1)
 
 # Vérifie que la session gcloud est utilisable — SANS toucher à une API du
-# projet. L'ancien test (`gcloud run services list`) échouait sur un projet
-# où run.googleapis.com n'est pas encore activée, donc exactement sur le
-# projet neuf que gcp_setup doit provisionner : message trompeur ("non
-# authentifiée"), login inutile, et gcp_setup bloqué par son propre
-# prérequis. Pire, gcloud propose alors d'activer l'API de façon interactive
-# ("Would you like to enable and retry?") : sans `</dev/null` la recette
-# gèle en attendant une réponse invisible. `print-access-token` ne dépend
-# que du credential lui-même et échoue bien quand la session a expiré.
+# projet : sur un projet neuf, que gcp_setup doit justement provisionner, une
+# commande visant une API désactivée échoue pour une raison qui n'a rien à
+# voir avec l'authentification, et gcloud propose de l'activer par une
+# question interactive. `print-access-token` ne dépend que du credential
+# lui-même et échoue quand la session a expiré, pas avant.
 _gcp_check_cli_auth:
 	@gcloud auth print-access-token >/dev/null 2>&1 </dev/null
 
@@ -268,9 +265,8 @@ iam_setup_cloudrun_service_account: gcp_check_cli_auth ## Crée $(CLOUDRUN_SA_NA
 			--project=$(GCP_PROJECT) </dev/null; \
 	fi
 	@# Un compte de service tout juste créé n'est pas immédiatement visible des
-	@# commandes suivantes (cohérence éventuelle) : les bindings ci-dessous
-	@# échouent alors en "does not exist". Invisible sur un projet déjà
-	@# provisionné, où le SA existe depuis longtemps.
+	@# commandes suivantes (cohérence éventuelle) : sans cette attente, les
+	@# bindings ci-dessous échouent en "does not exist".
 	@$(RETRY) "propagation de $(CLOUDRUN_SA_EMAIL)" \
 		gcloud iam service-accounts describe $(CLOUDRUN_SA_EMAIL) --project=$(GCP_PROJECT) --format="value(email)"
 	@echo "🔐 Firestore lecture/écriture (datastore.user), restreint à la base (default)..."

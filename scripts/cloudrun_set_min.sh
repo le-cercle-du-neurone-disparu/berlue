@@ -4,12 +4,11 @@
 # Passe un service Cloud Run à min-instances=<n>, en ne faisant rien (et sans
 # échouer) s'il n'existe pas encore.
 #
-# Pourquoi : gcp_up et gcp_down agissent sur trois services, mais rien
-# n'oblige les trois à être déployés (on peut n'avoir que l'éval). Avec un
-# `gcloud run services update` nu, le premier service absent interrompait la
-# recette — et les suivants n'étaient jamais traités. Côté gcp_down c'est un
-# risque de facturation : un service resté à min-instances=1 parce qu'un
-# autre, plus haut dans la liste, n'existait pas.
+# Pourquoi : gcp_up, gcp_eval_up et gcp_down agissent sur trois services, mais
+# rien n'oblige les trois à être déployés (on peut n'avoir que l'éval). Un
+# `gcloud run services update` nu échoue sur un service absent et interrompt
+# la série, laissant les suivants intacts. Côté gcp_down c'est un risque de
+# facturation : un service resté à min-instances=1 faute d'avoir été traité.
 #
 # Usage : scripts/cloudrun_set_min.sh <service> <min-instances> [args gcloud...]
 # GCP_PROJECT et GCP_REGION viennent de l'environnement (exportés par le Makefile).
