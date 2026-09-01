@@ -83,11 +83,16 @@ def aggregate_verdict(claims: list[ClaimResult]) -> Verdict:
     de l'exemple : une seule affirmation contredite suffit à considérer toute la
     réponse comme fausse (pire cas), sinon une seule incertaine suffit à rendre
     la réponse indécise — sans affirmation, rien à valider.
+
+    Une seule affirmation en panne suffit à mettre toute la réponse en panne : le
+    résultat est incomplet, il n'est comparable à rien et la question est à rejouer.
     """
     if not claims:
         return Verdict.NOT_ENOUGH_INFO
 
     statuses = {claim.status for claim in claims}
+    if "panne" in statuses:
+        return Verdict.PANNE
     if "red" in statuses:
         return Verdict.CONTRADICTED
     if "orange" in statuses:

@@ -155,8 +155,42 @@ TRAIN_RATIO = float(os.environ.get("BERLUE_TRAIN_RATIO", "0.8"))
 MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
 
 # --- Fusion des scores ---
+# Fonctionnel de référence : claude-doc/specification-fusion-2026-09-02.md.
+#
+# Poids d'arbitrage quand le RAG et SelfCheck se contredisent (règle R5). Le RAG
+# pèse plus : il juge le fait, SelfCheck ne juge que la stabilité du modèle qui a
+# répondu.
 FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.6"))
-FUSION_WEIGHT_SELFCHECK = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK", "0.4"))
+# Poids de SelfCheck, asymétrique : une divergence forte est un signal plus
+# informatif qu'une divergence faible. Se contredire n'a qu'une lecture (le modèle
+# ne sait pas) ; être cohérent en a deux (il sait, ou il se trompe avec constance).
+# La cohérence ne peut donc pas peser autant que l'incohérence.
+FUSION_WEIGHT_SELFCHECK_CHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_CHARGE", "0.55"))
+FUSION_WEIGHT_SELFCHECK_DECHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_DECHARGE", "0.3"))
+
+# Divergence à laquelle SelfCheck est neutre : en deçà il penche vers le vrai,
+# au-delà vers le faux. À calibrer sur la distribution réelle des divergences ;
+# 0.5 reproduit le `1 - divergence` historique.
+FUSION_DIVERGENCE_NEUTRE = float(os.environ.get("BERLUE_FUSION_DIVERGENCE_NEUTRE", "0.5"))
+
+# Bande dans laquelle le jugement du RAG est trop faible pour conclure (règle R3) :
+# SelfCheck y décide seul, mais seulement si son signal est franc.
+FUSION_BANDE_RAG_MIN = float(os.environ.get("BERLUE_FUSION_BANDE_RAG_MIN", "0.4"))
+FUSION_BANDE_RAG_MAX = float(os.environ.get("BERLUE_FUSION_BANDE_RAG_MAX", "0.6"))
+# Seuils au-delà desquels SelfCheck seul peut trancher. Volontairement extrêmes :
+# une divergence moyenne peut venir de la créativité, d'une omission ou des
+# températures étalées du protocole d'échantillonnage, pas d'une hallucination.
+FUSION_SELFCHECK_SEUIL_HAUT = float(os.environ.get("BERLUE_FUSION_SELFCHECK_SEUIL_HAUT", "0.8"))
+FUSION_SELFCHECK_SEUIL_BAS = float(os.environ.get("BERLUE_FUSION_SELFCHECK_SEUIL_BAS", "0.2"))
+
+# Décote appliquée à une conviction qui ne repose que sur SelfCheck : sans elle, une
+# conviction d'un seul signal ressortirait plus confiante qu'une conviction corroborée
+# par le RAG, et la confiance baisserait quand le RAG devient plus convaincu.
+FUSION_DECOTE_SIGNAL_SEUL = float(os.environ.get("BERLUE_FUSION_DECOTE_SIGNAL_SEUL", "0.6"))
+
+# Seuils de classification du score final sur l'axe faux <-> vrai.
+FUSION_SEUIL_FAUX = float(os.environ.get("BERLUE_FUSION_SEUIL_FAUX", "0.4"))
+FUSION_SEUIL_VRAI = float(os.environ.get("BERLUE_FUSION_SEUIL_VRAI", "0.6"))
 
 ##################  CONFIGURATION FIXE (décisions de mainteneur, pas des paramètres .env)  ##################
 # Mêmes valeurs pour tout le monde — cf. make/config.mk pour l'équivalent côté Make

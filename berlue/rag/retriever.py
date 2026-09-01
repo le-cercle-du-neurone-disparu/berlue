@@ -9,7 +9,7 @@ from pathlib import Path
 import faiss
 from sentence_transformers import SentenceTransformer
 
-from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict, Verdict
+from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict
 from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ class RagRetriever:
         logger.info("\n===============================\n")
 
         if not evidences:
-            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
 
         # 2. Préparation du contexte (liste de dictionnaires convertie en chaîne formatée)
         # On inclut l'index pour la traçabilité, le texte, et surtout le statut de vérité (label)
@@ -129,24 +129,35 @@ class RagRetriever:
             used_idx = llm_result.get("used_evidence_index")
             used_idx = used_idx[0] if isinstance(used_idx, list) else used_idx
 
-            # Si le LLM n'a pas assez d'infos, on ne renvoie AUCUNE preuve
-            if (
-                verdict_str == "NOT ENOUGH INFO"
-                or used_idx is None
-                or not isinstance(used_idx, int)
-                or used_idx >= len(evidences)
-            ):
-                final_evidence = None
-                verdict_str = "NOT ENOUGH INFO"
-                confidence = 0.0
-            else:
-                # On récupère LA preuve spécifique que le LLM a choisi
+            # L'index cité est-il exploitable ? `isinstance(True, int)` valant vrai en
+            # Python, on écarte explicitement les booléens.
+            index_valide = (
+                isinstance(used_idx, int) and not isinstance(used_idx, bool) and 0 <= used_idx < len(evidences)
+            )
+
+            if index_valide:
+                # LA preuve précise que le LLM a choisie.
                 chosen_ev = evidences[used_idx]
                 final_evidence = Evidence(
                     text=chosen_ev["text"],
                     source=chosen_ev["evidence_url"][0][0][2] if chosen_ev.get("evidence_url") else "FEVER",
                     similarity_score=confidence,
                 )
+            else:
+                # Pas de preuve citée : on n'en renvoie aucune. Le verdict, lui, survit
+                # — le prompt impose justement `used_evidence_index: null` pour
+                # LIKELY_TRUE / LIKELY_FALSE / I_DONT_KNOW, qui sont des jugements
+                # valides sans preuve en base. Seuls FEVER_CONFIRMS et FEVER_REFUTES
+                # exigent une preuve citée : sans elle, ils ne prouvent rien.
+                final_evidence = None
+                if verdict_str in ("FEVER_CONFIRMS", "FEVER_REFUTES"):
+                    logger.warning(
+                        "⚠️ Verdict %s sans preuve citée sur l'affirmation %s : dégradé en I_DONT_KNOW.",
+                        verdict_str,
+                        claim.id,
+                    )
+                    verdict_str = "I_DONT_KNOW"
+                    confidence = 0.0
 
             return RagVerdict(
                 claim_id=claim.id,
@@ -159,10 +170,10 @@ class RagRetriever:
             # Si le JSON est trouvé mais mal formé (ex: virgule manquante)
             logger.warning("⚠️ Erreur de parsing JSON sur l'affirmation %s : %s", claim.id, e)
             logger.warning("Texte problématique : %s", clean_json_str)
-            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
         except Exception as e:
             logger.warning("⚠️ Erreur inattendue sur l'affirmation %s : %s", claim.id, e)
-            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
 
     def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
         """Vérifie une liste d'affirmations, une par une."""

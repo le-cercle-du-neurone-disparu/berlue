@@ -12,18 +12,12 @@ compris — coûteux à charger, cf. `RagRetriever.__init__`) et l'appelle en
 boucle sur des milliers de questions.
 """
 
-from berlue.api.schemas import ClaimResult, LLMConfig, PredictOutput
-from berlue.core.schemas import PipelineResult, Verdict
+from berlue.api.schemas import STATUS_BY_VERDICT, ClaimResult, LLMConfig, PredictOutput
+from berlue.core.schemas import PipelineResult
 from berlue.llm.client import OllamaClient
 from berlue.params import EXTRACT_MODEL, OLLAMA_MODEL, RAG_MODEL
 from berlue.pipeline.hurlu_berlu import HurluBerlu
 from berlue.rag.retriever import RagRetriever
-
-_STATUS_BY_VERDICT = {
-    Verdict.SUPPORTED: "green",
-    Verdict.CONTRADICTED: "red",
-    Verdict.NOT_ENOUGH_INFO: "orange",
-}
 
 
 class BerluePipeline:
@@ -66,7 +60,7 @@ class BerluePipeline:
         claims = [
             ClaimResult(
                 claim_text=fused.claim_text,
-                status=_STATUS_BY_VERDICT[fused.verdict],
+                status=STATUS_BY_VERDICT[fused.verdict],
                 fusion_score=fused.confidence,
                 evidence_source="FEVER_corpus" if fused.evidence else "SelfCheckGPT",
                 evidence_text=fused.evidence.text if fused.evidence else fused.explanation,

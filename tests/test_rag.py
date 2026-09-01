@@ -20,13 +20,19 @@ def test_verify_claim_returns_rag_verdict():
 
 
 @pytest.mark.functional  # a besoin d'un index FAISS + embeddings réels (RagRetriever)
-def test_verify_claim_handles_no_evidence_found():
-    """Une affirmation sans rapport avec le corpus doit renvoyer I_DONT_KNOWN avec
-    evidence=None, pas planter — c'est la branche de repli de verify_claim() quand
-    aucune preuve récupérée n'est assez proche."""
+def test_verify_claim_ne_fabrique_pas_de_preuve_sur_une_affirmation_hors_corpus():
+    """Sur une affirmation sans aucun rapport avec le corpus, FAISS remonte quand même
+    ses `top_k` voisins (aucun seuil de distance — cf. point 10 de tofix.md). Le
+    retriever ne doit alors produire NI preuve citée, NI verdict prétendant que FEVER
+    a tranché.
+
+    Le modèle garde le droit d'avoir une conviction issue de sa connaissance interne
+    (`LIKELY_TRUE` / `LIKELY_FALSE` / `I_DONT_KNOWN`) : c'est ce que le prompt lui
+    demande, et l'écraser était le bug corrigé au point 2. Ce qui reste interdit, c'est
+    de présenter cette conviction comme une preuve documentaire."""
     retriever = RagRetriever(llm_client=OllamaClient())
     claim = Claim(id="c2", text="Xyzzy qwerty plugh zzzz asdf dvd dfvdv dvdv dvdv.", source_answer="...")
     result = retriever.verify_claim(claim)
     assert isinstance(result, RagVerdict)
-    assert result.verdict == RagJudgment.I_DONT_KNOWN
+    assert result.verdict not in (RagJudgment.FEVER_CONFIRMS, RagJudgment.FEVER_REFUTES)
     assert result.evidence is None

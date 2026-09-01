@@ -9,6 +9,7 @@ Swagger.
 
 from pydantic import BaseModel
 
+from berlue.core.schemas import Verdict
 from berlue.params import BASE_TEMPERATURE, EVAL_DATASETS, OLLAMA_MODEL
 
 # ==============================================================================
@@ -51,6 +52,17 @@ class PredictInput(BaseModel):
     question: str
     answer: str | None = None
     llm: LLMConfig = LLMConfig()
+
+
+# Verdict interne -> couleur affichée. Défini ici, et ici seulement : `api.service` et
+# `evaluation.berlue_pipeline` construisent tous les deux des `ClaimResult` et
+# divergeraient à la première valeur ajoutée s'ils avaient chacun leur mapping.
+STATUS_BY_VERDICT = {
+    Verdict.SUPPORTED: "green",
+    Verdict.CONTRADICTED: "red",
+    Verdict.NOT_ENOUGH_INFO: "orange",
+    Verdict.PANNE: "panne",  # ni vrai, ni faux, ni indécis : pas de résultat du tout
+}
 
 
 class ClaimResult(BaseModel):

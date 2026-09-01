@@ -95,15 +95,12 @@ class HurluBerlu:
         return result
 
     # ÉTAPE 6
-    def fuse_results(
-        self, result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck: float = 0.3
-    ) -> PipelineResult:
-        """
-        Dernière étape : combine les scores RAG et SelfCheckGPT pour statuer sur chaque affirmation.
-        Utilise le pattern Passe-Plat.
-        """
-
-        return do_fusion(result, weight_rag, weight_selfcheck)
+    def fuse_results(self, result: PipelineResult) -> PipelineResult:
+        """Dernière étape : combine le jugement RAG et le score SelfCheck pour statuer
+        sur chaque affirmation. Les poids et seuils viennent de `params.py`
+        (`FUSION_*`), pas de la signature : ils doivent être réglables sans éditer
+        chaque appelant."""
+        return do_fusion(result)
 
 
 if __name__ == "__main__":
