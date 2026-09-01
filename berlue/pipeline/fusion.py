@@ -12,7 +12,6 @@ CONVERGENCE_BONUS = 0.05
 SINGLE_SIGNAL_DISCOUNT = 0.7
 
 
-
 def _rag_directional_belief(rag_judgment: RagJudgment, rag_confidence: float) -> float:
     """
     Traduit un jugement RAG SANS preuve FEVER en un score directionnel 0-1 :
@@ -49,9 +48,7 @@ def do_fusion(
 
     for claim in result.claims:
         rag = rag_dict.get(claim.id)
-        print(
-        f"DEBUG FUSION: verdict={rag.verdict if rag else None} (type: {type(rag.verdict if rag else None)})"
-    )
+        print(f"DEBUG FUSION: verdict={rag.verdict if rag else None} (type: {type(rag.verdict if rag else None)})")
         sc = sc_dict.get(claim.id)
 
         sc_available = sc is not None
