@@ -35,25 +35,24 @@ second mode, qui fait générer sa propre réponse au LLM et la fait vérifier.
 
 ```mermaid
 flowchart TB
-    D["<b>Dataset</b><br/>HaluEval / TruthfulQA<br/>question + réponse + label"]
-    A["<b>Réponse à vérifier</b><br/>right_answer / hallucinated_answer"]
-    B["<b>BERLUE</b><br/>extraction → SelfCheck + RAG → fusion"]
-    N["baseline NLI<br/>TF-IDF + régression log."]
-    G["<b>Label du dataset</b><br/>vérité-terrain directe<br/>fiable, déterministe"]
-    MB["matrice<br/><b>Berlue</b>"]
-    MN["matrice<br/>baseline"]
+    D["Dataset HaluEval / TruthfulQA<br/>question + réponse + label"]
+    A["Réponse à vérifier<br/>right_answer / hallucinated_answer"]
+    B["BERLUE<br/>extraction, SelfCheck + RAG, fusion"]
+    N["baseline NLI<br/>TF-IDF + régression logistique"]
+    G["Label du dataset<br/>vérité-terrain directe, déterministe"]
+    MB["matrice Berlue"]
+    MN["matrice baseline"]
 
-    D -->|"① la réponse est déjà écrite<br/>aucune génération"| A
-    A -->|"②"| B
-    A -.->|"②'"| N
-    B -->|"③ verdict 3 états<br/>supported / contradicted / not_enough_info"| MB
+    D -->|"1. la réponse est déjà écrite, aucune génération"| A
+    A -->|"2."| B
+    A -.->|"même réponse"| N
+    B -->|"3. verdict 3 états<br/>supported / contradicted / not_enough_info"| MB
     N -.->|"verdict binaire"| MN
-    D -->|"④ le label est déjà là"| G
-    G -->|"⑤ vérité-terrain"| MB
+    D -->|"4. le label est déjà là"| G
+    G -->|"5. vérité-terrain"| MB
     G -.-> MN
 
     classDef data fill:#EAF0F7,stroke:#3E5F8A,stroke-width:2px,color:#1F3A5F
-    classDef gen fill:#DDEEF0,stroke:#2E7C86,stroke-width:2px,color:#17454B
     classDef answer fill:#D9E6F5,stroke:#2A4E7C,stroke-width:2px,color:#12335A
     classDef berlue fill:#1F4E88,stroke:#12335A,stroke-width:2px,color:#FFFFFF
     classDef base fill:#F5F7FA,stroke:#8A97A8,stroke-width:1px,color:#5A6878
@@ -91,33 +90,32 @@ suffit à la classer `NOT_ENOUGH_INFO`.
 ## Mode généré + juge
 
 Même squelette que le mode dataset ; les deux seules différences sont
-l'étape ② (d'où vient la réponse vérifiée) et les étapes ⑤⑥⑦ (d'où vient la
-vérité-terrain).
+l'étape 2 (d'où vient la réponse vérifiée) et les étapes 5 à 7 (d'où vient
+la vérité-terrain).
 
 ```mermaid
 flowchart TB
-    D["<b>Dataset</b><br/>HaluEval / TruthfulQA<br/>question + réponses de référence"]
-    L["<b>LLM sous test</b><br/>génère sa propre réponse"]
-    A["<b>Réponse à vérifier</b><br/>texte généré — aucun label direct"]
-    B["<b>BERLUE</b><br/>extraction → SelfCheck + RAG → fusion"]
-    N["baseline NLI<br/>TF-IDF + régression log."]
-    G["<b>LLM-juge</b><br/>compare la réponse générée aux références<br/>correcte / incorrecte du dataset<br/>→ vérité-terrain de <i>substitution</i>"]
-    MB["matrice<br/><b>Berlue</b>"]
-    MN["matrice<br/>baseline"]
+    D["Dataset HaluEval / TruthfulQA<br/>question + réponses de référence"]
+    L["LLM sous test<br/>génère sa propre réponse"]
+    A["Réponse à vérifier<br/>texte généré, aucun label direct"]
+    B["BERLUE<br/>extraction, SelfCheck + RAG, fusion"]
+    N["baseline NLI<br/>TF-IDF + régression logistique"]
+    G["LLM-juge<br/>compare la réponse générée aux références<br/>correcte / incorrecte du dataset"]
+    MB["matrice Berlue"]
+    MN["matrice baseline"]
 
-    D -->|"① la question seule"| L
-    L -->|"② sa propre réponse"| A
-    A -->|"③"| B
-    A -.->|"③'"| N
-    B -->|"④ verdict 3 états"| MB
+    D -->|"1. la question seule"| L
+    L -->|"2. sa propre réponse"| A
+    A -->|"3."| B
+    A -.->|"même réponse"| N
+    B -->|"4. verdict 3 états"| MB
     N -.->|"verdict binaire"| MN
-    D -->|"⑤ les références<br/>correcte + incorrecte"| G
-    A -->|"⑥ la réponse générée"| G
-    G -->|"⑦ TRUE / FALSE"| MB
+    D -->|"5. les références correcte + incorrecte"| G
+    A -->|"6. la réponse générée"| G
+    G -->|"7. TRUE / FALSE"| MB
     G -.-> MN
 
     classDef data fill:#EAF0F7,stroke:#3E5F8A,stroke-width:2px,color:#1F3A5F
-    classDef gen fill:#DDEEF0,stroke:#2E7C86,stroke-width:2px,color:#17454B
     classDef answer fill:#D9E6F5,stroke:#2A4E7C,stroke-width:2px,color:#12335A
     classDef berlue fill:#1F4E88,stroke:#12335A,stroke-width:2px,color:#FFFFFF
     classDef base fill:#F5F7FA,stroke:#8A97A8,stroke-width:1px,color:#5A6878
@@ -125,7 +123,7 @@ flowchart TB
     classDef matrix fill:#C9DCF0,stroke:#1F4E88,stroke-width:2px,color:#12335A
 
     class D data
-    class L gen
+    class L answer
     class A answer
     class B berlue
     class N,MN base
