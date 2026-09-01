@@ -68,10 +68,15 @@ make firestore_test_write
 ```
 
 Chaque test lit/écrit une ressource jetable (table ou document préfixé
-`_access_probe`) et la supprime dans la foulée. `make gcp_doctor` les
-enchaîne tous (plus l'impersonation, Artifact Registry et le bucket RAG)
-sans s'arrêter à la première erreur — utile pour vérifier d'un coup ce à
-quoi on a accès.
+`_access_probe`) et la supprime dans la foulée.
+
+⚠️ Ces quatre cibles sondent **votre compte humain**, pas `sa-berlue`. Leur
+résultat ne dit donc rien sur le fait que l'éval fonctionnera : elle
+n'authentifie jamais comme vous. Pour vérifier ce qui compte au runtime,
+c'est `make gcp_doctor`, qui refait les mêmes sondes **en impersonant
+`sa-berlue`**. Un Owner de projet verra ✅ ici même si `sa-berlue` n'a aucun
+droit, et quelqu'un sans accès direct verra ❌ alors que l'éval tournera
+parfaitement.
 
 ## Artifact Registry
 

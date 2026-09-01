@@ -70,8 +70,9 @@ bq query --use_legacy_sql=false "SELECT 1"
 gcloud config unset auth/impersonate_service_account
 ```
 
-Diagnostic complet des accès (impersonation comprise, avec les quelques
-dizaines de secondes de propagation absorbées) :
+Diagnostic complet des accès — `gcp_doctor` sonde Firestore et BigQuery **en
+impersonant `sa-berlue`**, comme le fait le runtime, et non avec votre compte
+humain dont les droits ne préjugent de rien :
 
 ```bash
 make gcp_doctor
