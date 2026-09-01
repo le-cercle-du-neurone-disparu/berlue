@@ -14,6 +14,14 @@ class Verdict(StrEnum):
     NOT_ENOUGH_INFO = "not_enough_info"
 
 
+class RagJudgment(StrEnum):
+    FEVER_CONFIRMS = "proven_true"  # FEVER prouve que c'est vrai
+    FEVER_REFUTES = "proven_false"  # FEVER prouve que c'est faux
+    LIKELY_TRUE = "likely_true"  # rien dans FEVER, mais persuadé vrai
+    LIKELY_FALSE = "likely_false"  # rien dans FEVER, mais persuadé faux
+    I_DONT_KNOWN = "unknown"
+
+
 @dataclass
 class Claim:
     """Une affirmation atomique extraite de la réponse du LLM. (llm/)"""
