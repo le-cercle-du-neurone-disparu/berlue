@@ -1,9 +1,41 @@
 # Partage d'accès
 
-Plusieurs accès bien distincts, à ne pas confondre — celui qui fait
-tourner l'éval, et ceux qui servent seulement à regarder/déployer à la
-main. Mécanisme d'authentification derrière chacun :
-[`auth.md`](auth.md).
+## Ouvrir le projet à un coéquipier
+
+```bash
+make gcp_share_with personne@example.com
+```
+
+Une commande pour tout ce dont quelqu'un a besoin sur ce projet :
+
+| Accès | Rôle posé |
+|---|---|
+| Impersonation de `sa-berlue` — **le seul qui compte pour lancer l'éval** | `iam.serviceAccountTokenCreator` |
+| Firestore, lecture | `datastore.viewer`, restreint à la base `(default)` |
+| BigQuery, lecture | `READER` sur le dataset (ACL du dataset) |
+| Artifact Registry, lecture | `artifactregistry.reader`, scopé au dépôt |
+| Bucket RAG, lecture | `storage.objectViewer` |
+| Cloud Run | `run.developer` |
+
+Volontairement **en lecture seule sur les données** : personne n'écrit dans
+Firestore/BigQuery en son nom propre, l'éval passe toujours par `sa-berlue`.
+
+⚠️ `run.developer` donne le déploiement **en plus** de la suppression : aucun
+rôle GCP prédéfini ne sépare les deux (`run.viewer` ne permet pas de
+supprimer). La personne peut donc lancer `gcp_down` et `gcp_deploy`. Elle ne
+peut en revanche pas déployer **avec `sa-berlue` attaché**, ce qui demande
+`iam.serviceAccountUser` — à accorder séparément le cas échéant :
+`make cloudrun_sa_grant USER=... CLOUDRUN_SA_ROLE=deploy`.
+
+Tout retirer :
+
+```bash
+make gcp_unshare_with personne@example.com
+```
+
+Les sections suivantes détaillent chaque accès pris séparément, pour les cas
+où l'on veut en ouvrir un seul. Mécanisme d'authentification derrière
+chacun : [`auth.md`](auth.md).
 
 ## Lancer l'éval — toujours via `sa-berlue`
 
@@ -77,6 +109,15 @@ c'est `make gcp_doctor`, qui refait les mêmes sondes **en impersonant
 `sa-berlue`**. Un Owner de projet verra ✅ ici même si `sa-berlue` n'a aucun
 droit, et quelqu'un sans accès direct verra ❌ alors que l'éval tournera
 parfaitement.
+
+## Cloud Run
+
+Consulter les services, ou les opérer (déployer et supprimer) :
+
+```bash
+make cloudrun_grant  USER=personne@example.com CLOUDRUN_ROLE=operator   # ou viewer (défaut)
+make cloudrun_revoke USER=personne@example.com CLOUDRUN_ROLE=operator
+```
 
 ## Artifact Registry
 

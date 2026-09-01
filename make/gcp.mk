@@ -181,6 +181,58 @@ gcp_deploy: gcp_check_cli_auth ## Build + push les 3 images PUIS déploie les 3 
 gcp_doctor: ## Vérifie brique par brique que l'infra GCP est réellement utilisable (n'échoue pas à la première erreur) et rappelle ce qui reste à faire à la main
 	@bash scripts/gcp_doctor.sh
 
+# ==============================================================================
+# ACCÈS ÉQUIPE
+# ==============================================================================
+# Tout ce qu'il faut à un coéquipier pour travailler sur CE projet, en une
+# commande : impersonation de sa-berlue (le seul accès qui compte pour lancer
+# l'éval, cf. docs/gcp/auth.md), lecture sur les données et les images, et
+# opération des Cloud Run (déployer/supprimer, donc gcp_deploy et gcp_down).
+#
+# Volontairement en lecture seule sur les données : personne n'écrit dans
+# Firestore/BigQuery en son nom propre, l'éval passe toujours par sa-berlue.
+#
+# L'adresse se passe en argument : `make gcp_share_with alice@example.com`.
+# make la lit comme un but supplémentaire ; la règle vide générée ci-dessous
+# l'empêche de faire échouer la commande. Générée uniquement pour ces deux
+# cibles, jamais en attrape-tout (`%:`), qui masquerait les fautes de frappe
+# sur toutes les autres.
+SHARE_TARGETS = gcp_share_with gcp_unshare_with
+SHARE_EMAIL = $(strip $(filter-out $(SHARE_TARGETS),$(MAKECMDGOALS)))
+ifneq ($(filter $(SHARE_TARGETS),$(MAKECMDGOALS)),)
+$(foreach goal,$(SHARE_EMAIL),$(eval $(goal):;@:))
+endif
+
+gcp_share_with: gcp_check_cli_auth ## Donne à une personne tous les accès nécessaires sur ce projet — `make gcp_share_with alice@example.com` (impersonation sa-berlue, lecture données/images, opération Cloud Run)
+	@if [ -z "$(SHARE_EMAIL)" ]; then \
+		echo "❌ ERREUR : adresse manquante."; \
+		echo "👉 Essayez : make gcp_share_with personne@example.com"; \
+		exit 1; \
+	fi
+	@echo "👥 Ouverture des accès pour $(SHARE_EMAIL) sur $(GCP_PROJECT)..."
+	@$(MAKE) --no-print-directory cloudrun_sa_grant USER=$(SHARE_EMAIL) CLOUDRUN_SA_ROLE=impersonate
+	@$(MAKE) --no-print-directory firestore_grant USER=$(SHARE_EMAIL) FIRESTORE_ROLE=reader
+	@$(MAKE) --no-print-directory bigquery_grant USER=$(SHARE_EMAIL) BQ_ROLE=reader
+	@$(MAKE) --no-print-directory artifact_registry_grant USER=$(SHARE_EMAIL) ROLE=reader
+	@$(MAKE) --no-print-directory gcs_grant BUCKET=$(RAG_BUCKET_NAME) USER=$(SHARE_EMAIL) BUCKET_ROLE=reader
+	@$(MAKE) --no-print-directory cloudrun_grant USER=$(SHARE_EMAIL) CLOUDRUN_ROLE=operator
+	@echo "✅ $(SHARE_EMAIL) peut lancer l'éval, consulter les données et opérer les Cloud Run."
+
+gcp_unshare_with: gcp_check_cli_auth ## Retire à une personne tous les accès donnés par gcp_share_with — `make gcp_unshare_with alice@example.com`
+	@if [ -z "$(SHARE_EMAIL)" ]; then \
+		echo "❌ ERREUR : adresse manquante."; \
+		echo "👉 Essayez : make gcp_unshare_with personne@example.com"; \
+		exit 1; \
+	fi
+	@echo "👥 Fermeture des accès pour $(SHARE_EMAIL) sur $(GCP_PROJECT)..."
+	@$(MAKE) --no-print-directory cloudrun_revoke USER=$(SHARE_EMAIL) CLOUDRUN_ROLE=operator || true
+	@$(MAKE) --no-print-directory gcs_revoke BUCKET=$(RAG_BUCKET_NAME) USER=$(SHARE_EMAIL) BUCKET_ROLE=reader || true
+	@$(MAKE) --no-print-directory artifact_registry_revoke USER=$(SHARE_EMAIL) ROLE=reader || true
+	@$(MAKE) --no-print-directory bigquery_revoke USER=$(SHARE_EMAIL) || true
+	@$(MAKE) --no-print-directory firestore_revoke USER=$(SHARE_EMAIL) FIRESTORE_ROLE=reader || true
+	@$(MAKE) --no-print-directory cloudrun_sa_revoke USER=$(SHARE_EMAIL) CLOUDRUN_SA_ROLE=impersonate || true
+	@echo "✅ Accès retirés pour $(SHARE_EMAIL)."
+
 gcp_project_list: ## Liste tous les projets GCP disponibles pour votre compte
 	@echo "📋 Listing des projets GCP..."
 	gcloud projects list
