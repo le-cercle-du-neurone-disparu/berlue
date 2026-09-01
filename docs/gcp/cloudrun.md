@@ -14,39 +14,32 @@ son coût et ses commandes. Compte de service commun (`sa-berlue`) :
 
 ### Ce que `gcp_down` fait exactement
 
-**`min-instances=0` n'éteint pas une instance déjà démarrée** : elle passe
-`idle` et Cloud Run la garde le temps qu'il juge utile. D'où un traitement
-différencié, fondé sur deux mesures :
+**Il supprime les trois services**, il ne se contente pas de les redescendre à
+`min-instances=0`. C'est le seul arrêt garanti de la facturation : Cloud Run
+ne tue pas une instance déjà démarrée quand `min-instances` repasse à 0 — elle
+passe `idle` et survit largement (mesuré : bien au-delà de 3 minutes). Sur
+`berlue-llm`, une instance idle facture **plein tarif** (60 s par minute, le
+GPU imposant CPU toujours alloué).
 
-| Service | Facturation au repos | Traitement par `gcp_down` |
-|---|---|---|
-| `berlue-llm` | **60 s par minute** — le GPU impose CPU toujours alloué, une instance idle coûte plein tarif | **supprimé systématiquement** : c'est le seul arrêt garanti |
-| `berlue-api-<env>`, `berlue-eval` | à la requête seulement — l'idle ne coûte quasiment rien | `min-instances=0`, puis suppression **seulement** si une instance survit à `DOWN_GRACE_SECONDS` (défaut 180 s) |
+Ce que la suppression ne coûte pas, vérifié en conditions réelles :
 
-Les services CPU ne sont pas supprimés d'office parce qu'on y perdrait
-l'historique des métriques : vérifié en conditions réelles, après suppression
-puis recréation sous le même nom, les séries Cloud Monitoring reviennent à
-zéro sur toute la période précédente, et la numérotation des révisions repart
-à `-00001`.
+- **l'historique des métriques reste consultable** dans la console Cloud Run
+  après recréation sous le même nom (onglet Observability) ;
+- **l'URL du service est identique** après recréation — même nom, même projet,
+  même région : rien à reconfigurer côté Aletheia.
 
-Recréer un service supprimé ne rebuilde aucune image : `make cloudrun_deploy_all`
+Seules les révisions repartent de `-00001`.
+
+Recréer les services ne rebuilde aucune image : `make cloudrun_deploy_all`
 (~3-4 min), les images restant dans Artifact Registry.
 
 ```bash
-make gcp_status                          # min-instances (config) ET instances réellement en vie
-make gcp_down DOWN_GRACE_SECONDS=300     # délai de grâce allongé
+make gcp_status    # min-instances (configuration) ET instances réellement en vie
 ```
 
-`gcp_status` affiche les deux colonnes volontairement : la configuration ne
-dit rien des instances en vie, et s'y fier fait conclure à tort qu'un service
-est éteint.
-
-`berlue-llm` est commun aux deux — les deux chemins appellent le LLM — et il
-est monté dans les deux cas : **c'est le GPU L4, ~0,67 $/h dès la première
-seconde**. `WARM_MODELS="llama3.1:8b"` ne décide donc pas si le GPU s'allume,
-seulement quels modèles y sont tirés et chargés en VRAM d'avance.
-
-La brique commune est aussi utilisable seule : `make cloudrun_llm_up`.
+`gcp_status` affiche les deux colonnes volontairement : la configuration ne dit
+rien des instances en vie, et s'y fier fait conclure à tort qu'un service est
+éteint.
 
 ## Tout déployer d'un coup
 
@@ -123,9 +116,8 @@ le store GCP — pas besoin du service pour ça).
    est préchargé.
 
 `gcp_down` traite toujours les trois services (`CLOUDRUN_ENV`, défaut
-`test`), idempotent et sans état à suivre entre deux commandes — détail du
-traitement différencié plus haut. Un service pas encore déployé est ignoré
-avec un avertissement, sans interrompre la série. Cf.
+`test`), idempotent et sans état à suivre entre deux commandes. Un service
+déjà absent est signalé sans interrompre la série. Cf.
 [`aletheia-local.md`](aletheia-local.md) pour le workflow complet avec
 Aletheia en local.
 
