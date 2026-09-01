@@ -32,6 +32,8 @@ make pipeline_generate   # étape 1 seule : génère la réponse brute du LLM
 make pipeline_extract    # étapes 1-2 : + extraction des affirmations
 make pipeline_samples    # étapes 1-3 : + échantillonnage SelfCheckGPT
 make pipeline_selfcheck  # étapes 1-4 : + score de divergence SelfCheckGPT
+make pipeline_rag        # étapes 1-5 : + RAG
+make pipeline_fusion     # étapes 1-6 : + score de fusion (pipeline complet)
 ```
 
 Chaque cible affiche uniquement le résultat de l'étape où elle s'arrête —
