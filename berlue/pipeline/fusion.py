@@ -1,14 +1,12 @@
 from berlue.core.schemas import FusedVerdict, PipelineResult, Verdict
 
-
 def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck: float = 0.3) -> PipelineResult:
     """
     Dernière étape : combine les scores RAG et SelfCheckGPT pour statuer sur chaque affirmation.
-    Utilise le pattern Passe-Plat.
+    Prend en compte les 5 nouveaux statuts RAG pour affiner l'explication et la confiance.
     """
     print("\n🧬 [Fusion] Début de la synthèse des résultats...")
 
-    # Pour retrouver les résultats en O(1) sans faire des boucles imbriquées
     rag_dict = {v.claim_id: v for v in result.rag_scores}
     sc_dict = {s.claim_id: s for s in result.selfcheck_scores}
 
@@ -17,37 +15,50 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
         sc = sc_dict.get(claim.id)
 
         # 1. Calcul de la cohérence interne (l'inverse de la divergence)
-        # Si le score de divergence est 0.1, la cohérence est 0.9 (très sûr)
         coherence = 1.0 - sc.divergence_score if sc else 0.5
 
+        # On extrait la valeur du verdict RAG en texte (gère les Enum et les strings)
+        rag_verdict = str(rag.verdict).split('.')[-1] if rag else "I_DONT_KNOW"
+
         # 2. Application de l'arbre de décision
-        if rag and rag.verdict != Verdict.NOT_ENOUGH_INFO:
-            # CAS A : Le RAG a trouvé une preuve tranchée dans la base de données
-            final_verdict = rag.verdict
-
-            # Le score est un mix : le RAG pèse 70%, la certitude du LLM pèse 30%
+        if rag_verdict == "FEVER_CONFIRMS":
+            final_verdict = Verdict.SUPPORTED
             final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
-
-            if final_verdict == Verdict.SUPPORTED:
-                explanation = "L'affirmation est factuellement prouvée par la base de données."
-            else:
-                explanation = "L'affirmation est formellement contredite par la base de données."
-
+            explanation = "L'affirmation est factuellement prouvée par la base de données FEVER."
             evidence = rag.evidence
 
+        elif rag_verdict == "FEVER_REFUTES":
+            final_verdict = Verdict.CONTRADICTED
+            final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
+            explanation = "L'affirmation est formellement contredite par la base de données FEVER."
+            evidence = rag.evidence
+
+        elif rag_verdict == "LIKELY_TRUE":
+            final_verdict = Verdict.SUPPORTED
+            final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
+            explanation = "Absente de FEVER, mais jugée très vraisemblable selon les connaissances générales du modèle."
+            evidence = None
+
+        elif rag_verdict == "LIKELY_FALSE":
+            final_verdict = Verdict.CONTRADICTED
+            # Si c'est LIKELY_FALSE, une faible cohérence (hallucination SelfCheck) renforce l'idée que c'est faux
+            final_conf = (rag.confidence * weight_rag) + ((1.0 - coherence) * weight_selfcheck)
+            explanation = "Absente de FEVER, mais jugée invraisemblable (hallucination probable) selon les connaissances générales."
+            evidence = None
+
         else:
-            # CAS B : Le RAG n'a rien trouvé. On s'en remet au comportement du LLM.
+            # CAS "I_DONT_KNOW" : Ni FEVER ni les connaissances internes ne peuvent trancher.
+            # On s'en remet à 100% au comportement du générateur (SelfCheck).
             if coherence < 0.5:
-                # Le LLM s'est contredit dans les samples. C'est une hallucination !
+                # Le générateur s'est contredit dans ses propres réponses.
                 final_verdict = Verdict.CONTRADICTED
-                final_conf = 1.0 - coherence  # Plus il est incohérent, plus on est sûr que c'est faux
-                explanation = "Hallucination probable détectée : le LLM s'est contredit lui-même."
+                final_conf = 1.0 - coherence
+                explanation = "Hallucination détectée : aucune information disponible et le modèle se contredit lui-même."
             else:
-                # Le LLM est sûr de lui, mais on n'a pas de preuve.
+                # Le générateur est très cohérent, mais on a zéro preuve.
                 final_verdict = Verdict.NOT_ENOUGH_INFO
                 final_conf = coherence
-                explanation = "L'affirmation semble cohérente, mais manque de sources dans la base."
-
+                explanation = "L'affirmation semble cohérente, mais manque de sources et sort des connaissances générales."
             evidence = None
 
         # Petite sécurité pour être sûr que la confiance reste entre 0.0 et 1.0
