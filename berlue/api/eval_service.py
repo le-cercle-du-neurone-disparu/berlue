@@ -22,6 +22,9 @@ from pydantic import BaseModel
 
 from berlue.evaluation.result_store import get_result_store
 from berlue.evaluation.run_eval import build_arg_parser, run_from_args
+from berlue.logging_config import setup_logging
+
+setup_logging()
 
 
 @asynccontextmanager

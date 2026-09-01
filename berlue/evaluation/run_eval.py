@@ -15,6 +15,7 @@ from berlue.evaluation.timing import mark
 
 mark("module import start")
 
+import logging
 import threading
 import time
 from collections.abc import Callable
@@ -33,6 +34,8 @@ from berlue.nli_baseline.predict import NliBaseline
 from berlue.params import JUDGE_MODEL
 
 mark("module imports done")
+
+logger = logging.getLogger(__name__)
 
 # Flush périodique du registre de scopes GCP (no-op en local) dans les
 # boucles d'éval — pas de flush par ligne (cf. gcp_result_store.py), pas
@@ -191,7 +194,7 @@ def evaluate_baseline(
     baseline = baseline or NliBaseline()
     test_examples = get_test_examples(test_examples, dataset=dataset, ratio=ratio)
 
-    print(f"🔍 Évaluation NLI Baseline sur {len(test_examples)} exemples...")
+    logger.info("🔍 Évaluation NLI Baseline sur %d exemples...", len(test_examples))
     start = time.perf_counter()
     matrix = run_confusion_matrix_eval(test_examples, lambda ex: baseline.predict(ex["question"], ex["answer"]))
     elapsed = time.perf_counter() - start
@@ -227,7 +230,9 @@ def evaluate_model(
     end = len(test_examples) if end is None else end
     subset = test_examples[start:end]
 
-    print(f"🔍 Évaluation du pipeline Berlue sur [{start}:{end}] ({len(subset)} exemples, scope={scope})...")
+    logger.info(
+        "🔍 Évaluation du pipeline Berlue sur [%d:%d] (%d exemples, scope=%s)...", start, end, len(subset), scope
+    )
 
     timer = _StepTimer()
     n_cached, n_computed = 0, 0
@@ -464,8 +469,9 @@ def evaluate_model_generated(
     test_examples = get_test_examples(test_examples, dataset=scope.dataset, ratio=scope.ratio)
 
     if warmup:
-        print(f"🔥 Warmup : {generator_client.warmup():.2f}s (génération), ", end="")
-        print(f"{judge_client.warmup():.2f}s (juge).")
+        generation_warmup = generator_client.warmup()
+        judge_warmup = judge_client.warmup()
+        logger.info("🔥 Warmup : %.2fs (génération), %.2fs (juge).", generation_warmup, judge_warmup)
 
     grouped = group_examples_by_question(test_examples)
     questions = sorted(grouped)  # ordre déterministe, reproductible entre invocations
@@ -474,9 +480,13 @@ def evaluate_model_generated(
     subset = [q for q in candidates if grouped[q]["correct_answers"] and grouped[q]["incorrect_answers"]]
     n_skipped = len(candidates) - len(subset)
 
-    print(
-        f"🔍 Évaluation générée+juge sur [{start}:{end}] ({len(candidates)} questions, scope={scope}, "
-        f"concurrency={concurrency})..."
+    logger.info(
+        "🔍 Évaluation générée+juge sur [%d:%d] (%d questions, scope=%s, concurrency=%d)...",
+        start,
+        end,
+        len(candidates),
+        scope,
+        concurrency,
     )
 
     # Une étape à la fois sur la totalité de `subset`, plutôt que les 3 étapes
@@ -591,7 +601,7 @@ def evaluate_baseline_generated(
     end = len(questions) if end is None else end
     subset = questions[start:end]
 
-    print(f"🔍 Baseline (mode généré) sur [{start}:{end}] ({len(subset)} questions, scope={scope})...")
+    logger.info("🔍 Baseline (mode généré) sur [%d:%d] (%d questions, scope=%s)...", start, end, len(subset), scope)
 
     timer = _StepTimer()
     n_classified, n_skipped = 0, 0
@@ -849,6 +859,13 @@ def build_arg_parser():
         "--purge-eval-version", default=None, help="Filtre de purge : version de la méthodologie d'éval."
     )
     parser.add_argument("--purge-judge-model", default=None, help="Filtre de purge : modèle du LLM-juge (mode 2).")
+    parser.add_argument(
+        "--log-level",
+        choices=["ERROR", "WARNING", "INFO", "DEBUG"],
+        default=None,
+        help="Niveau de log (défaut : BERLUE_LOG_LEVEL, ou INFO). CLI uniquement, sans effet via /invoke "
+        "(berlue.api.eval_service configure son propre logging au démarrage).",
+    )
     return parser
 
 
@@ -943,4 +960,9 @@ if __name__ == "__main__":
     parser = build_arg_parser()
     args = parser.parse_args()
     mark("CLI parsée")
+
+    from berlue.logging_config import setup_logging
+
+    setup_logging(args.log_level)
+
     run_from_args(args)

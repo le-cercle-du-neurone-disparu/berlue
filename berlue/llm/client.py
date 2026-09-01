@@ -1,5 +1,6 @@
 """Wrapper autour du LLM local (Ollama) — seul point de contact avec Ollama."""
 
+import logging
 import os
 import time
 
@@ -7,6 +8,8 @@ from httpx import TimeoutException
 from ollama import Client, ResponseError
 
 from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
+
+logger = logging.getLogger(__name__)
 
 
 def _running_on_cloud_run() -> bool:
@@ -95,7 +98,7 @@ class OllamaClient:
             options["num_predict"] = num_predict
 
         if self.verbose:
-            print(f"\n📤 [Ollama:{self.model}, temp={final_temp}] Prompt :\n{prompt}\n")
+            logger.debug("📤 [Ollama:%s, temp=%s] Prompt :\n%s", self.model, final_temp, prompt)
 
         start = time.monotonic()
 
@@ -103,15 +106,15 @@ class OllamaClient:
             response = self.client.generate(model=self.model, prompt=prompt, options=options)
 
         except TimeoutException as e:
-            print("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
+            logger.error("⏳ Timeout : Ollama n'a pas répondu dans le temps imparti.")
             raise TimeoutError("Le serveur Ollama a expiré (Timeout).") from e
 
         except ResponseError as e:
-            print(f"❌ Erreur API Ollama : {e.error}")
+            logger.error("❌ Erreur API Ollama : %s", e.error)
             raise RuntimeError(f"Erreur interne Ollama : {e.error}") from e
 
         except Exception as e:
-            print(f"❌ Erreur lors de la communication avec Ollama : {e}")
+            logger.error("❌ Erreur lors de la communication avec Ollama : %s", e)
             raise RuntimeError(f"Échec de la communication Ollama : {e}") from e
 
         elapsed = time.monotonic() - start
@@ -122,7 +125,7 @@ class OllamaClient:
             raise RuntimeError(f"Ollama a généré une réponse vide ou nulle (modèle: {self.model}).")
 
         if self.verbose:
-            print(f"📥 [Ollama:{self.model}, {elapsed:.2f}s] Réponse :\n{resp_text}\n")
+            logger.debug("📥 [Ollama:%s, %.2fs] Réponse :\n%s", self.model, elapsed, resp_text)
 
         return resp_text
 
@@ -157,12 +160,12 @@ class OllamaClient:
 
         responses = []
         for temp in temperatures:
-            print(f"🔄 Génération en cours (Température: {temp:.2f})...")
+            logger.debug("🔄 Génération en cours (Température: %.2f)...", temp)
             # On réutilise notre méthode unitaire
             resp = self.generate(prompt, temperature=temp)
             responses.append(resp)
-            print(f"   → {resp}")
-            print("-" * 60)
+            logger.debug("   → %s", resp)
+            logger.debug("-" * 60)
         return responses
 
 
