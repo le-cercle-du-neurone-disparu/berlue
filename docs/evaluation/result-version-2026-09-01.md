@@ -204,19 +204,73 @@ mesurait que la génération et le juge, Berlue étant mocké.
 5. Le mode dataset étant séquentiel, la parallélisation de `evaluate_model` reste
    le principal levier de temps disponible (gain observé en mode généré : ~3,8×).
 
-## Reproduire
+## Reproduire — test de référence local
 
-Référence locale :
+C'est **ce test précis** qu'il faut rejouer après chaque fixup pour se comparer à la
+référence de ce document.
+
+### Paramètres
+
+| paramètre | valeur | pourquoi |
+|---|---|---|
+| **mode** | **dataset** (« mode 1 ») | `evaluate_model_all` l'implique. Vérité-terrain du dataset, ni génération ni LLM-juge — c'est Berlue seul qu'on mesure |
+| dataset | `halueval` | |
+| `RATIO` | **0.985** | 300 lignes (150 questions × 2), ~12 min. Ne pas changer : le cache Berlue est indexé sur `ratio`, un autre palier recalcule tout et n'est plus comparable |
+| `BERLUE_OLLAMA_MODEL` | **`llama3.2:1b`** | échantillons SelfCheck, 5 appels/ligne |
+| `EXTRACT_MODEL` | **`qwen2.5:7b`** | extraction, 1 appel/ligne |
+| `RAG_MODEL` | **`qwen2.5:7b`** | RAG inversé, ~1,5 appel/ligne |
+| `BERLUE_SELFCHECK_K` | 5 (défaut) | nombre d'échantillons |
+| corpus RAG | `full-145k` | `data/fever/raw/fever.jsonl` → `fever_full.jsonl`, index reconstruit (109 810 vecteurs) |
+| `MODEL_ID` | `llama3.2:1b` | **simple étiquette** — aucun modèle n'est piloté par ce champ en mode dataset |
 
 ```bash
-export BERLUE_OLLAMA_MODEL=llama3.2:3b   # levier dominant, cf. run 3
+export BERLUE_OLLAMA_MODEL=llama3.2:1b
 export EXTRACT_MODEL=qwen2.5:7b
 export RAG_MODEL=qwen2.5:7b
-make evaluate_model_all DATASET=halueval RATIO=0.985 \
-  MODEL_ID=llama3.2:3b PIPELINE_VERSION=<config-et-version>
+export BERLUE_LOG_LEVEL=WARNING
+
+make evaluate_model_all \
+  DATASET=halueval \
+  RATIO=0.985 \
+  MODEL_ID=llama3.2:1b \
+  PIPELINE_VERSION=<À CHANGER À CHAQUE VERSION>
 ```
 
-`PIPELINE_VERSION` est une clé de cache : le changer à chaque version, et y encoder
-la configuration des modèles — `MODEL_ID` ne décrit rien en mode dataset.
-Conserver `RATIO=0.985` pour rester comparable (le cache Berlue est indexé sur
-`ratio`, changer de palier recalcule tout).
+`evaluate_model_all` remplit le cache puis construit la matrice.
+
+### Référence à battre
+
+Version mergée au 1ᵉʳ septembre, scope `v2-sc1b-ext7b-rag7b` (nom déjà pris, ne pas
+le réutiliser) :
+
+```
+              supported  undecided  contradicted
+GT vrai (150)     22         26         102
+GT faux (150)     22         13         115
+```
+
+| métrique | valeur |
+|---|---|
+| justesse | 45,7 % (une constante « contradicted » ferait 50 %) |
+| `contradicted` sur faux | 76,7 % |
+| `contradicted` sur vrai | 68,0 % |
+| **séparation** | **+8,7 points** |
+
+Objectif : récupérer les **+59,3 points** du code pré-refonte.
+
+### Trois règles
+
+**Bumper `PIPELINE_VERSION` à chaque version.** C'est une clé de cache : réutiliser
+un nom existant renvoie les prédictions d'avant, et la comparaison affichera zéro
+différence. Y encoder la configuration des modèles, puisque `MODEL_ID` ne décrit
+rien.
+
+**Ne pas comparer ligne à ligne** — 13 % des verdicts basculent d'un run à l'autre
+sans qu'aucune variable ne change. Se fier à la séparation, qui moyenne ce bruit à
+±2 points. En dessous de ~4-5 points d'écart, répéter le run ou fixer un seed avant
+de conclure.
+
+**Ne pas changer les modèles en même temps qu'un fix.** Les mesures GCP désignent
+`llama3.2:3b` comme meilleur modèle d'échantillonnage (+16,7 points), mais l'adopter
+invalide la référence ci-dessus : il faudrait d'abord rejouer une baseline en 3b sur
+le code actuel. Une variable à la fois.
