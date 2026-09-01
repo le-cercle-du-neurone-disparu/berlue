@@ -113,8 +113,9 @@ d'abord, parce que le déploiement de l'API lit son URL pour câbler
 existent, ils ne coûtent rien tant qu'aucune requête n'arrive et tant que
 `gcp_up`/`gcp_eval_up` n'ont pas forcé une instance chaude. Ces deux-là
 montent chacun `berlue-llm` (le GPU) en plus de leur service ; `gcp_down`
-supprime ce dernier systématiquement, seul arrêt garanti de la facturation
-GPU. Détail et justification dans [`cloudrun.md`](../gcp/cloudrun.md).
+supprime les trois, seul arrêt garanti de la facturation — sans perdre ni
+l'historique des métriques ni l'URL des services. Détail et justification
+dans [`cloudrun.md`](../gcp/cloudrun.md).
 
 Seule l'API est déclinée par environnement (`berlue-api-test/staging/prod`) :
 le service d'éval et le service Ollama sont **uniques pour le projet** et

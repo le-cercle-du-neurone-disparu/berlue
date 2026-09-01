@@ -423,30 +423,27 @@ gcp_eval_up: cloudrun_llm_up ## Monte berlue-eval ET berlue-llm à min-instances
 	fi
 	@echo "✅ gcp_eval_up terminé — cloudrun_eval_service_invoke prêt à l'emploi."
 
-# Traitement volontairement différencié entre le GPU et les services CPU,
-# fondé sur deux mesures (01/09) :
+# gcp_down supprime les trois services plutôt que de les redescendre à
+# min-instances=0 : c'est le seul arrêt garanti de la facturation. Cloud Run
+# ne tue pas une instance déjà démarrée quand min-instances repasse à 0 —
+# elle passe idle et survit largement (mesuré : bien au-delà de 3 min), et
+# sur berlue-llm une instance idle facture plein tarif (le GPU impose CPU
+# toujours alloué).
 #
-#   - berlue-llm facture 60 s par minute au repos (le GPU impose CPU toujours
-#     alloué) : une instance idle coûte plein tarif, et min-instances=0 ne la
-#     tue pas. La suppression est le seul arrêt garanti -> systématique.
-#   - berlue-api/berlue-eval ne facturent qu'à la requête : une instance idle
-#     n'y coûte quasiment rien. Les supprimer ferait perdre l'historique des
-#     métriques — vérifié : après suppression puis recréation sous le même
-#     nom, les séries reviennent à zéro sur toute la période précédente.
-#     Elles ne sont donc supprimées qu'en dernier recours, si une instance
-#     survit anormalement à DOWN_GRACE_SECONDS.
-DOWN_GRACE_SECONDS ?= 180
+# Ce que la suppression NE coûte pas, vérifié en conditions réelles :
+#   - l'historique des métriques reste consultable dans la console Cloud Run
+#     après recréation sous le même nom ;
+#   - l'URL du service est identique après recréation (même nom, même projet,
+#     même région) — rien à reconfigurer côté Aletheia.
+# Recréer les services ne rebuilde aucune image : `make cloudrun_deploy_all`,
+# ~3-4 min, les images restant dans Artifact Registry.
 
-gcp_down: gcp_check_cli_auth ## Éteint tout : supprime berlue-llm (GPU, seul arrêt garanti) et redescend berlue-eval/berlue-api-<env> à min-instances=0, en les supprimant si une instance survit à DOWN_GRACE_SECONDS (défaut 180s)
-	@echo "🧯 gcp_down : min-instances=0 sur $(CLOUDRUN_EVAL_SERVICE) et $(GAR_IMAGE)-$(CLOUDRUN_ENV)..."
-	@$(CLOUDRUN_SET_MIN) $(CLOUDRUN_EVAL_SERVICE) 0
-	@$(CLOUDRUN_SET_MIN) $(GAR_IMAGE)-$(CLOUDRUN_ENV) 0
-	@echo "🗑️  $(CLOUDRUN_LLM_SERVICE) (GPU) : suppression systématique — une instance idle y coûte plein tarif."
-	@$(MAKE) --no-print-directory cloudrun_llm_delete 2>/dev/null || echo "   ✅ $(CLOUDRUN_LLM_SERVICE) déjà absent."
-	@echo "🔎 Vérification des instances CPU réellement en vie (≤ $(DOWN_GRACE_SECONDS)s par service)..."
-	@$(CLOUDRUN_ENSURE_DOWN) $(CLOUDRUN_EVAL_SERVICE)
-	@$(CLOUDRUN_ENSURE_DOWN) $(GAR_IMAGE)-$(CLOUDRUN_ENV)
-	@echo "✅ gcp_down terminé."
+gcp_down: gcp_check_cli_auth ## Supprime les 3 services Cloud Run — seul arrêt garanti de la facturation ; les recréer ne rebuilde rien (make cloudrun_deploy_all)
+	@echo "🧯 gcp_down : suppression de $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE) et $(GAR_IMAGE)-$(CLOUDRUN_ENV)..."
+	@$(CLOUDRUN_DELETE) $(CLOUDRUN_EVAL_SERVICE)
+	@$(CLOUDRUN_DELETE) $(CLOUDRUN_LLM_SERVICE)
+	@$(CLOUDRUN_DELETE) $(GAR_IMAGE)-$(CLOUDRUN_ENV)
+	@echo "✅ gcp_down terminé — plus rien ne facture. Recréation : make cloudrun_deploy_all."
 
 gcp_status: ## Affiche, pour chaque service, min-instances (configuration) ET le nombre d'instances réellement en vie (facturées) — les deux ne disent pas la même chose
 	@echo "📊 État (CLOUDRUN_ENV=$(CLOUDRUN_ENV)) — min-instances = configuration, instances = réellement en vie :"

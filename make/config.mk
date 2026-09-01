@@ -26,9 +26,9 @@ RETRY = bash scripts/gcp_retry.sh
 # un service pas encore déployé :
 #   $(CLOUDRUN_SET_MIN) <service> <n> [args gcloud...]
 CLOUDRUN_SET_MIN = bash scripts/cloudrun_set_min.sh
-# Vérifie qu'un service ne fait plus tourner d'instance, et le supprime sinon :
-#   $(CLOUDRUN_ENSURE_DOWN) <service>
-CLOUDRUN_ENSURE_DOWN = bash scripts/cloudrun_ensure_down.sh
+# Supprime un service Cloud Run, sans échouer s'il n'existe pas :
+#   $(CLOUDRUN_DELETE) <service>
+CLOUDRUN_DELETE = bash scripts/cloudrun_delete.sh
 
 # --- Python & environnement local ---
 PYTHON_VERSION = 3.14.6
