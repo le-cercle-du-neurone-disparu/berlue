@@ -180,7 +180,7 @@ def main():
         f"{OLLAMA_HOST}/api/generate",
         json={"model": MODEL, "prompt": "hi", "stream": False},
         headers=HEADERS,
-        timeout=60,
+        timeout=120,
     )
     print(f"✅ Warmup fait en {time.monotonic() - t0:.2f}s.\n")
 
