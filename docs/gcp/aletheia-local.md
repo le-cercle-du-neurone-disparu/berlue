@@ -30,7 +30,7 @@ make gcp_setup
 
 ```bash
 # depuis le repo berlue — WARM_MODELS doit couvrir OLLAMA_MODEL/EXTRACT_MODEL/RAG_MODEL
-make gcp_up WARM_MODELS="llama3.2:3b"
+make gcp_up WARM_MODELS="llama3.2:3b"   # API + LLM (make gcp_eval_up pour le service d'éval)
 ```
 
 2. Récupérer l'URL de l'environnement Berlue visé et la mettre dans le

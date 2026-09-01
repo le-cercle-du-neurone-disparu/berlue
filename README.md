@@ -36,6 +36,19 @@ Puis, étape par étape (voir [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) p
 make pipeline_extract QUESTION="Pourquoi la mer est salée ?"
 ```
 
+Pour travailler contre GCP (évaluation, déploiement), une fois
+`GCP_PROJECT` renseigné dans `.env` par `make local_setup` — voir
+[`setup/gcp.md`](docs/setup/gcp.md) pour les prérequis (projet + facturation)
+et ce qui reste à faire à la main :
+
+```bash
+make gcp_auth    # session gcloud
+make gcp_setup   # provisionne toute l'infra (gratuit, rejouable), puis diagnostique
+make gcp_deploy  # build/push les 3 images et déploie les 3 services Cloud Run
+make gcp_up      # allume API + LLM (make gcp_eval_up pour éval + LLM) — à partir d'ici ça coûte
+make gcp_down    # éteint les 3, en fin de session
+```
+
 ## Documentation
 
 | | |

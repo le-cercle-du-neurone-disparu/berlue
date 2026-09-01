@@ -68,7 +68,10 @@ make firestore_test_write
 ```
 
 Chaque test lit/écrit une ressource jetable (table ou document préfixé
-`_access_probe`) et la supprime dans la foulée.
+`_access_probe`) et la supprime dans la foulée. `make gcp_doctor` les
+enchaîne tous (plus l'impersonation, Artifact Registry et le bucket RAG)
+sans s'arrêter à la première erreur — utile pour vérifier d'un coup ce à
+quoi on a accès.
 
 ## Artifact Registry
 
