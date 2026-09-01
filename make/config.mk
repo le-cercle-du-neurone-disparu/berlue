@@ -17,6 +17,16 @@
 # Par défaut les 3 valent GCP_PROJECT (comportement actuel, tout dans le projet
 # personnel) — à surcharger dans .env une fois les projets partagés créés.
 
+# --- Helpers partagés (scripts/) ---
+# Relance une commande le temps que GCP propage une création — un compte de
+# service ou une API tout juste créés ne sont pas visibles immédiatement :
+#   $(RETRY) "<description>" <commande...>
+RETRY = bash scripts/gcp_retry.sh
+# Passe un service Cloud Run à min-instances=<n>, en ignorant (sans échouer)
+# un service pas encore déployé :
+#   $(CLOUDRUN_SET_MIN) <service> <n> [args gcloud...]
+CLOUDRUN_SET_MIN = bash scripts/cloudrun_set_min.sh
+
 # --- Python & environnement local ---
 PYTHON_VERSION = 3.14.6
 VENV_NAME = berlue-env
