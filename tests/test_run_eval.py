@@ -449,19 +449,32 @@ def test_evaluate_model_generated_respects_start_end_slice(tmp_path):
 class SlowThreadSafeClient:
     """Comme `FakeGeneratorClient`/`FakeJudgeClient`, mais dort `delay_s` par
     appel et piste les appels sous verrou — sert à vérifier qu'un
-    `concurrency` > 1 exécute vraiment les appels en parallèle (temps total
-    << somme des délais individuels), pas juste qu'il ne casse rien."""
+    `concurrency` > 1 exécute vraiment les appels en parallèle.
+
+    `max_in_flight` retient le nombre maximal d'appels simultanément dans
+    `generate()` : c'est l'observation directe du parallélisme, indépendante
+    de la vitesse de la machine (contrairement à un temps total mesuré, qui
+    rend le test dépendant de la charge du runner CI)."""
 
     def __init__(self, delay_s: float = 0.05):
         self.delay_s = delay_s
         self.calls: list[str] = []
         self._lock = threading.Lock()
         self.warmup_calls = 0
+        self.max_in_flight = 0
+        self._in_flight = 0
 
     def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
-        time.sleep(self.delay_s)
         with self._lock:
-            self.calls.append(prompt)
+            self._in_flight += 1
+            self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        try:
+            time.sleep(self.delay_s)
+            with self._lock:
+                self.calls.append(prompt)
+        finally:
+            with self._lock:
+                self._in_flight -= 1
         return f"generated:{prompt}"
 
     def warmup(self, prompt: str = "Bonjour", temperature: float = 0.0) -> float:
@@ -470,17 +483,17 @@ class SlowThreadSafeClient:
 
 
 def test_evaluate_model_generated_concurrency_runs_questions_in_parallel(tmp_path):
-    """5 questions, chaque étape à 0.05s/appel : séquentiel (`concurrency=1`)
-    prendrait ~0.25s par étape (~0.75s pour les 3), `concurrency=5` doit
-    rester largement en dessous — la seule façon d'observer que le pool
-    exécute vraiment les workers en parallèle, pas seulement qu'il ne plante
-    pas."""
+    """5 questions, chaque appel dormant 0.05s : avec `concurrency=5`, plusieurs
+    appels doivent se chevaucher dans le client. On l'observe via
+    `max_in_flight` (nombre d'appels simultanés vu de l'intérieur du client)
+    plutôt que via le temps total : un runner CI chargé peut prendre plusieurs
+    secondes à ordonnancer 5 threads tout en les exécutant bel et bien en
+    parallèle."""
     store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
     scope = _scope()
     generator_client = SlowThreadSafeClient(delay_s=0.05)
     judge_client = SlowThreadSafeClient(delay_s=0.05)
 
-    start = time.monotonic()
     evaluate_model_generated(
         FakePipeline(),
         scope,
@@ -490,9 +503,15 @@ def test_evaluate_model_generated_concurrency_runs_questions_in_parallel(tmp_pat
         test_examples=_paired_examples(5),
         concurrency=5,
     )
-    elapsed = time.monotonic() - start
 
-    assert elapsed < 0.3, f"pas de vrai parallélisme observé ({elapsed:.2f}s pour 5×2 appels à 0.05s)"
+    assert generator_client.max_in_flight > 1, (
+        f"pas de vrai parallélisme observé : au plus {generator_client.max_in_flight} "
+        "appel simultané côté génération (attendu jusqu'à 5)"
+    )
+    assert judge_client.max_in_flight > 1, (
+        f"pas de vrai parallélisme observé : au plus {judge_client.max_in_flight} "
+        "appel simultané côté juge (attendu jusqu'à 5)"
+    )
     assert len(generator_client.calls) == 5
     assert len(judge_client.calls) == 5
     for i in range(5):
