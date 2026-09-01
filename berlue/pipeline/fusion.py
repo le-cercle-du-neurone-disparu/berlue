@@ -1,6 +1,6 @@
 import logging
 
-from berlue.core .schemas import FusedVerdict, PipelineResult, RagJudgment, Verdict
+from berlue.core.schemas import FusedVerdict, PipelineResult, RagJudgment, Verdict
 
 logger = logging.getLogger(__name__)
 
@@ -64,20 +64,28 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
             final_verdict = Verdict.NOT_ENOUGH_INFO  # jamais SUPPORTED sans preuve en base
             if sc_available and llm_self_consistent:
                 final_conf = (rag.confidence * weight_rag) + (coherence * weight_selfcheck)
-                explanation = "Le jugement du RAG et la cohérence du LLM convergent vers vrai, mais aucune preuve en base."
+                explanation = (
+                    "Le jugement du RAG et la cohérence du LLM convergent vers vrai,mais aucune preuve en base."
+                )
             elif not sc_available:
                 final_conf = rag.confidence * SINGLE_SIGNAL_DISCOUNT
                 explanation = "Le RAG penche pour vrai, mais sans confirmation SelfCheck ni preuve en base."
             else:
                 final_conf = CONFLICT_CONFIDENCE_CAP
-                explanation = "Signaux contradictoires : le RAG penche pour vrai, mais le LLM s'est contredit lui-même — à vérifier manuellement."
+                explanation = (
+                    "Signaux contradictoires : le RAG penche pour vrai, mais le LLM s'est contredit lui-même"
+                    "— à vérifier manuellement."
+                )
 
         # --- CAS 4 : rien dans FEVER, mais le RAG est persuadé que c'est faux ---
         elif rag_judgment == RagJudgment.LIKELY_FALSE:
             if sc_available and not llm_self_consistent:
                 final_verdict = Verdict.CONTRADICTED
                 final_conf = (rag.confidence * weight_rag) + ((1.0 - coherence) * weight_selfcheck)
-                explanation = "Le jugement du RAG et l'incohérence du LLM convergent : hallucination probable, sans preuve en base."
+                explanation = (
+                    "Le jugement du RAG et l'incohérence du LLM convergent : hallucination probable,"
+                    "sans preuve en base."
+                )
             elif not sc_available:
                 final_verdict = Verdict.CONTRADICTED
                 final_conf = rag.confidence * SINGLE_SIGNAL_DISCOUNT
@@ -87,7 +95,10 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
                 # une hallucination "stable" est justement ce que SelfCheck seul ne détecte pas.
                 final_verdict = Verdict.CONTRADICTED
                 final_conf = CONFLICT_CONFIDENCE_CAP
-                explanation = "Signaux contradictoires : le LLM est resté cohérent, mais le RAG estime que c'est faux — à vérifier manuellement en priorité."
+                explanation = (
+                    "Signaux contradictoires : le LLM est resté cohérent, mais le RAG estime que c'est faux"
+                    "— à vérifier manuellement en priorité."
+                )
 
         # --- CAS 5 : le RAG n'a aucune idée ---
         else:
@@ -98,7 +109,10 @@ def do_fusion(result: PipelineResult, weight_rag: float = 0.7, weight_selfcheck:
             elif not llm_self_consistent:
                 final_verdict = Verdict.CONTRADICTED
                 final_conf = 1.0 - coherence
-                explanation = "Hallucination probable détectée : le LLM s'est contredit lui-même (RAG indécis, aucune preuve en base)."
+                explanation = (
+                    "Hallucination probable détectée : le LLM s'est contredit lui-même"
+                    "(RAG indécis, aucune preuve en base)."
+                )
             else:
                 final_verdict = Verdict.NOT_ENOUGH_INFO
                 final_conf = coherence
