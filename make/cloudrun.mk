@@ -330,13 +330,15 @@ cloudrun_deploy_all: gcp_check_cli_auth ## Déploie les 3 services (Ollama, éva
 WARM_MODELS ?=
 
 cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU L4, coûteux) et charge WARM_MODELS en VRAM — brique commune à gcp_up et gcp_eval_up
+	@# Vérifier l'existence AVANT d'annoncer la facturation : sinon la commande
+	@# alarme sur un coût qu'elle n'a pas déclenché.
+	@gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" >/dev/null 2>&1 </dev/null || { \
+		echo "❌ $(CLOUDRUN_LLM_SERVICE) n'est pas déployé. Lancez : make gcp_deploy"; \
+		exit 1; \
+	}
 	@echo "🔥 $(CLOUDRUN_LLM_SERVICE) (GPU L4 — facturé dès maintenant)..."
 	@$(CLOUDRUN_SET_MIN) $(CLOUDRUN_LLM_SERVICE) 1
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
-	if [ -z "$$LLM_URL" ]; then \
-		echo "❌ $(CLOUDRUN_LLM_SERVICE) n'est pas déployé. Lancez : make gcp_deploy"; \
-		exit 1; \
-	fi; \
 	LLM_TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$LLM_URL); \
 	echo "⏳ Attente que $(CLOUDRUN_LLM_SERVICE) réponde..."; \
 	for i in $$(seq 1 60); do \
@@ -406,6 +408,7 @@ gcp_down: gcp_check_cli_auth ## Redescend berlue-eval, berlue-llm et berlue-api-
 gcp_status: ## Affiche min-instances de berlue-eval, berlue-llm et berlue-api-<env> — à vérifier après chaque gcp_down (ne pas se fier au seul fait que la commande a réussi)
 	@echo "📊 min-instances actuel (CLOUDRUN_ENV=$(CLOUDRUN_ENV)) :"
 	@for SVC in $(CLOUDRUN_EVAL_SERVICE) $(CLOUDRUN_LLM_SERVICE) $(GAR_IMAGE)-$(CLOUDRUN_ENV); do \
-		MIN=$$(gcloud run services describe $$SVC --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])" 2>/dev/null); \
+		MIN=$$(gcloud run services describe $$SVC --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(spec.template.metadata.annotations['autoscaling.knative.dev/minScale'])" 2>/dev/null </dev/null) \
+			|| { echo "  $$SVC : non déployé"; continue; }; \
 		echo "  $$SVC : min-instances=$${MIN:-0}"; \
 	done

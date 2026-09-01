@@ -27,10 +27,19 @@ service="$1"
 min="$2"
 shift 2
 
-if ! gcloud run services describe "$service" \
+current=$(gcloud run services describe "$service" \
     --region "$GCP_REGION" --project "$GCP_PROJECT" \
-    --format="value(status.url)" >/dev/null 2>&1 </dev/null; then
+    --format="value(spec.template.metadata.annotations['"'"'autoscaling.knative.dev/minScale'"'"'])" \
+    2>/dev/null </dev/null) || {
     echo "   ⚠️  $service n'existe pas — ignoré (make gcp_deploy pour le créer)."
+    exit 0
+}
+
+# `services update` crée une révision même quand rien ne change : sans réglage
+# supplémentaire à appliquer, une valeur déjà correcte n'a pas à repayer un
+# déploiement complet (~1 min) ni à gonfler l'historique de révisions.
+if [ "$#" -eq 0 ] && [ "${current:-0}" = "$min" ]; then
+    echo "   ✅ $service : déjà à min-instances=$min"
     exit 0
 fi
 
