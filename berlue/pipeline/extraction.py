@@ -1,10 +1,13 @@
 import json
+import logging
 import re
 import uuid
 
 from berlue.core.schemas import Claim
 from berlue.llm.client import OllamaClient
 from berlue.params import EXTRACT_SYSTEM_PROMPT
+
+logger = logging.getLogger(__name__)
 
 
 def do_extraction(llm_extract: OllamaClient, answer_text: str) -> list[Claim]:
@@ -21,7 +24,10 @@ def do_extraction(llm_extract: OllamaClient, answer_text: str) -> list[Claim]:
     match = re.search(r"\[.*\]", raw_response, re.DOTALL)
 
     if not match:
-        print(f"⚠️ Erreur LLM : Impossible de trouver un tableau JSON dans l'extraction. Réponse brute : {raw_response}")
+        logger.warning(
+            "⚠️ Erreur LLM : Impossible de trouver un tableau JSON dans l'extraction. Réponse brute : %s",
+            raw_response,
+        )
         return []
 
     clean_json_str = match.group(0)
@@ -30,7 +36,7 @@ def do_extraction(llm_extract: OllamaClient, answer_text: str) -> list[Claim]:
     try:
         extracted_strings = json.loads(clean_json_str)
     except json.JSONDecodeError as e:
-        print(f"⚠️ Erreur LLM : JSON d'extraction mal formé : {e}\nTexte : {clean_json_str}")
+        logger.warning("⚠️ Erreur LLM : JSON d'extraction mal formé : %s\nTexte : %s", e, clean_json_str)
         return []
 
     # 3. Création des objets Claim

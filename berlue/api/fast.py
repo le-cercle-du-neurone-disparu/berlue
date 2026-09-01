@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Response
@@ -6,7 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from berlue.api.fast_eval import eval_router
 from berlue.api.schemas import LLMListOutput, PredictInput, PredictOutput
 from berlue.llm.client import OllamaClient
+from berlue.logging_config import setup_logging
 from berlue.params import EXTRACT_MODEL, RAG_MODEL, USE_MOCK
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 
 # ==========================================
@@ -15,12 +20,12 @@ from berlue.params import EXTRACT_MODEL, RAG_MODEL, USE_MOCK
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if USE_MOCK:
-        print("⚠️ DÉMARRAGE EN MODE MOCK : le vrai modèle n'est pas chargé.")
+        logger.warning("⚠️ DÉMARRAGE EN MODE MOCK : le vrai modèle n'est pas chargé.")
         from berlue.mocks.mock_pipeline import MockBerluePipeline
 
         app.state.service = MockBerluePipeline()
     else:
-        print("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement des index et modèles ML...")
+        logger.info("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement des index et modèles ML...")
         from berlue.api.service import BerlueService
         from berlue.rag.retriever import RagRetriever
 
@@ -31,7 +36,7 @@ async def lifespan(app: FastAPI):
 
     yield  # Le serveur tourne ici
 
-    print("🛑 Extinction du serveur...")
+    logger.info("🛑 Extinction du serveur...")
 
 
 # ==========================================
@@ -107,7 +112,5 @@ def predict_endpoint(payload: PredictInput):
                 payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
             )
         except Exception as e:
-            import traceback
-
-            traceback.print_exc()
+            logger.exception("❌ Erreur de prédiction")
             raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e

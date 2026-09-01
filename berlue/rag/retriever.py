@@ -1,6 +1,7 @@
 """Vérification d'une affirmation par recherche de preuves dans l'index FEVER (RAG inversé)."""
 
 import json
+import logging
 import pickle
 import re
 from pathlib import Path
@@ -10,6 +11,8 @@ from sentence_transformers import SentenceTransformer
 
 from berlue.core.schemas import Claim, Evidence, RagVerdict, Verdict
 from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
+
+logger = logging.getLogger(__name__)
 
 # Labels FEVER (str du dataset) -> Verdict (enum du contrat interne berlue.core.schemas).
 # "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
@@ -41,8 +44,8 @@ class RagRetriever:
         # 3. Chargement du modèle d'embedding
         self.model = SentenceTransformer(embedding_model)
 
-        print(f"✅ Index chargé : {self.index.ntotal} vecteurs")
-        print(f"✅ Métadonnées : {len(self.metadata['claims'])} exemples")
+        logger.info("✅ Index chargé : %d vecteurs", self.index.ntotal)
+        logger.info("✅ Métadonnées : %d exemples", len(self.metadata["claims"]))
 
     def retrieve(self, claim: Claim, top_k: int = 5) -> list[dict]:
         """Recherche les `top_k` passages les plus proches de l'affirmation."""
@@ -124,17 +127,17 @@ class RagRetriever:
 
         except json.JSONDecodeError as e:
             # Si le JSON est trouvé mais mal formé (ex: virgule manquante)
-            print(f"⚠️ Erreur de parsing JSON sur l'affirmation {claim.id} : {e}")
-            print(f"Texte problématique : {clean_json_str}")
+            logger.warning("⚠️ Erreur de parsing JSON sur l'affirmation %s : %s", claim.id, e)
+            logger.warning("Texte problématique : %s", clean_json_str)
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
         except Exception as e:
-            print(f"⚠️ Erreur inattendue sur l'affirmation {claim.id} : {e}")
+            logger.warning("⚠️ Erreur inattendue sur l'affirmation %s : %s", claim.id, e)
             return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
 
     def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
         """Vérifie une liste d'affirmations, une par une."""
         verdicts = []
         for i, claim in enumerate(claims, 1):
-            print(f"   - Vérification RAG de l'affirmation {i}/{len(claims)}...")
+            logger.debug("   - Vérification RAG de l'affirmation %d/%d...", i, len(claims))
             verdicts.append(self.verify_claim(claim))
         return verdicts

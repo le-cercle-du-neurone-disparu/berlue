@@ -1,10 +1,10 @@
 import glob
+import logging
 import os
 import pickle
 import time
 
 import mlflow
-from colorama import Fore, Style
 from mlflow.tracking import MlflowClient
 
 from berlue.params import (
@@ -14,6 +14,8 @@ from berlue.params import (
     MLFLOW_TRACKING_URI,
     MODEL_TARGET,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def save_results(params: dict, metrics: dict) -> None:
@@ -36,7 +38,7 @@ def save_results(params: dict, metrics: dict) -> None:
         with open(metrics_path, "wb") as file:
             pickle.dump(metrics, file)
 
-    print("✅ Résultats sauvegardés localement")
+    logger.info("✅ Résultats sauvegardés localement")
 
     # 2. Sauvegarde sur MLflow
     if MODEL_TARGET == "mlflow":
@@ -44,7 +46,7 @@ def save_results(params: dict, metrics: dict) -> None:
             mlflow.log_params(params)
         if metrics is not None:
             mlflow.log_metrics(metrics)
-        print("✅ Résultats sauvegardés sur MLflow")
+        logger.info("✅ Résultats sauvegardés sur MLflow")
 
 
 def save_model(model) -> None:
@@ -87,13 +89,13 @@ def load_model(stage="Production"):
     - ou depuis MLFLOW (par "stage") si MODEL_TARGET=='mlflow'
     """
     if MODEL_TARGET == "local":
-        print(Fore.BLUE + "\nChargement du dernier modèle depuis le registry local..." + Style.RESET_ALL)
+        logger.info("Chargement du dernier modèle depuis le registry local...")
 
         local_model_directory = os.path.join(LOCAL_REGISTRY_PATH, "models")
         local_model_paths = glob.glob(f"{local_model_directory}/*")
 
         if not local_model_paths:
-            print("❌ Aucun modèle local trouvé")
+            logger.warning("❌ Aucun modèle local trouvé")
             return None
 
         most_recent_model_path_on_disk = sorted(local_model_paths)[-1]  # noqa: F841 -- utilisé par le code commenté ci-dessous
@@ -136,14 +138,20 @@ def mlflow_transition_model(current_stage: str, new_stage: str) -> None:
     version = client.get_latest_versions(name=MLFLOW_MODEL_NAME, stages=[current_stage])
 
     if not version:
-        print(f"\n❌ Aucun modèle trouvé avec le nom {MLFLOW_MODEL_NAME} dans le stage {current_stage}")
+        logger.warning("❌ Aucun modèle trouvé avec le nom %s dans le stage %s", MLFLOW_MODEL_NAME, current_stage)
         return None
 
     client.transition_model_version_stage(
         name=MLFLOW_MODEL_NAME, version=version[0].version, stage=new_stage, archive_existing_versions=True
     )
 
-    print(f"✅ Modèle {MLFLOW_MODEL_NAME} (version {version[0].version}) transféré de {current_stage} vers {new_stage}")
+    logger.info(
+        "✅ Modèle %s (version %s) transféré de %s vers %s",
+        MLFLOW_MODEL_NAME,
+        version[0].version,
+        current_stage,
+        new_stage,
+    )
 
     return None
 
@@ -170,7 +178,7 @@ def mlflow_run(func):
             mlflow.autolog()
             results = func(*args, **kwargs)
 
-        print("✅ Auto-log mlflow_run terminé")
+        logger.info("✅ Auto-log mlflow_run terminé")
 
         return results
 
