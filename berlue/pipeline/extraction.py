@@ -20,8 +20,9 @@ def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) ->
 
     raw_response = llm_extract.generate(prompt=prompt, temperature=0.0)
 
-    # 1. Extraction robuste du tableau JSON
-    match = re.search(r"\[.*\]", raw_response, re.DOTALL)
+    # 1. Extraction du tableau JSON. Non gourmand : `\[.*\]` en DOTALL allait du
+    # premier `[` au dernier `]` de la réponse, avalant tout ce qu'il y avait entre.
+    match = re.search(r"\[.*?\]", raw_response, re.DOTALL)
 
     if not match:
         logger.warning(
@@ -40,9 +41,19 @@ def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) ->
         return []
 
     # 3. Création des objets Claim
+    if not isinstance(extracted_strings, list):
+        logger.warning("⚠️ Erreur LLM : l'extraction n'a pas rendu un tableau : %r", extracted_strings)
+        return []
+
     claims = []
-    for claim_text in extracted_strings:
-        claim_text = claim_text.strip()
+    for element in extracted_strings:
+        # Le prompt demande un tableau de chaînes, mais rien ne l'y contraint : un
+        # `[{"claim": "..."}]` faisait lever un AttributeError non attrapé, qui
+        # arrêtait tout le run d'évaluation. On ignore l'élément et on continue.
+        if not isinstance(element, str):
+            logger.warning("⚠️ Élément d'extraction ignoré, ce n'est pas une chaîne : %r", element)
+            continue
+        claim_text = element.strip()
         if claim_text:  # Sécurité contre les chaînes vides
             claims.append(Claim(id=str(uuid.uuid4()), text=claim_text, source_answer=answer_text))
 
