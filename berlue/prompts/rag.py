@@ -16,11 +16,6 @@ STRICT JUDGMENT RULES (Choose one of the 5 verdicts):
 - LIKELY_FALSE: The FEVER knowledge base lacks relevant information, but based on your internal knowledge, the claim is factually incorrect.
 - I_DONT_KNOW: The FEVER knowledge base lacks relevant information, AND you do not have enough internal knowledge to verify the claim.
 
-Claim to verify: "{claim_text}"
-
-FEVER KNOWLEDGE BASE:
-{context_texts}
-
 Respond ONLY with a strict JSON object containing exactly these 4 keys:
 - "reasoning": "Explain your logic step-by-step. Mention the fever_label if you use FEVER."
 - "used_evidence_index": the integer (0, 1, 2...) of the relevant excerpt, OR null if you use internal knowledge or don't know.
@@ -101,4 +96,18 @@ JSON Response:
     "verdict": "I_DONT_KNOW",
     "confidence": 0.0
 }}
+
+=== END OF EXAMPLES ===
+
+=== INPUT TO PROCESS (this is the real input, not another example) ===
+
+Claim to verify: "{claim_text}"
+
+FEVER KNOWLEDGE BASE:
+{context_texts}
+
+Output ONLY the single JSON object for the claim above. Do not write another
+example. Do not add any text after the closing brace.
+
+JSON Response:
 """

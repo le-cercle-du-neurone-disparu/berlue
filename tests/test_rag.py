@@ -4,7 +4,7 @@ import pytest
 
 from berlue.core.schemas import Claim, RagJudgment, RagVerdict
 from berlue.llm.client import OllamaClient
-from berlue.rag.retriever import RagRetriever
+from berlue.rag.retriever import RagRetriever, _premier_objet_json
 
 
 @pytest.mark.functional  # a besoin d'un index FAISS + embeddings réels (RagRetriever)
@@ -48,3 +48,40 @@ def test_verify_claim_ne_fabrique_pas_de_preuve_sur_une_affirmation_hors_corpus(
     assert isinstance(result, RagVerdict)
     assert result.verdict not in (RagJudgment.FEVER_CONFIRMS, RagJudgment.FEVER_REFUTES)
     assert result.evidence is None
+
+
+# --- Extraction de l'objet JSON de la réponse du modèle ------------------------
+
+
+@pytest.mark.parametrize(
+    ("nom", "reponse", "attendu"),
+    [
+        (
+            "objet seul",
+            '{"verdict": "LIKELY_TRUE", "confidence": 0.8}',
+            {"verdict": "LIKELY_TRUE", "confidence": 0.8},
+        ),
+        (
+            # Le cas observé en production : llama3.1:8b enchaînait sur un second
+            # exemple. La capture allant jusqu'au dernier `}` contenait alors deux
+            # valeurs, et le verdict — pourtant bien formé — était perdu.
+            "objet suivi d'un second",
+            '{"verdict": "LIKELY_TRUE", "confidence": 0.8}\n\n{"verdict": "I_DONT_KNOW"}',
+            {"verdict": "LIKELY_TRUE", "confidence": 0.8},
+        ),
+        (
+            "objet suivi de bavardage",
+            '{"verdict": "I_DONT_KNOW", "confidence": 0.0}\nNote: based on the excerpts.',
+            {"verdict": "I_DONT_KNOW", "confidence": 0.0},
+        ),
+        (
+            "objet imbriqué : ne doit pas être tronqué au premier `}`",
+            '{"detail": {"k": 1}, "verdict": "FEVER_CONFIRMS"} trailing',
+            {"detail": {"k": 1}, "verdict": "FEVER_CONFIRMS"},
+        ),
+        ("aucun objet", "I cannot answer that.", {}),
+    ],
+)
+def test_premier_objet_json(nom, reponse, attendu):
+    objet = _premier_objet_json(reponse)
+    assert objet == attendu

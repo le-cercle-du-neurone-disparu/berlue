@@ -3,7 +3,6 @@
 import json
 import logging
 import pickle
-import re
 from pathlib import Path
 
 import faiss
@@ -39,6 +38,22 @@ def _source_de(evidence: dict) -> str:
         return evidence["evidence_url"][0][0][2]
     except KeyError, IndexError, TypeError:
         return "FEVER"
+
+
+def _premier_objet_json(texte: str) -> dict:
+    r"""Décode le premier objet JSON complet de `texte` et ignore ce qui suit.
+
+    `re.search(r"\{.*\}", ..., DOTALL)` allait du premier `{` au dernier `}` :
+    dès qu'un modèle ajoutait un second objet ou un commentaire après sa réponse,
+    la capture contenait deux valeurs et `json.loads` échouait sur « Extra data »,
+    perdant un verdict pourtant bien formé. `raw_decode` s'arrête à la fin de la
+    première valeur valide, quel que soit ce qui traîne derrière.
+    """
+    debut = texte.find("{")
+    if debut == -1:
+        return {}
+    objet, _fin = json.JSONDecoder().raw_decode(texte, debut)
+    return objet
 
 
 class RagRetriever:
@@ -127,9 +142,7 @@ class RagRetriever:
         # 4. Appel au LLM (via Ollama)
         try:
             response_text = self.llm_client.generate(prompt, num_predict=NUM_PREDICT_RAG)
-            match = re.search(r"\{.*\}", response_text, re.DOTALL)
-            clean_json_str = match.group(0) if match else "{}"
-            llm_result = json.loads(clean_json_str)
+            llm_result = _premier_objet_json(response_text)
 
             logger.info("\n=========== llm_result ===============\n")
             logger.info(f"{llm_result}")
@@ -187,7 +200,7 @@ class RagRetriever:
         except json.JSONDecodeError as e:
             # Si le JSON est trouvé mais mal formé (ex: virgule manquante)
             logger.warning("⚠️ Erreur de parsing JSON sur l'affirmation %s : %s", claim.id, e)
-            logger.warning("Texte problématique : %s", clean_json_str)
+            logger.warning("Réponse brute du modèle : %s", response_text)
             return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
         except Exception as e:
             logger.warning("⚠️ Erreur inattendue sur l'affirmation %s : %s", claim.id, e)
