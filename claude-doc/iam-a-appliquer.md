@@ -57,7 +57,56 @@ lancer une requête.
 La cible refuse une adresse qui n'est pas un compte de service et renvoie vers
 `gcp_share_with`.
 
-## 3. Image tirée d'un autre projet
+## 3. Laisser un collègue déployer sur NOS images
+
+Objectif : son Cloud Run tire nos images sans jamais les reconstruire — plus de
+build de quinze minutes chez lui.
+
+Il faut **deux autorisations distinctes**, et c'est le piège de cette
+configuration.
+
+**L'agent de service Cloud Run de son projet**, pour tirer l'image. Cloud Run
+n'utilise PAS le compte d'exécution du service pour cette étape : il passe par
+`service-<numéro-de-projet>@serverless-robot-prod.iam.gserviceaccount.com`.
+N'autoriser que `sa-berlue@son-projet` laisse le déploiement échouer sur une
+image introuvable.
+
+```bash
+make image_reader_grant CONSUMER_PROJECT=<id ou numéro de son projet>
+```
+
+La cible résout le numéro de projet toute seule à partir de l'identifiant. S'il
+ne nous a donné qu'un numéro, elle l'accepte aussi. En cas de doute, il peut le
+lire lui-même :
+
+```bash
+gcloud projects describe <son-projet> --format='value(projectNumber)'
+```
+
+**Son compte d'exécution**, s'il doit aussi lire ou écrire nos données :
+
+```bash
+make gcp_share_with_sa sa-berlue@<son-projet>.iam.gserviceaccount.com
+```
+
+### De son côté
+
+Une ligne dans son `.env`, et plus aucun build :
+
+```
+IMAGE_SOURCE_PROJECT=gen-lang-client-0242212765
+```
+
+Puis `make image_source_check` pour vérifier que les images sont lisibles avant
+de déployer — sans quoi l'échec arrive tard, sur une erreur de permission peu
+parlante.
+
+### Vérification
+
+Notre dépôt n'autorise aujourd'hui que trois humains en lecture. Aucun agent de
+service externe n'y figure : la configuration reste entièrement à poser.
+
+## 4. Image tirée d'un autre projet (le cas inverse)
 
 Seulement si on branche `IMAGE_SOURCE_PROJECT` sur un projet tiers. À lancer
 **par quelqu'un ayant les droits sur le projet source**, pas depuis le nôtre :

@@ -204,3 +204,56 @@ image_source_check: ## Vérifie que les images pointées par IMAGE_SOURCE_* exis
 		echo "   👉 Si le dépôt est dans un autre projet : make image_source_grant (côté projet source)."; \
 		exit 1; \
 	fi
+
+# ==============================================================================
+# LAISSER UN AUTRE PROJET TIRER NOS IMAGES
+# ==============================================================================
+# Symétrique d'image_source_grant : celui-ci se lance CHEZ NOUS pour qu'un
+# collègue déploie sur nos images sans jamais les reconstruire.
+#
+# Le compte à autoriser n'est pas celui qu'on croit. Cloud Run tire ses images
+# avec son AGENT DE SERVICE — service-<numéro>@serverless-robot-prod — et non
+# avec le compte d'exécution du service (sa-berlue@leur-projet), qui ne sert
+# qu'une fois le conteneur démarré. Autoriser le second laisse le déploiement
+# échouer sur une image introuvable.
+#
+#   make image_reader_grant CONSUMER_PROJECT=<id ou numéro du projet du collègue>
+
+image_reader_grant: gcp_check_cli_auth ## Autorise le Cloud Run d'un AUTRE projet à tirer nos images (CONSUMER_PROJECT=<id|numéro> requis)
+	@if [ -z "$(CONSUMER_PROJECT)" ]; then \
+		echo "❌ ERREUR : CONSUMER_PROJECT manquant."; \
+		echo "👉 make image_reader_grant CONSUMER_PROJECT=projet-du-collegue"; \
+		exit 1; \
+	fi
+	@NUM=$$(echo "$(CONSUMER_PROJECT)" | grep -qE '^[0-9]+$$' && echo "$(CONSUMER_PROJECT)" \
+		|| gcloud projects describe "$(CONSUMER_PROJECT)" --format="value(projectNumber)" 2>/dev/null </dev/null); \
+	if [ -z "$$NUM" ]; then \
+		echo "❌ Projet $(CONSUMER_PROJECT) introuvable, ou numéro illisible."; \
+		echo "   Le collègue peut le donner : gcloud projects describe <son-projet> --format='value(projectNumber)'"; \
+		exit 1; \
+	fi; \
+	AGENT="service-$$NUM@serverless-robot-prod.iam.gserviceaccount.com"; \
+	echo "🔐 Lecture de $(ARTIFACTSREPO) pour l'agent Cloud Run de $(CONSUMER_PROJECT) ($$AGENT)..."; \
+	gcloud artifacts repositories add-iam-policy-binding $(ARTIFACTSREPO) \
+		--location=$(GCP_REGION) \
+		--project=$(ARTIFACT_PROJECT) \
+		--member="serviceAccount:$$AGENT" \
+		--role="roles/artifactregistry.reader" \
+		--quiet </dev/null >/dev/null; \
+	echo "✅ Leur Cloud Run peut tirer nos images."; \
+	echo "   Chez eux : IMAGE_SOURCE_PROJECT=$(ARTIFACT_PROJECT) dans .env, puis make cloudrun_deploy."
+
+image_reader_revoke: gcp_check_cli_auth ## Retire à un autre projet le droit de tirer nos images (CONSUMER_PROJECT=<id|numéro> requis)
+	@if [ -z "$(CONSUMER_PROJECT)" ]; then \
+		echo "❌ ERREUR : CONSUMER_PROJECT manquant."; \
+		exit 1; \
+	fi
+	@NUM=$$(echo "$(CONSUMER_PROJECT)" | grep -qE '^[0-9]+$$' && echo "$(CONSUMER_PROJECT)" \
+		|| gcloud projects describe "$(CONSUMER_PROJECT)" --format="value(projectNumber)" 2>/dev/null </dev/null); \
+	gcloud artifacts repositories remove-iam-policy-binding $(ARTIFACTSREPO) \
+		--location=$(GCP_REGION) \
+		--project=$(ARTIFACT_PROJECT) \
+		--member="serviceAccount:service-$$NUM@serverless-robot-prod.iam.gserviceaccount.com" \
+		--role="roles/artifactregistry.reader" \
+		--quiet </dev/null >/dev/null || true
+	@echo "✅ Accès retiré."
