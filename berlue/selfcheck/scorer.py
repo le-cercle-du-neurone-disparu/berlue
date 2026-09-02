@@ -18,6 +18,17 @@ _SELFCHECK_NLI_MODEL = None
 _SELFCHECK_NLI_LOCK = threading.Lock()
 
 
+def precharger_nli() -> None:
+    """Charge le modèle NLI maintenant plutôt qu'à la première requête.
+
+    Appelé au démarrage du service : sans lui, le premier appelant attend ce
+    chargement en plus de sa propre prédiction, sur un service qui répond
+    pourtant déjà. Le coût ne disparaît pas, il est déplacé là où personne
+    n'attend.
+    """
+    _get_selfcheck_nli()
+
+
 def _get_selfcheck_nli() -> SelfCheckNLI:
     """Charge le modèle NLI une seule fois en mémoire (sur GPU si disponible)."""
 
