@@ -19,6 +19,13 @@ Check ALL of these before treating an excerpt as evidence:
 An excerpt that fails ANY of these is NOT relevant: ignore it. If NO excerpt passes, the knowledge base lacks relevant information — use LIKELY_TRUE, LIKELY_FALSE or I_DONT_KNOW, never FEVER_CONFIRMS or FEVER_REFUTES.
 Being unable to find a match is a normal outcome, not a failure: say so rather than stretching an excerpt to fit.
 
+DIRECTION TEST (apply to every excerpt that passed the relevance test):
+Being about the same fact does NOT mean agreeing with the claim. Now decide the DIRECTION:
+- The excerpt asserts the SAME thing as the claim → it confirms it.
+- The excerpt asserts the OPPOSITE → it REFUTES it, however closely the two are related.
+Read negations with care. "X has NOT been to Africa" is CONTRADICTED, not confirmed, by a true excerpt saying "X has been to Africa" — a claim and its negation can never both be true.
+Never answer FEVER_CONFIRMS just because an excerpt is about the same subject: matching the subject is the relevance test, agreeing with the claim is this one.
+
 STRICT JUDGMENT RULES (Choose one of the 5 verdicts):
 - FEVER_CONFIRMS: The claim is proven true by the database (it aligns with a "SUPPORTS" excerpt, or corrects a "REFUTES" excerpt).
 - FEVER_REFUTES: The claim is proven false by the database (it contradicts a "SUPPORTS" excerpt, or repeats a "REFUTES" excerpt).
@@ -82,6 +89,19 @@ JSON Response:
     "reasoning": "Excerpt 0 is a true fact but only mentions the Eiffel Tower, not the capital. Based on general internal knowledge, it is an undisputed fact that Paris is the capital of France.",
     "used_evidence_index": null,
     "verdict": "LIKELY_TRUE",
+    "confidence": 0.99
+}}
+
+Claim to verify: "Ryan Gosling has not been to Africa."
+FEVER KNOWLEDGE BASE:
+[
+  {{"excerpt_index": 0, "text": "Ryan Gosling has been to a country in Africa.", "fever_label": "SUPPORTS"}}
+]
+JSON Response:
+{{
+    "reasoning": "Excerpt 0 is about the same person and the same fact, so it passes the relevance test. Its label is SUPPORTS, so it is true: Ryan Gosling HAS been to a country in Africa. The claim says he has NOT. They are opposites, so the excerpt refutes the claim rather than confirming it.",
+    "used_evidence_index": 0,
+    "verdict": "FEVER_REFUTES",
     "confidence": 0.99
 }}
 
