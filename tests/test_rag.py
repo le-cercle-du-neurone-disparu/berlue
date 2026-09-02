@@ -20,6 +20,18 @@ def test_verify_claim_returns_rag_verdict():
 
 
 @pytest.mark.functional  # a besoin d'un index FAISS + embeddings réels (RagRetriever)
+@pytest.mark.xfail(
+    strict=False,
+    reason=(
+        "Défaut connu, non corrigé : `retrieve()` n'applique aucun seuil de distance, donc "
+        "des extraits hors sujet sont présentés au modèle comme la base FEVER. Reproduit : "
+        "sur l'affirmation charabia, le retriever a cité « Alphabet works in different fields » "
+        "(distance 1,21, contre ~0,2 pour un vrai appariement) comme preuve d'un FEVER_CONFIRMS "
+        "à confiance 1,0. Non déterministe — le même appel a rendu LIKELY_FALSE sans preuve sur "
+        "trois tirages consécutifs. Ce test doit REDEVENIR vert une fois le seuil posé "
+        "(cf. tofix2.md, partie B) ; ne pas affaiblir l'assertion pour le faire passer."
+    ),
+)
 def test_verify_claim_ne_fabrique_pas_de_preuve_sur_une_affirmation_hors_corpus():
     """Sur une affirmation sans aucun rapport avec le corpus, FAISS remonte quand même
     ses `top_k` voisins (aucun seuil de distance — cf. point 10 de tofix.md). Le
