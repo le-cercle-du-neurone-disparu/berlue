@@ -75,13 +75,22 @@ image introuvable.
 make image_reader_grant CONSUMER_PROJECT=<id ou numéro de son projet>
 ```
 
-La cible résout le numéro de projet toute seule à partir de l'identifiant. S'il
-ne nous a donné qu'un numéro, elle l'accepte aussi. En cas de doute, il peut le
-lire lui-même :
+**Le numéro n'est lisible que depuis SON projet.** Résoudre un identifiant en
+numéro exige `resourcemanager.projects.get` sur le projet visé, que nous n'avons
+pas. Et les chiffres présents dans un identifiant — `robotic-sanctum-501611-i9`
+— **ne sont pas** le numéro de projet : Google y ajoute un suffixe aléatoire
+pour garantir l'unicité. Les utiliser autoriserait un projet inexistant, ou
+celui de quelqu'un d'autre.
+
+Le collègue lance donc chez lui :
 
 ```bash
-gcloud projects describe <son-projet> --format='value(projectNumber)'
+make image_reader_request
 ```
+
+qui affiche la ligne exacte à nous renvoyer, numéro compris. À défaut, le numéro
+figure sur la page d'accueil de sa console Google Cloud, carte « Informations
+sur le projet ».
 
 **Son compte d'exécution**, s'il doit aussi lire ou écrire nos données :
 
