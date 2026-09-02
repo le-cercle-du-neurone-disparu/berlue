@@ -16,9 +16,8 @@ Contrat interne entre les modules du pipeline — distinct des schémas HTTP.
 ## `berlue/api/`
 API HTTP (FastAPI).
 - **`fast.py`** : expose l'API — endpoints techniques et endpoints métier
-  (liste des LLM, prédiction, évaluation). Au démarrage, charge soit
-  `mocks.MockBerluePipeline` (mode mock), soit `service.BerlueService`
-  (mode production) selon `params.USE_MOCK`.
+  (liste des LLM, prédiction, évaluation). Au démarrage, construit le
+  `service.BerlueService`, le récupérateur RAG et le client d'extraction.
 - **`service.py`** : `BerlueService` — fait tourner `HurluBerlu` de bout en
   bout et formate le résultat en réponse Pydantic pour l'API.
 - **`schemas.py`** : définit le format des requêtes/réponses HTTP de l'API.
@@ -62,10 +61,6 @@ texte question+réponse).
   prédits et des labels vérité-terrain.
 - **`run_eval.py`** : point d'entrée pour lancer l'évaluation (baseline seule
   par défaut, ou baseline + pipeline complet une fois ce dernier disponible).
-
-## `berlue/mocks/`
-- **`mock_pipeline.py`** : simule le pipeline complet pour développer le front
-  sans dépendre du vrai modèle.
 
 ## `berlue/ml_logic/`, `berlue/interface/`
 Squelette issu du template MLOps de départ (BigQuery, MLflow, Prefect) — à

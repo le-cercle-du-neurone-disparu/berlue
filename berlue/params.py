@@ -7,11 +7,6 @@ from berlue.prompts import RAG_SYSTEM_PROMPT as _RAG_SYSTEM_PROMPT
 ##################  VARIABLES (paramétrables via .env : diffèrent par personne/environnement)  ##################
 DATA_SIZE = os.environ.get("DATA_SIZE")
 
-# USE_MOCK : sert la pipeline mockée (berlue/mocks/) plutôt que le vrai modèle sur
-# l'API — pratique pour développer/tester le front sans dépendre d'un modèle
-# entraîné. Défaut "0" (désactivé).
-USE_MOCK = bool(int(os.environ.get("USE_MOCK", "0")))
-
 # GCP : identité du projet de chacun + secrets/emplacements propres à la machine
 GCP_PROJECT = os.environ.get("GCP_PROJECT")
 

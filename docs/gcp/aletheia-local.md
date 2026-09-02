@@ -3,7 +3,7 @@
 Fait tourner l'interface Aletheia sur sa machine, branchée sur l'API Berlue
 déployée sur Cloud Run (`berlue-api-<env>` + `berlue-llm`) plutôt que sur un
 Ollama/RAG local — aucune dépendance locale lourde côté Aletheia
-(`USE_MOCK`/Ollama/FAISS restent l'affaire de Berlue).
+(Ollama et FAISS restent l'affaire de Berlue).
 
 ## Prérequis — une fois par machine/session gcloud
 

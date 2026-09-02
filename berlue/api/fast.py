@@ -15,7 +15,6 @@ from berlue.params import (
     OLLAMA_MODEL,
     RAG_EMBEDDING_MODEL,
     RAG_MODEL,
-    USE_MOCK,
 )
 
 setup_logging()
@@ -36,20 +35,14 @@ logger = logging.getLogger(__name__)
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if USE_MOCK:
-        logger.warning("⚠️ DÉMARRAGE EN MODE MOCK : le vrai modèle n'est pas chargé.")
-        from berlue.mocks.mock_pipeline import MockBerluePipeline
+    logger.info("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement des index et modèles ML...")
+    from berlue.api.service import BerlueService
+    from berlue.rag.retriever import RagRetriever
 
-        app.state.service = MockBerluePipeline()
-    else:
-        logger.info("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement des index et modèles ML...")
-        from berlue.api.service import BerlueService
-        from berlue.rag.retriever import RagRetriever
+    app.state.retriever = RagRetriever(llm_client=OllamaClient(model=RAG_MODEL))
+    app.state.extractor = OllamaClient(model=EXTRACT_MODEL, temperature=0.0)
 
-        app.state.retriever = RagRetriever(llm_client=OllamaClient(model=RAG_MODEL))
-        app.state.extractor = OllamaClient(model=EXTRACT_MODEL, temperature=0.0)
-
-        app.state.service = BerlueService()
+    app.state.service = BerlueService()
 
     yield  # Le serveur tourne ici
 
@@ -112,7 +105,6 @@ def root():
             "nli": NLI_MODEL,
             "embeddings": RAG_EMBEDDING_MODEL,
         },
-        "mock": USE_MOCK,
     }
 
 
@@ -140,13 +132,10 @@ def predict_endpoint(payload: PredictInput):
     """
     Évalue une question avec un LLM et détecte les hallucinations.
     """
-    if USE_MOCK:
-        return app.state.service.predict(payload)
-    else:
-        try:
-            return app.state.service.predict(
-                payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
-            )
-        except Exception as e:
-            logger.exception("❌ Erreur de prédiction")
-            raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e
+    try:
+        return app.state.service.predict(
+            payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
+        )
+    except Exception as e:
+        logger.exception("❌ Erreur de prédiction")
+        raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e

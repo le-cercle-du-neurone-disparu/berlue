@@ -82,7 +82,7 @@ cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run se
 		--add-volume-mount=volume=code,mount-path=/mnt/code \
 		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
 		--add-volume-mount=volume=models,mount-path=/mnt/models \
-		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),HF_HOME=/mnt/models,HF_HUB_OFFLINE=1 \
+		--update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),HF_HOME=/mnt/models,HF_HUB_OFFLINE=1 \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
 # Accès par personne sur les services Cloud Run du projet. CLOUDRUN_ROLE =
@@ -255,7 +255,7 @@ cloudrun_eval_service_deploy: gcp_check_cli_auth rag_index_check ## Crée ou met
 		--add-volume-mount=volume=code,mount-path=/mnt/code \
 		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
 		--add-volume-mount=volume=models,mount-path=/mnt/models \
-		--update-env-vars=HF_HOME=/mnt/models,HF_HUB_OFFLINE=1,GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,USE_MOCK=0,BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION)$(if $(EVAL_SELFCHECK_MODEL),$(comma)BERLUE_OLLAMA_MODEL=$(EVAL_SELFCHECK_MODEL),)$(if $(EVAL_EXTRACT_MODEL),$(comma)EXTRACT_MODEL=$(EVAL_EXTRACT_MODEL),)$(if $(EVAL_RAG_MODEL),$(comma)RAG_MODEL=$(EVAL_RAG_MODEL),) \
+		--update-env-vars=HF_HOME=/mnt/models,HF_HUB_OFFLINE=1,GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION)$(if $(EVAL_SELFCHECK_MODEL),$(comma)BERLUE_OLLAMA_MODEL=$(EVAL_SELFCHECK_MODEL),)$(if $(EVAL_EXTRACT_MODEL),$(comma)EXTRACT_MODEL=$(EVAL_EXTRACT_MODEL),)$(if $(EVAL_RAG_MODEL),$(comma)RAG_MODEL=$(EVAL_RAG_MODEL),) \
 		--no-allow-unauthenticated
 	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
 	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \
@@ -334,8 +334,13 @@ gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournen
 LLM_NUM_PARALLEL ?= 4
 LLM_CONCURRENCY ?= 4
 LLM_CONTEXT_LENGTH ?=
-LLM_CPU ?= 4
-LLM_MEMORY ?= 16Gi
+# 8, le plafond : le chargement d'un modèle de 14 B en profite, et c'est la config
+# de référence documentée (8 vCPU / 32 Gi).
+LLM_CPU ?= 8
+# 32 Gi et non 16 : un modèle de 14 B occupe ~12 Go une fois chargé (constaté le
+# 01/09 avec qwen2.5:14b, « model runner has unexpectedly stopped » à 16 Gi), et on
+# en charge un second à côté. scripts/ollama_memory_check.sh vérifie après coup.
+LLM_MEMORY ?= 32Gi
 # Une virgule littérale dans un argument de $(if ...) serait lue comme le
 # séparateur then/else de $(if) lui-même — passer par une variable l'évite.
 comma := ,
@@ -492,7 +497,23 @@ cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU L4, coûteux) et ch
 	echo "✅ $(CLOUDRUN_LLM_SERVICE) prêt ($$LLM_URL)."; \
 	if [ -z "$(WARM_MODELS)" ]; then \
 		echo "ℹ️  WARM_MODELS vide : aucun modèle préchargé — le premier appel généré paiera le chargement en VRAM."; \
+	fi
+	@$(MAKE) --no-print-directory llm_warm
+
+# Préchauffe WARM_MODELS sur un berlue-llm DÉJÀ monté, sans toucher au
+# min-instances : c'est le geste à part quand on change de modèles sans vouloir
+# relancer un gcp_up complet. Appelé aussi par cloudrun_llm_up.
+llm_warm: gcp_check_cli_auth ## Pull + charge WARM_MODELS="m1 m2" en VRAM sur berlue-llm (service déjà monté ; n'allume rien)
+	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
+	if [ -z "$$LLM_URL" ]; then \
+		echo "❌ $(CLOUDRUN_LLM_SERVICE) n'est pas déployé. Lancez : make gcp_deploy"; \
+		exit 1; \
 	fi; \
+	if [ -z "$(WARM_MODELS)" ]; then \
+		echo "ℹ️  WARM_MODELS vide — rien à préchauffer. Ex. : make llm_warm WARM_MODELS=\"phi3:14b llama3.2:3b\""; \
+		exit 0; \
+	fi; \
+	LLM_TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$LLM_URL); \
 	for MODEL in $(WARM_MODELS); do \
 		echo "⬇️  Pull + warmup de $$MODEL sur $(CLOUDRUN_LLM_SERVICE)..."; \
 		curl -sf -X POST "$$LLM_URL/api/pull" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$$MODEL\",\"stream\":false}" > /dev/null; \

@@ -97,12 +97,11 @@ def api_client(store, monkeypatch):
     """TestClient pointé sur le store isolé de ce test, pas la base locale
     réelle du dev — pas de pollution, pas de purge nécessaire. Override de
     dépendance FastAPI (`get_store`), pas `app.state` : les routes d'éval
-    l'injectent via `Depends(get_store)`, jamais `app.state`. Force le mode
-    mock (`MockBerluePipeline`, léger) au démarrage : ce test ne touche
-    jamais `/predict`/`/llms`, pas besoin de charger un vrai RAG/LLM
-    d'extraction — sinon ce test échouerait sur une machine sans index FAISS
-    déjà construit, pour une raison sans rapport avec ce qu'il vérifie."""
-    monkeypatch.setattr("berlue.api.fast.USE_MOCK", True)
+    l'injectent via `Depends(get_store)`, jamais `app.state`. Neutralise le
+    chargement du RAG au démarrage : ce test ne touche jamais
+    `/predict`/`/llms`, et sans cela il échouerait sur une machine sans index
+    FAISS déjà construit, pour une raison sans rapport avec ce qu'il vérifie."""
+    monkeypatch.setattr("berlue.rag.retriever.RagRetriever", lambda **kwargs: object())
     app.dependency_overrides[get_store] = lambda: store
     with TestClient(app) as client:
         yield client
