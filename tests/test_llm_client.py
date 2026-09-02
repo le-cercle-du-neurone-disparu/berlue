@@ -9,7 +9,7 @@ from httpx import TimeoutException
 from ollama import ResponseError
 
 from berlue.llm.client import OllamaClient
-from berlue.params import OLLAMA_MODEL
+from berlue.params import OLLAMA_MODEL, OLLAMA_NUM_CTX
 
 
 class FakeInnerClient:
@@ -54,7 +54,13 @@ def test_generate_passes_model_prompt_and_temperature():
     client.generate(prompt="Une question ?", temperature=0.42)
 
     call = client.client.calls[0]
-    assert call == {"model": "fake-model", "prompt": "Une question ?", "options": {"temperature": 0.42}}
+    assert call["model"] == "fake-model"
+    assert call["prompt"] == "Une question ?"
+    assert call["options"]["temperature"] == 0.42
+    # La fenêtre de contexte est imposée à chaque appel : laissée au choix
+    # d'Ollama, elle rétrécit sous pression mémoire et tronque le prompt en
+    # silence (cf. params.OLLAMA_NUM_CTX).
+    assert call["options"]["num_ctx"] == OLLAMA_NUM_CTX
 
 
 def test_generate_raises_timeout_error_on_httpx_timeout():
@@ -114,7 +120,7 @@ def test_generate_many_uses_midpoint_temperature_for_k_equals_1():
 
     client.generate_many("...", k=1, temperature_min=0.2, temperature_max=0.8)
 
-    assert client.client.calls[0]["options"] == {"temperature": 0.5}
+    assert client.client.calls[0]["options"]["temperature"] == 0.5
 
 
 def test_generate_many_distributes_temperatures_evenly():
