@@ -62,7 +62,6 @@ import logging
 import os
 import subprocess
 import threading
-import time
 from datetime import UTC, datetime, timedelta
 
 import google.auth
@@ -77,6 +76,8 @@ from berlue.evaluation.result_store import EvalScope, _hash, _matrix_row_to_obje
 from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
 from berlue.evaluation.timing import mark
 from berlue.params import BQ_DATASET, EVAL_BIGQUERY_PROJECT, EVAL_FIRESTORE_PROJECT, EVAL_SERVICE_ACCOUNT
+
+logger = logging.getLogger(__name__)
 
 _MATRIX_COLUMNS = (
     "ground_truth_true_predicted_true",
@@ -93,6 +94,14 @@ def _doc_id(*parts) -> str:
     unique — deux appels avec les mêmes composantes retombent sur le même
     id, ce qui permet le dédoublonnage à la création (409 si déjà présent)."""
     return _hash("|".join(str(p) for p in parts))
+
+
+# Marge retranchée à l'échéance annoncée d'un jeton : une requête peut partir juste
+# avant l'expiration et arriver juste après.
+_TOKEN_SAFETY_MARGIN = timedelta(minutes=5)
+# Durée supposée quand la source ne publie pas d'échéance (gcloud CLI en local) —
+# les jetons Google vivent une heure, on reste large.
+_TOKEN_ASSUMED_LIFETIME = timedelta(minutes=45)
 
 
 def _running_on_cloud_run() -> bool:
@@ -116,20 +125,28 @@ def _access_token() -> str:
       impersonation explicite de `sa-berlue` — les ADC standard n'ont pas
       cette option ici (bloquées par la même politique), cf. docstring du
       module. Nécessite `roles/iam.serviceAccountTokenCreator` sur ce SA.
+
+    Retourne `(jeton, échéance)` — l'échéance en UTC naïf, convention google-auth.
     """
     if _running_on_cloud_run():
         mark("_access_token() start (ADC via métadonnées)")
         credentials, _ = google.auth.default()
         credentials.refresh(google.auth.transport.requests.Request())
         mark("_access_token() fini")
-        return credentials.token
+        # Échéance réelle du jeton, pas une durée supposée : le serveur de
+        # métadonnées Cloud Run sert un jeton MUTUALISÉ entre tous les appelants
+        # de l'instance, souvent déjà bien entamé — un `refresh()` peut rendre un
+        # jeton auquel il ne reste que quelques minutes.
+        expiry = credentials.expiry or (datetime.utcnow() + _TOKEN_ASSUMED_LIFETIME)
+        return credentials.token, expiry
 
     if not EVAL_SERVICE_ACCOUNT:
         raise RuntimeError(
             "❌ EVAL_SERVICE_ACCOUNT non résolu (GCP_PROJECT absent ?) — impossible de s'authentifier auprès de GCP."
         )
     cmd = ["gcloud", "auth", "print-access-token", "--impersonate-service-account", EVAL_SERVICE_ACCOUNT]
-    return subprocess.check_output(cmd, text=True).strip()
+    # La CLI ne publie pas d'échéance : durée supposée.
+    return subprocess.check_output(cmd, text=True).strip(), datetime.utcnow() + _TOKEN_ASSUMED_LIFETIME
 
 
 class _AccessTokenCredentials(google.auth.credentials.Credentials):
@@ -138,8 +155,8 @@ class _AccessTokenCredentials(google.auth.credentials.Credentials):
     automatiquement avant expiration."""
 
     def refresh(self, request) -> None:
-        self.token = _access_token()
-        self.expiry = datetime.utcnow() + timedelta(minutes=50)  # naive UTC, convention google-auth
+        self.token, expiry = _access_token()
+        self.expiry = expiry - _TOKEN_SAFETY_MARGIN  # naive UTC, convention google-auth
 
 
 class _FirestoreRest:
@@ -151,13 +168,27 @@ class _FirestoreRest:
     def __init__(self, project: str):
         self.project = project
         self._token: str | None = None
-        self._token_expires_at = 0.0
+        self._token_expiry = datetime.min  # naive UTC — force un premier appel
 
-    def _headers(self) -> dict:
-        if self._token is None or time.monotonic() >= self._token_expires_at:
-            self._token = _access_token()
-            self._token_expires_at = time.monotonic() + 50 * 60
+    def _headers(self, force_refresh: bool = False) -> dict:
+        if force_refresh or self._token is None or datetime.utcnow() >= self._token_expiry:
+            self._token, expiry = _access_token()
+            self._token_expiry = expiry - _TOKEN_SAFETY_MARGIN
         return {"Authorization": f"Bearer {self._token}"}
+
+    def _request(self, method: str, url: str, **kwargs) -> requests.Response:
+        """Appel Firestore avec renouvellement du jeton en cas de 401.
+
+        L'échéance calculée reste une prévision : le jeton peut être révoqué, ou
+        l'horloge décaler. Un 401 sur une écriture interrompait tout un run d'éval
+        de plusieurs centaines de lignes ; on retente une fois avec un jeton frais.
+        Les codes attendus par les appelants (404 sur `get`, 409 sur `create`) sont
+        rendus tels quels, c'est à eux de les interpréter."""
+        response = requests.request(method, url, headers=self._headers(), **kwargs)
+        if response.status_code == 401:
+            logger.warning("🔑 Firestore a rendu 401 — renouvellement du jeton et nouvelle tentative.")
+            response = requests.request(method, url, headers=self._headers(force_refresh=True), **kwargs)
+        return response
 
     def _documents_url(self) -> str:
         return f"{self._API_BASE}/projects/{self.project}/databases/(default)/documents"
@@ -169,7 +200,7 @@ class _FirestoreRest:
         return f"projects/{self.project}/databases/(default)/documents/{collection}/{doc_id}"
 
     def get(self, collection: str, doc_id: str) -> dict | None:
-        response = requests.get(self._doc_url(collection, doc_id), headers=self._headers())
+        response = self._request("GET", self._doc_url(collection, doc_id))
         if response.status_code == 404:
             return None
         response.raise_for_status()
@@ -178,10 +209,10 @@ class _FirestoreRest:
     def create(self, collection: str, doc_id: str, data: dict) -> bool:
         """Crée le document avec l'id imposé `doc_id` — retourne `False`
         (pas d'erreur) si un document avec cet id existe déjà (409)."""
-        response = requests.post(
+        response = self._request(
+            "POST",
             f"{self._documents_url()}/{collection}",
             params={"documentId": doc_id},
-            headers=self._headers(),
             json={"fields": _to_fields(data)},
         )
         if response.status_code == 409:
@@ -203,8 +234,7 @@ class _FirestoreRest:
                 }
             ]
         }
-        response = requests.post(f"{self._documents_url()}:commit", headers=self._headers(), json=body)
-        response.raise_for_status()
+        self._request("POST", f"{self._documents_url()}:commit", json=body).raise_for_status()
 
     def query(self, collection: str, filters: dict) -> list[dict]:
         """Documents de `collection` dont tous les champs de `filters`
@@ -227,7 +257,7 @@ class _FirestoreRest:
             )
             body["structuredQuery"]["where"] = where
 
-        response = requests.post(f"{self._documents_url()}:runQuery", headers=self._headers(), json=body)
+        response = self._request("POST", f"{self._documents_url()}:runQuery", json=body)
         response.raise_for_status()
         results = []
         for entry in response.json():
@@ -244,8 +274,7 @@ class _FirestoreRest:
         for i in range(0, len(names), 500):
             chunk = names[i : i + 500]
             body = {"writes": [{"delete": name} for name in chunk]}
-            response = requests.post(f"{self._documents_url()}:commit", headers=self._headers(), json=body)
-            response.raise_for_status()
+            self._request("POST", f"{self._documents_url()}:commit", json=body).raise_for_status()
         return len(names)
 
 

@@ -23,6 +23,20 @@ RUN pip install . && rm -rf build *.egg-info
 # raisonnement que la séparation `Dockerfile`/`Dockerfile.eval`).
 RUN python -m berlue.nli_baseline.train
 
+# 4bis. Précharge les poids HuggingFace du pipeline dans l'image. Sans ça, le
+# premier appel réel les télécharge (~1,3 Go) depuis le conteneur, en plein
+# milieu d'une requête déjà longue — et les retélécharge après chaque
+# scale-to-zero. Les noms sont lus depuis le code, jamais recopiés en dur, pour
+# qu'un changement de modèle dans params.py suive automatiquement.
+RUN python -c "\
+from sentence_transformers import SentenceTransformer; \
+from selfcheckgpt.utils import NLIConfig; \
+from transformers import DebertaV2ForSequenceClassification, DebertaV2Tokenizer; \
+from berlue.params import RAG_EMBEDDING_MODEL; \
+SentenceTransformer(RAG_EMBEDDING_MODEL); \
+DebertaV2Tokenizer.from_pretrained(NLIConfig.nli_model); \
+DebertaV2ForSequenceClassification.from_pretrained(NLIConfig.nli_model)"
+
 # 5. Sortie non bufferisée — cf. Dockerfile.eval pour le détail (marqueurs
 # horodatés de `berlue.evaluation.timing` sinon bufferisés jusqu'à l'exit).
 ENV PYTHONUNBUFFERED=1
