@@ -17,6 +17,9 @@
 # changement de modèle suit tout seul. Celui du NLI vient du paquet selfcheckgpt,
 # lu directement par le script de publication.
 RAG_EMBEDDING_MODEL := $(shell python -c "from berlue.params import RAG_EMBEDDING_MODEL; print(RAG_EMBEDDING_MODEL)" 2>/dev/null)
+NLI_MODEL := $(shell python -c "from selfcheckgpt.utils import NLIConfig; print(NLIConfig.nli_model)" 2>/dev/null)
+# Noms tels qu'ils apparaissent dans l'arborescence du cache HuggingFace.
+MODELS_ATTENDUS := sentence-transformers--$(RAG_EMBEDDING_MODEL) $(subst /,--,$(NLI_MODEL))
 
 models_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS des modèles s'il n'existe pas déjà (dans BUCKET_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur
 	@if gcloud storage buckets describe gs://$(MODELS_BUCKET_NAME) --project=$(BUCKET_PROJECT) >/dev/null 2>&1 </dev/null; then \
@@ -44,14 +47,21 @@ models_bucket_delete: ## Supprime le bucket de modèles et tout son contenu (app
 # en téléchargement silencieux de 2 Go par démarrage à froid, il échoue. Autant
 # le détecter au déploiement plutôt que dans les logs Cloud Run. Prérequis des
 # déploiements applicatifs, jamais appelé directement.
+# Vérifie la présence des POIDS, pas seulement du dossier : un cache où il manque
+# un modèle laisse passer le déploiement et casse au premier appel.
 _models_check:
-	@gcloud storage ls gs://$(MODELS_BUCKET_NAME)/hub/ >/dev/null 2>&1 </dev/null || { \
-		echo "❌ Cache de modèles introuvable : gs://$(MODELS_BUCKET_NAME)/hub/"; \
-		echo "   Les services partent avec HF_HUB_OFFLINE=1 : sans lui, le premier"; \
+	@manquants=""; \
+	for m in $(MODELS_ATTENDUS); do \
+		gcloud storage ls "gs://$(MODELS_BUCKET_NAME)/hub/models--$$m/**" 2>/dev/null </dev/null \
+			| grep -qE '\.(safetensors|bin)$$' || manquants="$$manquants $$m"; \
+	done; \
+	if [ -n "$$manquants" ]; then \
+		echo "❌ Poids absents du cache gs://$(MODELS_BUCKET_NAME)/hub/ :$$manquants"; \
+		echo "   Les services partent avec HF_HUB_OFFLINE=1 : sans eux, le premier"; \
 		echo "   appel échouerait au lieu de télécharger."; \
 		echo "   👉 make models_push"; \
 		exit 1; \
-	}
+	fi
 
 models_push: gcp_check_cli_auth ## Publie les poids des modèles du pipeline dans gs://MODELS_BUCKET_NAME (~2 Go, à refaire seulement si un modèle change)
 	@bash scripts/models_push.sh $(MODELS_BUCKET_NAME) $(RAG_EMBEDDING_MODEL)
