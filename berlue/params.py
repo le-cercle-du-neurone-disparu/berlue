@@ -177,16 +177,35 @@ NUM_PREDICT_RAG = int(os.environ.get("BERLUE_NUM_PREDICT_RAG", "600"))
 # --- Fusion des scores ---
 # Fonctionnel de référence : claude-doc/specification-fusion-2026-09-02.md.
 #
-# Poids d'arbitrage quand le RAG et SelfCheck se contredisent (règle R5). Le RAG
-# pèse plus : il juge le fait, SelfCheck ne juge que la stabilité du modèle qui a
-# répondu.
-FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.6"))
+# Poids d'arbitrage quand le RAG et SelfCheck se contredisent (règle R5). C'est le
+# chemin principal, pas un cas limite : FEVER ne tranche que 0,3 % des affirmations
+# de nos jeux, donc hors preuve documentaire la décision se joue entre deux sources
+# — la conviction propre du modèle du RAG, et SelfCheck.
+#
+# Objectif : 50/50 entre les deux. Atteint exactement quand SelfCheck accuse.
+#
+# Côté décharge, un 50/50 strict est arithmétiquement impossible sans perdre le cas
+# d'usage du projet. Pour qu'un RAG catégorique « c'est faux » reste CONTREDIT face
+# à un modèle parfaitement stable — l'hallucination stable — il faut :
+#
+#     (0·RAG + décharge·0,95) / (RAG + décharge) < seuil de 0,40
+#     soit  décharge < 0,727 · RAG,  donc < 0,36 ici.
+#
+# La valeur retenue, 0,35, est la plus proche du 50/50 que cette contrainte autorise
+# (59/41). Au-delà, un modèle cohérent annulerait un jugement catégorique, ce que la
+# règle « la cohérence ne peut que charger, jamais disculper » interdit —
+# `test_hallucination_stable_est_contredite` garde cette limite.
+#
+# Mesuré : ce rééquilibrage ne change aucun verdict sur les données actuelles. Il
+# prendra effet quand SelfCheck cessera d'être saturé (divergence médiane 0,95 avec
+# llama3.2:1b, 0,51 avec le 3b).
+FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.5"))
 # Poids de SelfCheck, asymétrique : une divergence forte est un signal plus
 # informatif qu'une divergence faible. Se contredire n'a qu'une lecture (le modèle
 # ne sait pas) ; être cohérent en a deux (il sait, ou il se trompe avec constance).
 # La cohérence ne peut donc pas peser autant que l'incohérence.
-FUSION_WEIGHT_SELFCHECK_CHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_CHARGE", "0.55"))
-FUSION_WEIGHT_SELFCHECK_DECHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_DECHARGE", "0.3"))
+FUSION_WEIGHT_SELFCHECK_CHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_CHARGE", "0.5"))
+FUSION_WEIGHT_SELFCHECK_DECHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_DECHARGE", "0.35"))
 
 # Divergence à laquelle SelfCheck est neutre : en deçà il penche vers le vrai,
 # au-delà vers le faux. À calibrer sur la distribution réelle des divergences ;

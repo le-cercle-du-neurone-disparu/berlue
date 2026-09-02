@@ -10,6 +10,7 @@ tournent dans la lane CI rapide.
 
 import pytest
 
+from berlue import params
 from berlue.core.schemas import (
     Claim,
     Evidence,
@@ -245,11 +246,11 @@ TABLEAU = [
     (RagJudgment.LIKELY_TRUE, 0.10, 0.50, None, Verdict.NOT_ENOUGH_INFO, Fondement.AUCUN, 0.00),
     (RagJudgment.LIKELY_FALSE, 0.10, 0.90, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.74),
     (RagJudgment.LIKELY_TRUE, 1.00, 0.05, None, Verdict.SUPPORTED, Fondement.CONVICTION, 0.98),
-    (RagJudgment.LIKELY_TRUE, 1.00, 0.50, None, Verdict.SUPPORTED, Fondement.CONVICTION, 0.83),
+    (RagJudgment.LIKELY_TRUE, 1.00, 0.50, None, Verdict.SUPPORTED, Fondement.CONVICTION, 0.79),
     (RagJudgment.LIKELY_TRUE, 1.00, 0.90, None, Verdict.NOT_ENOUGH_INFO, Fondement.CONVICTION, 0.00),
     (RagJudgment.LIKELY_TRUE, 0.60, 0.90, None, Verdict.NOT_ENOUGH_INFO, Fondement.CONVICTION, 0.00),
     (RagJudgment.LIKELY_FALSE, 1.00, 0.90, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.95),
-    (RagJudgment.LIKELY_FALSE, 1.00, 0.05, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.68),
+    (RagJudgment.LIKELY_FALSE, 1.00, 0.05, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.61),
     (RagJudgment.LIKELY_FALSE, 0.50, 0.05, None, Verdict.NOT_ENOUGH_INFO, Fondement.CONVICTION, 0.00),
     (RagJudgment.LIKELY_TRUE, 1.00, None, "panne SelfCheck", Verdict.PANNE, Fondement.AUCUN, 0.00),
     (None, None, 0.90, "panne RAG", Verdict.PANNE, Fondement.AUCUN, 0.00),
@@ -264,3 +265,34 @@ def test_tableau_de_reference(ligne):
     assert fused.verdict == verdict
     assert fused.fondement == fondement
     assert fused.confidence == pytest.approx(confidence, abs=0.005)
+
+
+# --- La contrainte qui borne le poids à décharge ------------------------------
+
+
+def test_la_decharge_ne_peut_pas_annuler_un_jugement_categorique():
+    """Garde la contrainte qui borne `FUSION_WEIGHT_SELFCHECK_DECHARGE`.
+
+    L'arbitrage vise un 50/50 entre la conviction du RAG et SelfCheck. Côté
+    décharge, un 50/50 strict est impossible : pour qu'un RAG catégorique
+    « c'est faux » reste CONTREDIT face à un modèle parfaitement stable —
+    l'hallucination stable, le cas d'usage du projet — il faut
+
+        (0·RAG + décharge·0,95) / (RAG + décharge) < FUSION_SEUIL_FAUX
+        soit  décharge < 0,727 · RAG.
+
+    Ce test échouera si quelqu'un relève la décharge au-delà, et c'est son rôle :
+    la limite est arithmétique, pas esthétique.
+    """
+    plafond = 0.727 * params.FUSION_WEIGHT_RAG
+    assert params.FUSION_WEIGHT_SELFCHECK_DECHARGE < plafond, (
+        f"décharge={params.FUSION_WEIGHT_SELFCHECK_DECHARGE} dépasse le plafond {plafond:.3f} "
+        f"imposé par FUSION_WEIGHT_RAG={params.FUSION_WEIGHT_RAG}"
+    )
+    # Et la conséquence concrète, indépendamment de la formule ci-dessus.
+    assert _fuse(rag=_rag(RagJudgment.LIKELY_FALSE, 1.0), divergence=0.05).verdict == Verdict.CONTRADICTED
+
+
+def test_selfcheck_et_le_rag_pesent_pareil_quand_selfcheck_accuse():
+    """Le 50/50 visé est atteint exactement du côté accusation."""
+    assert params.FUSION_WEIGHT_SELFCHECK_CHARGE == params.FUSION_WEIGHT_RAG
