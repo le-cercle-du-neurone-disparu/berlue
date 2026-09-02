@@ -153,6 +153,7 @@ gcp_destroy: gcp_check_cli_auth ## Revert complet de gcp_setup ET de gcp_deploy 
 	@$(MAKE) --no-print-directory artifact_registry_role_revoke || true
 	@$(MAKE) --no-print-directory rag_bucket_delete || true
 	@$(MAKE) --no-print-directory code_bucket_delete || true
+	@$(MAKE) --no-print-directory models_bucket_delete || true
 	@echo "💣 Suppression de la base Firestore (default)..."
 	@gcloud firestore databases delete --database="(default)" --project=$(GCP_PROJECT) --quiet </dev/null || true
 	@$(MAKE) --no-print-directory bigquery_delete_dataset || true
@@ -172,6 +173,8 @@ gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (
 	@$(MAKE) --no-print-directory rag_bucket_grant_sa
 	@$(MAKE) --no-print-directory code_bucket_create
 	@$(MAKE) --no-print-directory code_bucket_grant_sa
+	@$(MAKE) --no-print-directory models_bucket_create
+	@$(MAKE) --no-print-directory models_bucket_grant_sa
 	@$(MAKE) --no-print-directory gcp_enable_cost_observability || \
 		echo "⚠️  Observabilité des coûts non activée (confort, sans impact sur le reste) — make gcp_enable_cost_observability pour réessayer."
 	@echo ""

@@ -6,7 +6,6 @@ docker_build_local: ## Build l'image Docker locale pour les tests (tag surcharge
 	@echo "🐳 Build de l'image Docker locale $(GAR_RUNTIME_IMAGE):$(DOCKER_TAG)..."
 	docker build \
 		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		$(if $(RAG_EMBEDDING_MODEL),--build-arg RAG_EMBEDDING_MODEL=$(RAG_EMBEDDING_MODEL),) \
 		--tag=$(GAR_RUNTIME_IMAGE):$(DOCKER_TAG) .
 
 # L'image ne contient pas le code (cf. Dockerfile) : en local on le bind-monte
@@ -145,17 +144,11 @@ docker_build_push_all: ## Build et push les 2 images (runtime applicatif, Ollama
 	@$(MAKE) --no-print-directory docker_push_llm
 	@echo "✅ 2 images à jour dans $(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)."
 
-# Nom du modèle d'embedding lu depuis params.py plutôt que recopié ici : un
-# changement de modèle suit tout seul. Vide si le paquet n'est pas importable
-# (venv non activé) — l'image retombe alors sur le défaut de son ARG.
-RAG_EMBEDDING_MODEL := $(shell python -c "from berlue.params import RAG_EMBEDDING_MODEL; print(RAG_EMBEDDING_MODEL)" 2>/dev/null)
-
 docker_build_prod: ## Build l'image runtime applicatif pour la production (linux/amd64)
-	@echo "🏗️ Build de l'image runtime $(GAR_RUNTIME_IMAGE) (embedding préchargé : $(or $(RAG_EMBEDDING_MODEL),défaut du Dockerfile))..."
+	@echo "🏗️ Build de l'image runtime $(GAR_RUNTIME_IMAGE)..."
 	docker build \
 		--platform linux/amd64 \
 		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		$(if $(RAG_EMBEDDING_MODEL),--build-arg RAG_EMBEDDING_MODEL=$(RAG_EMBEDDING_MODEL),) \
 		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		.
 

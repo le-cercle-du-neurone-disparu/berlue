@@ -205,6 +205,20 @@ else
     ko "gs://${CODE_BUCKET_NAME} absent — make code_bucket_create"
 fi
 
+# --- Bucket de modèles -------------------------------------------------------
+# Les services partent avec HF_HUB_OFFLINE=1 : sans ce cache, le premier appel
+# échoue au lieu de télécharger 2 Go en pleine requête.
+if gcloud storage buckets describe "gs://${MODELS_BUCKET_NAME}" --project="$BUCKET_PROJECT" >/dev/null 2>&1 </dev/null; then
+    ok "gs://${MODELS_BUCKET_NAME} présent"
+    if gcloud storage ls "gs://${MODELS_BUCKET_NAME}/hub/" >/dev/null 2>&1 </dev/null; then
+        ok "cache HuggingFace publié"
+    else
+        ko "cache HuggingFace vide — make models_push"
+    fi
+else
+    ko "gs://${MODELS_BUCKET_NAME} absent — make models_bucket_create"
+fi
+
 # --- Verdict -----------------------------------------------------------------
 echo ""
 if [ "$FAILURES" -eq 0 ]; then

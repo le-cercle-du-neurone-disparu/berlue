@@ -114,6 +114,10 @@ RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag
 # Dédié plutôt que partagé avec RAG_BUCKET_NAME pour la même raison qu'au
 # paragraphe précédent : un volume GCS FUSE monte tout le bucket.
 CODE_BUCKET_NAME = $(GCP_PROJECT)-berlue-code
+# Poids HuggingFace du pipeline (embedding + NLI, ~2 Go), montés en cache
+# HF_HOME plutôt que cuits dans l'image : ils ne changent qu'au changement de
+# modèle, alors que l'image est rebuildée à chaque dépendance.
+MODELS_BUCKET_NAME = $(GCP_PROJECT)-berlue-models
 
 # Version de code active = premier niveau de dossier dans le bucket
 # (gs://$(CODE_BUCKET_NAME)/<version>/berlue/...), et donc sous-dossier du

@@ -57,6 +57,7 @@ rag_index_check:
 
 cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
 	@$(MAKE) --no-print-directory _code_version_check
+	@$(MAKE) --no-print-directory _models_check
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
@@ -79,7 +80,9 @@ cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run se
 		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
 		--add-volume=name=code,type=cloud-storage,bucket=$(CODE_BUCKET_NAME) \
 		--add-volume-mount=volume=code,mount-path=/mnt/code \
-		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION) \
+		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
+		--add-volume-mount=volume=models,mount-path=/mnt/models \
+		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),HF_HOME=/mnt/models,HF_HUB_OFFLINE=1 \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
 # Accès par personne sur les services Cloud Run du projet. CLOUDRUN_ROLE =
@@ -232,6 +235,7 @@ EVAL_RAG_MODEL ?=
 # BERLUE_APP_MODULE, servi par le même entrypoint.
 cloudrun_eval_service_deploy: gcp_check_cli_auth rag_index_check ## Crée ou met à jour le service Cloud Run d'éval (même image que l'API, cf. BERLUE_APP_MODULE) — monte l'index RAG (RAG_CORPUS_VERSION) ; EVAL_SELFCHECK_MODEL/EVAL_EXTRACT_MODEL/EVAL_RAG_MODEL pour choisir les modèles du pipeline
 	@$(MAKE) --no-print-directory _code_version_check
+	@$(MAKE) --no-print-directory _models_check
 	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE) ($(EVAL_CPU) vCPU/$(EVAL_MEMORY), corpus $(RAG_CORPUS_VERSION))..."
 	gcloud run deploy $(CLOUDRUN_EVAL_SERVICE) \
 		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
@@ -249,7 +253,9 @@ cloudrun_eval_service_deploy: gcp_check_cli_auth rag_index_check ## Crée ou met
 		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
 		--add-volume=name=code,type=cloud-storage,bucket=$(CODE_BUCKET_NAME) \
 		--add-volume-mount=volume=code,mount-path=/mnt/code \
-		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,USE_MOCK=0,BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION)$(if $(EVAL_SELFCHECK_MODEL),$(comma)BERLUE_OLLAMA_MODEL=$(EVAL_SELFCHECK_MODEL),)$(if $(EVAL_EXTRACT_MODEL),$(comma)EXTRACT_MODEL=$(EVAL_EXTRACT_MODEL),)$(if $(EVAL_RAG_MODEL),$(comma)RAG_MODEL=$(EVAL_RAG_MODEL),) \
+		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
+		--add-volume-mount=volume=models,mount-path=/mnt/models \
+		--update-env-vars=HF_HOME=/mnt/models,HF_HUB_OFFLINE=1,GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,USE_MOCK=0,BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION)$(if $(EVAL_SELFCHECK_MODEL),$(comma)BERLUE_OLLAMA_MODEL=$(EVAL_SELFCHECK_MODEL),)$(if $(EVAL_EXTRACT_MODEL),$(comma)EXTRACT_MODEL=$(EVAL_EXTRACT_MODEL),)$(if $(EVAL_RAG_MODEL),$(comma)RAG_MODEL=$(EVAL_RAG_MODEL),) \
 		--no-allow-unauthenticated
 	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
 	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \
