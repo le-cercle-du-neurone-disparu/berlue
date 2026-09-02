@@ -44,6 +44,14 @@ async def lifespan(app: FastAPI):
 
     app.state.service = BerlueService()
 
+    # Le modèle NLI de SelfCheck se chargerait sinon à la première requête, et le
+    # premier appelant paierait l'attente — mesuré à 16 s sur Cloud Run, sur un
+    # service qui répondait pourtant déjà sur `/`. `make llm_warm` ne le couvre
+    # pas : il ne préchauffe que les modèles Ollama, qui vivent ailleurs.
+    from berlue.selfcheck.scorer import precharger_nli
+
+    precharger_nli()
+
     yield  # Le serveur tourne ici
 
     logger.info("🛑 Extinction du serveur...")

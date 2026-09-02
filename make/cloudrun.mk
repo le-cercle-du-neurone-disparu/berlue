@@ -506,6 +506,34 @@ cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU L4, coûteux) et ch
 # Préchauffe WARM_MODELS sur un berlue-llm DÉJÀ monté, sans toucher au
 # min-instances : c'est le geste à part quand on change de modèles sans vouloir
 # relancer un gcp_up complet. Appelé aussi par cloudrun_llm_up.
+# Préchauffer le LLM ne suffit pas : le modèle NLI de SelfCheck vit dans le
+# service APPLICATIF, pas dans berlue-llm. Il se charge au démarrage du conteneur
+# (cf. le lifespan de berlue/api/fast.py), mais une révision fraîche met une
+# quinzaine de secondes à être réellement prête — et répond déjà sur `/` pendant
+# ce temps. Cette cible attend que les deux étages soient chauds.
+warm: ## Préchauffe TOUT : les modèles Ollama (WARM_MODELS) et le service applicatif (NLI compris)
+	@$(MAKE) --no-print-directory llm_warm
+	@$(MAKE) --no-print-directory api_warm
+
+api_warm: gcp_check_cli_auth ## Attend que le service applicatif soit réellement prêt — NLI de SelfCheck chargé compris
+	@API_URL=$$(gcloud run services describe $(GAR_IMAGE)-$(CLOUDRUN_ENV) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
+	if [ -z "$$API_URL" ]; then \
+		echo "❌ $(GAR_IMAGE)-$(CLOUDRUN_ENV) n'est pas déployé."; \
+		exit 1; \
+	fi; \
+	echo "⏳ Attente de $$API_URL (index FAISS et modèle NLI)..."; \
+	for i in $$(seq 1 60); do \
+		CODE=$$(curl -s -o /dev/null -w "%{http_code}" "$$API_URL/"); \
+		[ "$$CODE" = "200" ] && break; \
+		sleep 3; \
+	done; \
+	if [ "$$CODE" != "200" ]; then \
+		echo "❌ Le service ne répond pas (http $$CODE)."; \
+		exit 1; \
+	fi; \
+	echo "✅ Service applicatif prêt — index chargé, NLI préchargé au démarrage."; \
+	curl -s "$$API_URL/" | python3 -c "import sys,json; m=json.load(sys.stdin)['models']; [print(f'   {k:12} {v}') for k,v in m.items()]"
+
 llm_warm: gcp_check_cli_auth ## Pull + charge WARM_MODELS="m1 m2" en VRAM sur berlue-llm (service déjà monté ; n'allume rien)
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
