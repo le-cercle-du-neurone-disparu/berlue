@@ -4,7 +4,7 @@ Comment mesurer Berlue face à une baseline — méthodologie, où les résultat
 sont stockés/calculés, et comment les consulter.
 
 - [`modes.md`](modes.md) — les deux modes d'évaluation (dataset vs généré
-  + juge), pourquoi les deux coexistent.
+  + juge), pourquoi les deux coexistent, avec un schéma par mode.
 - [`storage.md`](storage.md) — où et comment les résultats sont stockés
   (concepts, implémentation locale SQLite, implémentation GCP
   Firestore/BigQuery, transfert local → GCP).
