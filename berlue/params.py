@@ -7,11 +7,6 @@ from berlue.prompts import RAG_SYSTEM_PROMPT as _RAG_SYSTEM_PROMPT
 ##################  VARIABLES (paramétrables via .env : diffèrent par personne/environnement)  ##################
 DATA_SIZE = os.environ.get("DATA_SIZE")
 
-# USE_MOCK : sert la pipeline mockée (berlue/mocks/) plutôt que le vrai modèle sur
-# l'API — pratique pour développer/tester le front sans dépendre d'un modèle
-# entraîné. Défaut "0" (désactivé).
-USE_MOCK = bool(int(os.environ.get("USE_MOCK", "0")))
-
 # GCP : identité du projet de chacun + secrets/emplacements propres à la machine
 GCP_PROJECT = os.environ.get("GCP_PROJECT")
 
@@ -103,12 +98,20 @@ MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000"
 
 # --- LLM (Ollama) ---
 OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
+# Le modèle SOUS ÉVALUATION : il produit la réponse à vérifier, et c'est de lui que
+# SelfCheck tire ses échantillons — la prémisse de SelfCheckGPT étant d'échantillonner
+# le modèle qui a répondu, pas un autre.
 OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_SYSTEM_PROMPT = _OLLAMA_SYSTEM_PROMPT
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- EXTRACTION ---
-EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "llama3.2:3b")
+# Extraction et RAG tournent sur un modèle plus gros que celui évalué : ce sont
+# les deux étages qui doivent COMPRENDRE (découper une réponse en affirmations,
+# juger une affirmation), pas produire. 8B est le compromis retenu — pas un qwen,
+# décevant sur ces deux tâches à l'essai, et pas un 14B, qui portait une requête
+# /predict de trois affirmations à 6 min 24 sur Cloud Run.
+EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "llama3.1:8b")
 # EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "qwen2.5:0.5b")
 EXTRACT_SYSTEM_PROMPT = _EXTRACT_SYSTEM_PROMPT
 
@@ -129,7 +132,7 @@ RAG_INDEX_DIR = "data/fever/faiss"
 # Surchargeable pour pointer vers un volume monté (ex. GCS FUSE sur Cloud
 # Run, cf. docs/gcp/cloudrun.md) plutôt que le chemin local par défaut.
 RAG_VECTOR_DB_PATH = os.environ.get("RAG_VECTOR_DB_PATH", "data/fever/faiss")
-RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.2:3b")  # phi3.5:latest
+RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.1:8b")
 RAG_SYSTEM_PROMPT = _RAG_SYSTEM_PROMPT
 
 # --- NLI léger ---
@@ -154,9 +157,90 @@ TRAIN_RATIO = float(os.environ.get("BERLUE_TRAIN_RATIO", "0.8"))
 # --- MLOps ---
 MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
 
+# --- Bornes de génération (num_predict) ---
+# Sans borne, un modèle qui ignore la consigne de longueur génère jusqu'à saturer
+# `n_ctx_slot` (4096 sur nos serveurs) puis enchaîne les *context shifts*, chacun
+# coûtant plusieurs secondes : un seul appel dépasse alors le timeout client et fait
+# tomber le run entier. Constaté deux fois — sur GCP (bloqué à 97/100) et en local
+# (91/300).
+#
+# Les valeurs sont dimensionnées sur les longueurs réellement produites (mesurées sur
+# 30 traces, ~4 caractères par token), avec une marge large : la sécurité ne dépend pas
+# de leur précision, seulement du fait d'être nettement sous `n_ctx`. Une borne trop
+# serrée tronquerait un JSON en plein milieu — d'où l'avertissement émis par
+# `OllamaClient.generate` quand la borne est atteinte.
+#
+#   réponse et échantillons : max observé 126  -> 300 (valeur déjà retenue en mode généré)
+#   extraction              : max observé  35  -> 400 (la réponse brute peut préambuler)
+#   RAG                     : max observé 172  -> 600 (le raisonnement peut s'allonger)
+NUM_PREDICT_ANSWER = int(os.environ.get("BERLUE_NUM_PREDICT_ANSWER", "300"))
+NUM_PREDICT_EXTRACTION = int(os.environ.get("BERLUE_NUM_PREDICT_EXTRACTION", "400"))
+NUM_PREDICT_RAG = int(os.environ.get("BERLUE_NUM_PREDICT_RAG", "600"))
+
 # --- Fusion des scores ---
-FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.6"))
-FUSION_WEIGHT_SELFCHECK = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK", "0.4"))
+# Fonctionnel de référence : claude-doc/specification-fusion-2026-09-02.md.
+#
+# Poids d'arbitrage quand le RAG et SelfCheck se contredisent (règle R5). C'est le
+# chemin principal, pas un cas limite : FEVER ne tranche que 0,3 % des affirmations
+# de nos jeux, donc hors preuve documentaire la décision se joue entre deux sources
+# — la conviction propre du modèle du RAG, et SelfCheck.
+#
+# Objectif : 50/50 d'influence GLOBALE entre les deux, pas direction par direction.
+#
+# Côté décharge, SelfCheck est bridé par nécessité : pour qu'un RAG catégorique
+# « c'est faux » reste CONTREDIT face à un modèle parfaitement stable —
+# l'hallucination stable, le cas d'usage du projet — il faut
+#
+#     (0·RAG + décharge·0,95) / (RAG + décharge) < FUSION_SEUIL_FAUX
+#     soit  décharge < 0,727 · RAG,  donc < 0,36 ici.
+#
+# Sa part y plafonne donc à 41 %. Le poids à charge compense au-dessus de 50 % pour
+# que la moyenne des deux revienne à 50 : 56,5 % à charge, 41,2 % à décharge, soit
+# 48,8 % en moyenne. C'est le réglage le plus proche d'un vrai 50/50 sans franchir
+# la falaise mesurée à charge = 0,75, où le taux d'accusation sur les réponses
+# VRAIES saute de 38 % à 56 % sans que la séparation progresse.
+#
+# Pondérer par la fréquence réelle des deux directions (87 % d'accusations) aurait
+# été trompeur : cette proportion vient de la saturation de SelfCheck avec le 1b,
+# la figer dans le réglage reviendrait à inscrire un défaut dans la formule.
+#
+# `test_hallucination_stable_est_contredite` et
+# `test_la_decharge_ne_peut_pas_annuler_un_jugement_categorique` gardent la limite.
+#
+# Mesuré : ce rééquilibrage ne change aucun verdict sur les données actuelles. Il
+# prendra effet quand SelfCheck cessera d'être saturé (divergence médiane 0,95 avec
+# llama3.2:1b, 0,51 avec le 3b).
+FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.5"))
+# Poids de SelfCheck, asymétrique : une divergence forte est un signal plus
+# informatif qu'une divergence faible. Se contredire n'a qu'une lecture (le modèle
+# ne sait pas) ; être cohérent en a deux (il sait, ou il se trompe avec constance).
+# La cohérence ne peut donc pas peser autant que l'incohérence.
+FUSION_WEIGHT_SELFCHECK_CHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_CHARGE", "0.65"))
+FUSION_WEIGHT_SELFCHECK_DECHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_DECHARGE", "0.35"))
+
+# Divergence à laquelle SelfCheck est neutre : en deçà il penche vers le vrai,
+# au-delà vers le faux. À calibrer sur la distribution réelle des divergences ;
+# 0.5 reproduit le `1 - divergence` historique.
+FUSION_DIVERGENCE_NEUTRE = float(os.environ.get("BERLUE_FUSION_DIVERGENCE_NEUTRE", "0.5"))
+
+# Bande dans laquelle le jugement du RAG est trop faible pour conclure (règle R3) :
+# SelfCheck y décide seul, mais seulement si son signal est franc.
+FUSION_BANDE_RAG_MIN = float(os.environ.get("BERLUE_FUSION_BANDE_RAG_MIN", "0.4"))
+FUSION_BANDE_RAG_MAX = float(os.environ.get("BERLUE_FUSION_BANDE_RAG_MAX", "0.6"))
+# Seuils au-delà desquels SelfCheck seul peut trancher. Volontairement extrêmes :
+# une divergence moyenne peut venir de la créativité, d'une omission ou des
+# températures étalées du protocole d'échantillonnage, pas d'une hallucination.
+FUSION_SELFCHECK_SEUIL_HAUT = float(os.environ.get("BERLUE_FUSION_SELFCHECK_SEUIL_HAUT", "0.8"))
+FUSION_SELFCHECK_SEUIL_BAS = float(os.environ.get("BERLUE_FUSION_SELFCHECK_SEUIL_BAS", "0.2"))
+
+# Décote appliquée à une conviction qui ne repose que sur SelfCheck : sans elle, une
+# conviction d'un seul signal ressortirait plus confiante qu'une conviction corroborée
+# par le RAG, et la confiance baisserait quand le RAG devient plus convaincu.
+FUSION_DECOTE_SIGNAL_SEUL = float(os.environ.get("BERLUE_FUSION_DECOTE_SIGNAL_SEUL", "0.6"))
+
+# Seuils de classification du score final sur l'axe faux <-> vrai.
+FUSION_SEUIL_FAUX = float(os.environ.get("BERLUE_FUSION_SEUIL_FAUX", "0.4"))
+FUSION_SEUIL_VRAI = float(os.environ.get("BERLUE_FUSION_SEUIL_VRAI", "0.6"))
 
 ##################  CONFIGURATION FIXE (décisions de mainteneur, pas des paramètres .env)  ##################
 # Mêmes valeurs pour tout le monde — cf. make/config.mk pour l'équivalent côté Make

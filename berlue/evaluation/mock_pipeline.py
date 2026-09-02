@@ -1,10 +1,9 @@
 """Pipeline Berlue factice pour développer la boucle d'évaluation sans dépendre
 d'un LLM ni d'un index FAISS réels.
 
-Ne pas confondre avec `berlue.mocks.mock_pipeline.MockBerluePipeline` (mock figé
-utilisé pour le développement frontend, activé par `USE_MOCK`) : celui-ci vise au
-contraire une diversité aléatoire des verdicts, pour exercer toutes les cases de
-la matrice de confusion pendant le développement de `berlue.evaluation.run_eval`.
+Les verdicts sont volontairement aléatoires : le but est d'exercer toutes les
+cases de la matrice de confusion pendant le développement de
+`berlue.evaluation.run_eval`, ce qu'un pipeline aux réponses figées ne ferait pas.
 """
 
 import random

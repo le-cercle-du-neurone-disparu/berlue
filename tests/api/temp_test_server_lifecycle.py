@@ -85,7 +85,7 @@ def test_uvicorn_starts_and_responds_locally():
         _wait_for_server(f"http://127.0.0.1:{port}/", timeout=15)
         response = httpx.get(f"http://127.0.0.1:{port}/", timeout=5)
         assert response.status_code == 200
-        assert response.json() == {"greeting": "Hello from Berlue API"}
+        assert response.json()["greeting"] == "Hello from Berlue API"
     finally:
         process.terminate()
         process.wait(timeout=10)
@@ -116,7 +116,7 @@ def test_docker_container_starts_and_responds():
         _wait_for_server("http://localhost:8000/", timeout=30)
         response = httpx.get("http://localhost:8000/", timeout=5)
         assert response.status_code == 200
-        assert response.json() == {"greeting": "Hello from Berlue API"}
+        assert response.json()["greeting"] == "Hello from Berlue API"
     finally:
         subprocess.run(["docker", "rm", "-f", DOCKER_CONTAINER_NAME], capture_output=True)
 
@@ -141,7 +141,7 @@ def test_compose_up_starts_and_responds():
         _wait_for_server("http://localhost:8000/", timeout=30)
         response = httpx.get("http://localhost:8000/", timeout=5)
         assert response.status_code == 200
-        assert response.json() == {"greeting": "Hello from Berlue API"}
+        assert response.json()["greeting"] == "Hello from Berlue API"
     finally:
         subprocess.run(["docker", "compose", "down"], cwd=REPO_ROOT, capture_output=True)
         process.terminate()

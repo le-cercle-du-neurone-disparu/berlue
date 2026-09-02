@@ -63,7 +63,11 @@ evaluate_model_coverage: ## Affiche le total d'éléments d'un scope (pour prép
 		--pipeline-version $(PIPELINE_VERSION) --generation-version $(GENERATION_VERSION) --eval-version $(EVAL_VERSION) \
 		--coverage
 
-# PURGE_SCOPE = all (défaut) | results (5 tables individuelles) | matrices (3 tables).
+# PURGE_SCOPE = all (défaut) | results (5 tables individuelles) | matrices (3 tables)
+#            | signals (signaux pré-fusion seuls)
+#            | fusion (prédictions + matrice du mode 1, EN GARDANT les signaux :
+#                      relancer ensuite evaluate_model_all ne recalcule que la fusion,
+#                      RAG et SelfCheck sortant du cache — pour régler les FUSION_*).
 PURGE_SCOPE ?= all
 
 evaluate_model_purge: ## Purge le cache filtré par DATASET/RATIO/MODEL_ID/PIPELINE_VERSION/GENERATION_VERSION/EVAL_VERSION/JUDGE_MODEL/PURGE_SCOPE — vide = joker (attention : défauts non vides ci-dessus, blanquer explicitement pour un joker, ex. `make evaluate_model_purge DATASET= RATIO= MODEL_ID= PIPELINE_VERSION= EVAL_VERSION=`)

@@ -12,6 +12,21 @@ class Verdict(StrEnum):
     SUPPORTED = "supported"
     CONTRADICTED = "contradicted"
     NOT_ENOUGH_INFO = "not_enough_info"
+    # Un composant du pipeline a échoué : aucun verdict n'est rendu et la question
+    # est à rejouer. À exclure des matrices de confusion, jamais à compter comme une
+    # prédiction (cf. berlue.evaluation.metrics.build_confusion_matrix).
+    PANNE = "panne"
+
+
+class Fondement(StrEnum):
+    """Sur quoi repose un verdict. Une preuve et une conviction ne s'affichent pas de
+    la même façon et ne se défendent pas de la même façon — le verdict reste à trois
+    valeurs pour rester comparable à une vérité terrain, c'est ce champ qui porte la
+    différence."""
+
+    PREUVE_FEVER = "preuve_fever"  # la base contient de quoi trancher
+    CONVICTION = "conviction"  # rien en base : opinion argumentée, faillible
+    AUCUN = "aucun"  # rien à dire
 
 
 class RagJudgment(StrEnum):
@@ -69,6 +84,7 @@ class FusedVerdict:
     confidence: float
     evidence: Evidence | None = None
     explanation: str = ""
+    fondement: Fondement = Fondement.AUCUN
 
 
 @dataclass
@@ -91,3 +107,9 @@ class PipelineResult:
 
     # --- 5. La Fusion Finale ---
     fused_verdicts: list[FusedVerdict] = field(default_factory=list)
+
+    # Renseigné quand un composant a échoué. La réponse entière est alors invalide,
+    # pour TOUTES les affirmations et pas seulement celle qui a échoué, et la question
+    # doit être rejouée. Distinct d'un RAG qui répond « je ne sais pas » : ça, c'est
+    # une réponse légitime.
+    panne: str | None = None

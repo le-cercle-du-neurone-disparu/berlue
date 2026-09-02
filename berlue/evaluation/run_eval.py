@@ -29,6 +29,7 @@ from berlue.evaluation.data import load_labeled_examples, split_train_test
 from berlue.evaluation.judge import judge_answer
 from berlue.evaluation.metrics import build_confusion_matrix
 from berlue.evaluation.result_store import EvalScope, LocalResultStore, get_result_store
+from berlue.evaluation.signals import signals_from_dict, signals_to_dict
 from berlue.llm.client import OllamaClient
 from berlue.nli_baseline.predict import NliBaseline
 from berlue.params import JUDGE_MODEL
@@ -77,17 +78,46 @@ class _StepTimer:
         )
 
 
+def _predict_via_signals(pipeline, store, scope: EvalScope, question: str, answer: str):
+    """Prédit en passant par le cache des signaux pré-fusion.
+
+    Les signaux (affirmations, verdicts RAG, scores SelfCheck) coûtent plusieurs
+    appels LLM ; la fusion qui les consomme est instantanée. Les mettre en cache
+    permet de purger la seule fusion (`--purge-scope fusion`), de changer les
+    `FUSION_*` et de relancer : RAG et SelfCheck sortent du cache, seule la fusion
+    est réellement recalculée.
+
+    Repli sur `predict()` pour un pipeline qui n'expose pas la découpe — les mocks
+    d'`evaluation.mock_pipeline` et les faux pipelines des tests n'ont que `predict`.
+    """
+    if not (hasattr(pipeline, "compute_signals") and hasattr(pipeline, "fuse")):
+        return pipeline.predict(question, answer)
+
+    cached = store.get_signals(scope, question, answer)
+    if cached is not None:
+        return pipeline.fuse(signals_from_dict(question, cached))
+
+    result = pipeline.compute_signals(question, answer)
+    store.put_signals(scope, question, answer, signals_to_dict(result))
+    return pipeline.fuse(result)
+
+
 def aggregate_verdict(claims: list[ClaimResult]) -> Verdict:
     """Réduit les verdicts par affirmation d'une réponse (`predict()` en retourne
     un par claim extraite) en un seul verdict comparable au label vérité-terrain
     de l'exemple : une seule affirmation contredite suffit à considérer toute la
     réponse comme fausse (pire cas), sinon une seule incertaine suffit à rendre
     la réponse indécise — sans affirmation, rien à valider.
+
+    Une seule affirmation en panne suffit à mettre toute la réponse en panne : le
+    résultat est incomplet, il n'est comparable à rien et la question est à rejouer.
     """
     if not claims:
         return Verdict.NOT_ENOUGH_INFO
 
     statuses = {claim.status for claim in claims}
+    if "panne" in statuses:
+        return Verdict.PANNE
     if "red" in statuses:
         return Verdict.CONTRADICTED
     if "orange" in statuses:
@@ -247,7 +277,7 @@ def evaluate_model(
                 continue
 
             with timer.measure("Berlue"):
-                verdict = aggregate_verdict(pipeline.predict(question, answer).claims)
+                verdict = aggregate_verdict(_predict_via_signals(pipeline, store, scope, question, answer).claims)
             with timer.measure("store I/O (put)"):
                 store.put_prediction(scope, question, answer, ex["ground_truth_label"], verdict)
             n_computed += 1
@@ -524,10 +554,10 @@ def evaluate_model_generated(
         _maybe_flush_registry()
 
     def _berlue_one(question: str) -> None:
-        # `pipeline.predict` doit être thread-safe pour un `concurrency` > 1 —
-        # vrai pour `BerluePipeline` (appels LLM sans état partagé, comme
-        # `generator_client`/`judge_client` ; `RagRetriever.verify_claim`
-        # n'écrit dans aucun état d'instance partagé non plus).
+        # `pipeline.predict` doit être thread-safe pour un `concurrency` > 1 :
+        # les appels LLM sont sans état partagé, `RagRetriever.verify_claim`
+        # n'écrit dans aucun état d'instance, et le singleton SelfCheckNLI est
+        # protégé par un verrou (cf. `selfcheck.scorer._get_selfcheck_nli`).
         generated_answer = store.get_generated_answer(scope.model_id, scope.generation_version, question)
         with timer.measure("Berlue"):
             berlue_verdict = aggregate_verdict(pipeline.predict(question, generated_answer).claims)
@@ -846,9 +876,13 @@ def build_arg_parser():
     )
     parser.add_argument(
         "--purge-scope",
-        choices=["all", "results", "matrices"],
+        choices=["all", "results", "matrices", "signals", "fusion"],
         default="all",
-        help="Limite la purge aux résultats individuels, aux matrices, ou aux deux (défaut).",
+        help=(
+            "Limite la purge : results (résultats individuels), matrices, signals "
+            "(signaux pré-fusion), fusion (prédictions + matrices du mode 1 en gardant "
+            "les signaux, pour rejouer la seule fusion), all (défaut)."
+        ),
     )
     parser.add_argument("--purge-dataset", default=None, help="Filtre de purge : dataset.")
     parser.add_argument("--purge-ratio", type=float, default=None, help="Filtre de purge : ratio train/test.")

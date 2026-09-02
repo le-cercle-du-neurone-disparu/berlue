@@ -8,7 +8,14 @@ from berlue.api.fast_eval import eval_router
 from berlue.api.schemas import LLMListOutput, PredictInput, PredictOutput
 from berlue.llm.client import OllamaClient
 from berlue.logging_config import setup_logging
-from berlue.params import EXTRACT_MODEL, RAG_MODEL, USE_MOCK
+from berlue.params import (
+    EXTRACT_MODEL,
+    JUDGE_MODEL,
+    NLI_MODEL,
+    OLLAMA_MODEL,
+    RAG_EMBEDDING_MODEL,
+    RAG_MODEL,
+)
 
 setup_logging()
 
@@ -28,20 +35,14 @@ logger = logging.getLogger(__name__)
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if USE_MOCK:
-        logger.warning("⚠️ DÉMARRAGE EN MODE MOCK : le vrai modèle n'est pas chargé.")
-        from berlue.mocks.mock_pipeline import MockBerluePipeline
+    logger.info("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement des index et modèles ML...")
+    from berlue.api.service import BerlueService
+    from berlue.rag.retriever import RagRetriever
 
-        app.state.service = MockBerluePipeline()
-    else:
-        logger.info("🚀 DÉMARRAGE EN MODE PRODUCTION : chargement des index et modèles ML...")
-        from berlue.api.service import BerlueService
-        from berlue.rag.retriever import RagRetriever
+    app.state.retriever = RagRetriever(llm_client=OllamaClient(model=RAG_MODEL))
+    app.state.extractor = OllamaClient(model=EXTRACT_MODEL, temperature=0.0)
 
-        app.state.retriever = RagRetriever(llm_client=OllamaClient(model=RAG_MODEL))
-        app.state.extractor = OllamaClient(model=EXTRACT_MODEL, temperature=0.0)
-
-        app.state.service = BerlueService()
+    app.state.service = BerlueService()
 
     yield  # Le serveur tourne ici
 
@@ -85,8 +86,26 @@ async def favicon():
 def root():
     """
     Endpoint racine de health-check.
+
+    Publie aussi le modèle attaché à chaque étage du pipeline. Ces valeurs
+    viennent de l'environnement du conteneur : les lire ici est le seul moyen
+    de savoir ce qu'une instance déployée utilise vraiment, sans quoi un
+    verdict s'interprète sans savoir qui l'a produit.
     """
-    return {"greeting": "Hello from Berlue API"}
+    return {
+        "greeting": "Hello from Berlue API",
+        "models": {
+            # Le modèle évalué : il produit la réponse à vérifier et les
+            # échantillons SelfCheck. Surchargeable par requête via le
+            # `llm.name` de /predict — c'est ici le défaut du service.
+            "generation": OLLAMA_MODEL,
+            "extraction": EXTRACT_MODEL,
+            "rag": RAG_MODEL,
+            "judge": JUDGE_MODEL,
+            "nli": NLI_MODEL,
+            "embeddings": RAG_EMBEDDING_MODEL,
+        },
+    }
 
 
 # ==========================================
@@ -113,13 +132,10 @@ def predict_endpoint(payload: PredictInput):
     """
     Évalue une question avec un LLM et détecte les hallucinations.
     """
-    if USE_MOCK:
-        return app.state.service.predict(payload)
-    else:
-        try:
-            return app.state.service.predict(
-                payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
-            )
-        except Exception as e:
-            logger.exception("❌ Erreur de prédiction")
-            raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e
+    try:
+        return app.state.service.predict(
+            payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
+        )
+    except Exception as e:
+        logger.exception("❌ Erreur de prédiction")
+        raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e

@@ -47,8 +47,9 @@ rien des instances en vie, et s'y fier fait conclure à tort qu'un service est
 make gcp_deploy                    # CLOUDRUN_ENV=test par défaut
 ```
 
-Build + push les 3 images (`docker_build_push_all`) puis déploie les 3
-services (`cloudrun_deploy_all`). **L'ordre n'est pas cosmétique** :
+Build + push les 2 images (`docker_build_push_all`), publie le code dans son
+bucket (`code_push`), puis déploie les 3 services (`cloudrun_deploy_all`).
+**L'ordre n'est pas cosmétique** :
 `cloudrun_deploy` lit l'URL de `berlue-llm` pour câbler `BERLUE_OLLAMA_HOST`
 sur l'API, donc `berlue-llm` est déployé en premier. Déployer l'API sans
 lui échoue désormais explicitement, au lieu de partir avec un
@@ -57,6 +58,11 @@ lui échoue désormais explicitement, au lieu de partir avec un
 Ce que ça ne fait pas : allumer quoi que ce soit. Les services sortent de
 là à `min-instances=0` — c'est `gcp_up`/`gcp_eval_up` qui forcent une instance
 chaude, et c'est lui qui coûte.
+
+Et surtout, ce n'est **pas** le geste courant. Les images ne contiennent pas
+le code de l'application : tant que `requirements.txt` et les `Dockerfile` ne
+bougent pas, un changement de Python se déploie par `make code_deploy`
+(~1 min, aucun build) — cf. [`code-en-bucket.md`](code-en-bucket.md).
 
 Les trois services sont déployés avec **une instance maximum** et rien de
 garanti chaud : le budget prime sur le débit.
@@ -81,15 +87,16 @@ make cloudrun_deploy CLOUDRUN_ENV=staging
 ## Service d'éval (`berlue-eval`)
 
 `berlue.evaluation.run_eval`, servi par `berlue.api.eval_service`
-(`uvicorn`, `Dockerfile.eval-service`) — un seul endpoint `POST /invoke`
-qui reçoit les mêmes flags que la CLI en JSON. Tourne en continu
+(`uvicorn`) — un seul endpoint `POST /invoke` qui reçoit les mêmes flags que
+la CLI en JSON. Tourne sur la **même image que l'API** (`berlue-runtime`) :
+seule la variable `BERLUE_APP_MODULE` change d'un déploiement à l'autre.
+Tourne en continu
 (`min-instances=1`, monté/éteint via `gcp_eval_up`/`gcp_down`) plutôt qu'un
 conteneur neuf par exécution — temps mesurés :
 [`execution-benchmark.md`](../evaluation/execution-benchmark.md).
 
 ```bash
-make docker_build_eval_service docker_push_eval_service   # build + push (Dockerfile.eval-service)
-make cloudrun_eval_service_deploy                         # crée/met à jour le service
+make cloudrun_eval_service_deploy                         # crée/met à jour le service (image commune)
 make gcp_eval_up                                           # min-instances=1 (éval + LLM) + préchauffe, avant une série de runs
 make cloudrun_eval_service_invoke DATASET=halueval MODEL_ID=llama3.1:8b   # START/END facultatifs — omis, tout le scope
 make cloudrun_eval_service_invoke DATASET=halueval MODEL_ID=llama3.1:8b MATRIX=true

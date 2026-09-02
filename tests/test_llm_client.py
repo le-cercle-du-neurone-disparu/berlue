@@ -2,6 +2,8 @@
 interne mocké, pas de réseau) et fonctionnels (`@pytest.mark.functional`, vrai
 serveur Ollama requis, cf. docs/setup/ollama-setup.md)."""
 
+import logging
+
 import pytest
 from httpx import TimeoutException
 from ollama import ResponseError
@@ -155,3 +157,54 @@ def test_generate_many_returns_k_real_answers_from_ollama():
 
     assert len(results) == 2
     assert all(isinstance(r, str) and r.strip() for r in results)
+
+
+def test_la_temperature_du_constructeur_est_utilisee(monkeypatch):
+    """`OllamaClient(temperature=...)` doit s'appliquer aux appels qui n'en
+    passent pas : c'est par là que l'API transmettait la température du payload,
+    et elle était silencieusement ignorée."""
+    vues = []
+
+    class FakeClient:
+        def generate(self, model, prompt, options):
+            vues.append(options["temperature"])
+            return {"response": "ok"}
+
+    client = OllamaClient(temperature=0.7)
+    monkeypatch.setattr(client, "client", FakeClient())
+
+    client.generate("q")
+    client.generate("q", temperature=0.1)
+
+    assert vues == [0.7, 0.1], "défaut = celle du client, valeur explicite = prioritaire"
+
+
+def test_une_generation_tronquee_est_signalee(monkeypatch, caplog):
+    """`num_predict` coupe silencieusement : un JSON amputé ne parse pas et dégénère
+    en résultat vide en aval. La troncature doit être visible dans les logs."""
+
+    class FakeClient:
+        def generate(self, model, prompt, options):
+            return {"response": "texte coupé", "done_reason": "length"}
+
+    client = OllamaClient()
+    monkeypatch.setattr(client, "client", FakeClient())
+
+    with caplog.at_level(logging.WARNING):
+        client.generate("q", num_predict=12)
+
+    assert any("tronquée" in r.message for r in caplog.records)
+
+
+def test_une_generation_complete_ne_declenche_aucun_avertissement(monkeypatch, caplog):
+    class FakeClient:
+        def generate(self, model, prompt, options):
+            return {"response": "texte complet", "done_reason": "stop"}
+
+    client = OllamaClient()
+    monkeypatch.setattr(client, "client", FakeClient())
+
+    with caplog.at_level(logging.WARNING):
+        client.generate("q", num_predict=300)
+
+    assert not [r for r in caplog.records if "tronquée" in r.message]

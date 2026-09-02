@@ -126,11 +126,12 @@ gcp_enable_apis: gcp_check_cli_auth ## Active en un seul appel toutes les API do
 	gcloud services enable $(GCP_APIS) --project=$(GCP_PROJECT) </dev/null
 	@$(MAKE) --no-print-directory artifact_registry_enable_api
 
-gcp_destroy: gcp_check_cli_auth ## Revert complet de gcp_setup ET de gcp_deploy — supprime les 5 services Cloud Run, le dépôt d'images, le bucket RAG, Firestore, le dataset BigQuery et sa-berlue (avec ses rôles). DÉTRUIT LES DONNÉES D'ÉVAL, confirmation par l'ID du projet.
+gcp_destroy: gcp_check_cli_auth ## Revert complet de gcp_setup ET de gcp_deploy — supprime les 5 services Cloud Run, le dépôt d'images, les buckets RAG et code, Firestore, le dataset BigQuery et sa-berlue (avec ses rôles). DÉTRUIT LES DONNÉES D'ÉVAL, confirmation par l'ID du projet.
 	@echo "🚨 Ceci va supprimer DÉFINITIVEMENT sur $(GCP_PROJECT) :"
 	@echo "   - Les 5 services Cloud Run : $(GAR_IMAGE)-test/staging/prod, $(CLOUDRUN_EVAL_SERVICE), $(CLOUDRUN_LLM_SERVICE)"
 	@echo "   - Le dépôt Artifact Registry $(ARTIFACTSREPO) (et ses images), plus votre droit de push"
 	@echo "   - Le bucket RAG $(RAG_BUCKET_NAME) (et l'index qu'il contient)"
+	@echo "   - Le bucket de code $(CODE_BUCKET_NAME) (et toutes ses versions)"
 	@echo "   - La base Firestore (default) — TOUT le cache de prédictions d'éval"
 	@echo "   - Le dataset BigQuery $(BQ_DATASET) — TOUTES les matrices d'éval"
 	@echo "   - Le compte de service $(CLOUDRUN_SA_EMAIL) et ses rôles projet"
@@ -151,13 +152,15 @@ gcp_destroy: gcp_check_cli_auth ## Revert complet de gcp_setup ET de gcp_deploy 
 	@$(MAKE) --no-print-directory artifact_registry_delete || true
 	@$(MAKE) --no-print-directory artifact_registry_role_revoke || true
 	@$(MAKE) --no-print-directory rag_bucket_delete || true
+	@$(MAKE) --no-print-directory code_bucket_delete || true
+	@$(MAKE) --no-print-directory models_bucket_delete || true
 	@echo "💣 Suppression de la base Firestore (default)..."
 	@gcloud firestore databases delete --database="(default)" --project=$(GCP_PROJECT) --quiet </dev/null || true
 	@$(MAKE) --no-print-directory bigquery_delete_dataset || true
 	@$(MAKE) --no-print-directory iam_teardown_cloudrun_service_account || true
 	@echo "✅ Projet ramené à son état d'avant gcp_setup (hors API, laissées activées)."
 
-gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (API, Firestore, BigQuery, compte de service, Artifact Registry + auth Docker, bucket RAG) — rejouable ; ne build aucune image et ne crée aucun service Cloud Run (coût variable, cf. cloudrun.md)
+gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (API, Firestore, BigQuery, compte de service, Artifact Registry + auth Docker, buckets RAG et code) — rejouable ; ne build aucune image et ne crée aucun service Cloud Run (coût variable, cf. cloudrun.md)
 	@echo "🚀 Mise en place de l'infra GCP sur $(GCP_PROJECT)..."
 	@$(MAKE) --no-print-directory gcp_enable_apis
 	@$(MAKE) --no-print-directory firestore_create_database
@@ -168,14 +171,23 @@ gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (
 	@$(MAKE) --no-print-directory docker_auth_if_available
 	@$(MAKE) --no-print-directory rag_bucket_create
 	@$(MAKE) --no-print-directory rag_bucket_grant_sa
+	@$(MAKE) --no-print-directory code_bucket_create
+	@$(MAKE) --no-print-directory code_bucket_grant_sa
+	@$(MAKE) --no-print-directory models_bucket_create
+	@$(MAKE) --no-print-directory models_bucket_grant_sa
 	@$(MAKE) --no-print-directory gcp_enable_cost_observability || \
 		echo "⚠️  Observabilité des coûts non activée (confort, sans impact sur le reste) — make gcp_enable_cost_observability pour réessayer."
 	@echo ""
 	@$(MAKE) --no-print-directory gcp_doctor
 
-gcp_deploy: gcp_check_cli_auth ## Build + push les 3 images PUIS déploie les 3 services (CLOUDRUN_ENV=test|staging|prod, défaut test) — le barreau entre gcp_setup (l'infra) et gcp_up (allumer)
-	@echo "📦 Build/push des images puis déploiement (CLOUDRUN_ENV=$(CLOUDRUN_ENV))..."
+# Le chemin complet, à ne reprendre que quand requirements.txt ou un
+# Dockerfile changent : un simple changement de Python passe par
+# `make code_deploy` (~1 min contre ~15, cf. make/code.mk).
+gcp_deploy: gcp_check_cli_auth ## Build + push les 2 images, publie le code et les modèles, PUIS déploie les 3 services (CLOUDRUN_ENV=test|staging|prod, défaut test) — le barreau entre gcp_setup (l'infra) et gcp_up (allumer)
+	@echo "📦 Build/push des images, publication du code et des modèles, puis déploiement (CLOUDRUN_ENV=$(CLOUDRUN_ENV))..."
 	@$(MAKE) --no-print-directory docker_build_push_all
+	@$(MAKE) --no-print-directory code_push
+	@$(MAKE) --no-print-directory models_ensure
 	@$(MAKE) --no-print-directory cloudrun_deploy_all
 
 gcp_doctor: ## Vérifie brique par brique que l'infra GCP est réellement utilisable (n'échoue pas à la première erreur) et rappelle ce qui reste à faire à la main

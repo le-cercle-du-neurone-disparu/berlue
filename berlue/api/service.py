@@ -1,5 +1,4 @@
-from berlue.api.schemas import ClaimResult, PredictInput, PredictOutput
-from berlue.core.schemas import Verdict
+from berlue.api.schemas import STATUS_BY_VERDICT, ClaimResult, PredictInput, PredictOutput
 from berlue.llm.client import OllamaClient
 from berlue.pipeline.hurlu_berlu import HurluBerlu
 
@@ -26,18 +25,9 @@ class BerlueService:
         # 4. Formatage strict avec Pydantic
         claims_output = []
         for fused in res.fused_verdicts:
-            # Mapping des couleurs
-            if fused.verdict == Verdict.SUPPORTED:
-                status = "green"
-            elif fused.verdict == Verdict.CONTRADICTED:
-                status = "red"
-            else:
-                status = "orange"
-
-            # Création de l'objet Pydantic ClaimResult
             claim_res = ClaimResult(
                 claim_text=fused.claim_text,
-                status=status,
+                status=STATUS_BY_VERDICT[fused.verdict],
                 fusion_score=fused.confidence,
                 evidence_source="FEVER_corpus" if fused.evidence else "SelfCheckGPT",
                 evidence_text=fused.evidence.text if fused.evidence else fused.explanation,

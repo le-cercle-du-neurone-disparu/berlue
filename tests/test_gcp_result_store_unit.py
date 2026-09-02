@@ -4,10 +4,14 @@ Couvre la sélection de la source du jeton d'accès (local vs Cloud Run) et la
 sécurité thread du registre de scopes bufferisé, cf. docstring du module."""
 
 import threading
+from datetime import datetime
 
 import pytest
 
 from berlue.evaluation import gcp_result_store as gcp
+
+# Échéance arbitraire mais fixe, en UTC naïf comme le fait google-auth.
+_EXPIRY = datetime(2030, 1, 1, 12, 0, 0)
 
 
 def test_running_on_cloud_run_false_by_default(monkeypatch):
@@ -30,10 +34,11 @@ def test_running_on_cloud_run_true_for_job(monkeypatch):
 
 class _FakeAdcCredentials:
     """Simule des credentials `google.auth.default()` — `refresh()` pose
-    `token`, comme le fait la vraie lib."""
+    `token` et `expiry`, comme le fait la vraie lib (`expiry` en UTC naïf)."""
 
-    def __init__(self):
+    def __init__(self, expiry=None):
         self.token = None
+        self.expiry = expiry
 
     def refresh(self, request):
         self.token = "fake-adc-token"
@@ -43,7 +48,7 @@ def test_access_token_uses_adc_on_cloud_run(monkeypatch):
     """Sur Cloud Run, pas d'appel à `gcloud` — jeton via `google.auth.default()`,
     déjà `sa-berlue` via l'identité attachée au service/job."""
     monkeypatch.setenv("K_SERVICE", "berlue-api-test")
-    fake_credentials = _FakeAdcCredentials()
+    fake_credentials = _FakeAdcCredentials(expiry=_EXPIRY)
     monkeypatch.setattr(gcp.google.auth, "default", lambda: (fake_credentials, "some-project"))
 
     def _fail_if_called(*args, **kwargs):
@@ -51,7 +56,21 @@ def test_access_token_uses_adc_on_cloud_run(monkeypatch):
 
     monkeypatch.setattr(gcp.subprocess, "check_output", _fail_if_called)
 
-    assert gcp._access_token() == "fake-adc-token"
+    token, expiry = gcp._access_token()
+    assert token == "fake-adc-token"
+    assert expiry == _EXPIRY
+
+
+def test_access_token_falls_back_when_adc_publishes_no_expiry(monkeypatch):
+    """`credentials.expiry` à None (source qui ne publie pas d'échéance) : on
+    retombe sur une durée supposée, jamais sur une échéance nulle qui ferait
+    renouveler le jeton à chaque requête."""
+    monkeypatch.setenv("K_SERVICE", "berlue-api-test")
+    monkeypatch.setattr(gcp.google.auth, "default", lambda: (_FakeAdcCredentials(expiry=None), "some-project"))
+
+    before = datetime.utcnow()
+    _, expiry = gcp._access_token()
+    assert before + gcp._TOKEN_ASSUMED_LIFETIME <= expiry <= datetime.utcnow() + gcp._TOKEN_ASSUMED_LIFETIME
 
 
 def test_access_token_uses_gcloud_cli_locally(monkeypatch):
@@ -69,7 +88,10 @@ def test_access_token_uses_gcloud_cli_locally(monkeypatch):
 
     monkeypatch.setattr(gcp.subprocess, "check_output", _fake_check_output)
 
-    assert gcp._access_token() == "fake-cli-token"
+    token, expiry = gcp._access_token()
+    assert token == "fake-cli-token"
+    # La CLI ne publie pas d'échéance : durée supposée.
+    assert expiry <= datetime.utcnow() + gcp._TOKEN_ASSUMED_LIFETIME
     assert captured["cmd"] == [
         "gcloud",
         "auth",
@@ -139,3 +161,66 @@ def test_register_new_row_thread_safe_under_concurrency():
 
     total = sum(store.fs.increments.values()) + sum(store._registry_buffer.values())
     assert total == n_threads * n_rows_per_thread
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+
+def test_firestore_request_retries_once_with_a_fresh_token_on_401(monkeypatch):
+    """Un 401 ne doit pas interrompre l'appelant : l'échéance calculée reste une
+    prévision (jeton révoqué, horloge décalée, jeton mutualisé déjà entamé côté
+    Cloud Run). Sans ce retry, une écriture refusée tuait tout un run d'éval de
+    plusieurs centaines de lignes."""
+    tokens = iter(["jeton-perime", "jeton-frais"])
+    monkeypatch.setattr(gcp, "_access_token", lambda: (next(tokens), _EXPIRY))
+
+    sent = []
+
+    def _fake_request(method, url, headers=None, **kwargs):
+        sent.append(headers["Authorization"])
+        return _FakeResponse(401 if len(sent) == 1 else 200)
+
+    monkeypatch.setattr(gcp.requests, "request", _fake_request)
+
+    response = gcp._FirestoreRest("some-project")._request("POST", "https://example.invalid/doc")
+
+    assert response.status_code == 200
+    assert sent == ["Bearer jeton-perime", "Bearer jeton-frais"]
+
+
+def test_firestore_request_does_not_retry_when_the_call_succeeds(monkeypatch):
+    """Le chemin nominal ne paie aucun appel supplémentaire au fournisseur de
+    jeton — le retry est réservé au 401."""
+    calls = {"tokens": 0, "requests": 0}
+
+    def _fake_access_token():
+        calls["tokens"] += 1
+        return "jeton", _EXPIRY
+
+    def _fake_request(method, url, headers=None, **kwargs):
+        calls["requests"] += 1
+        return _FakeResponse(200)
+
+    monkeypatch.setattr(gcp, "_access_token", _fake_access_token)
+    monkeypatch.setattr(gcp.requests, "request", _fake_request)
+
+    gcp._FirestoreRest("some-project")._request("GET", "https://example.invalid/doc")
+
+    assert calls == {"tokens": 1, "requests": 1}
+
+
+def test_firestore_headers_renew_the_token_once_expired(monkeypatch):
+    """Le jeton est réutilisé tant qu'il est valide, et renouvelé une fois
+    l'échéance (moins la marge) dépassée — pas à chaque requête."""
+    tokens = iter(["premier", "second"])
+    expiries = iter([datetime.utcnow() + gcp._TOKEN_SAFETY_MARGIN, _EXPIRY])
+    monkeypatch.setattr(gcp, "_access_token", lambda: (next(tokens), next(expiries)))
+
+    client = gcp._FirestoreRest("some-project")
+    # Première échéance déjà dans la marge de sécurité : le jeton suivant est demandé.
+    assert client._headers() == {"Authorization": "Bearer premier"}
+    assert client._headers() == {"Authorization": "Bearer second"}
+    # Le second est valide longtemps : plus aucun renouvellement.
+    assert client._headers() == {"Authorization": "Bearer second"}

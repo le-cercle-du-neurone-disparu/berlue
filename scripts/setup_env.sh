@@ -45,10 +45,9 @@ ask BUCKET_SUFFIX "1" "BUCKET_SUFFIX"
 ask RUN_ENV "local" "RUN_ENV (local|docker|gcp)"
 ask PORT "8000" "PORT (port exposé par l'API)"
 ask DATA_SIZE "1k" "DATA_SIZE"
-ask USE_MOCK "0" "USE_MOCK (0|1 — sert la pipeline mockée sur l'API)"
 ask NOTIFY_BASE_URL "" "NOTIFY_BASE_URL (webhook notifications, optionnel)"
 ask BERLUE_LOG_LEVEL "INFO" "BERLUE_LOG_LEVEL (ERROR|WARNING|INFO|DEBUG)"
-ask EXTRACT_MODEL "llama3.2:3b" "EXTRACT_MODEL (modèle Ollama pour l'extraction)"
+ask EXTRACT_MODEL "llama3.1:8b" "EXTRACT_MODEL (modèle Ollama pour l'extraction)"
 
 {
     echo "GCP_PROJECT=$GCP_PROJECT"
@@ -61,7 +60,6 @@ ask EXTRACT_MODEL "llama3.2:3b" "EXTRACT_MODEL (modèle Ollama pour l'extraction
     echo "RUN_ENV=$RUN_ENV"
     echo "PORT=$PORT"
     echo "DATA_SIZE=$DATA_SIZE"
-    echo "USE_MOCK=$USE_MOCK"
     if [ -n "$NOTIFY_BASE_URL" ]; then
         echo "NOTIFY_BASE_URL=$NOTIFY_BASE_URL"
     else

@@ -16,7 +16,9 @@ class StubOllamaClient:
     def generate(self, prompt: str, temperature: float = 0.0, num_predict: int | None = None) -> str:
         return self.response
 
-    def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> list[str]:
+    def generate_many(
+        self, prompt: str, k: int, temperature_min: float, temperature_max: float, num_predict: int | None = None
+    ) -> list[str]:
         return self.responses
 
 
@@ -31,8 +33,8 @@ def test_generate_response_builds_pipeline_result():
     assert result.raw_answer == "L'eau mouille car elle a une faible tension de surface."
 
 
-def test_extract_claims_parses_bullet_list():
-    stub = StubOllamaClient(response="- Affirmation A.\n- Affirmation B.\ntexte hors liste, ignoré\n- Affirmation C.")
+def test_extract_claims_parses_json_array():
+    stub = StubOllamaClient(response='["Affirmation A.", "Affirmation B.", "Affirmation C."]')
     pipeline = HurluBerlu(llm_client=stub)
     result = PipelineResult(question="Q ?", raw_answer="peu importe, le stub ignore le prompt")
 
@@ -41,6 +43,38 @@ def test_extract_claims_parses_bullet_list():
     assert [claim.text for claim in result.claims] == ["Affirmation A.", "Affirmation B.", "Affirmation C."]
     assert all(isinstance(claim, Claim) for claim in result.claims)
     assert all(claim.source_answer == result.raw_answer for claim in result.claims)
+
+
+def test_extract_claims_ignores_prose_around_the_json_array():
+    """Le prompt exige un tableau JSON nu, les petits modèles l'encadrent souvent
+    de texte — l'extraction doit le retrouver plutôt que de tout rejeter."""
+    stub = StubOllamaClient(response='Voici les affirmations :\n["Affirmation A."]\nJ\'espère que ça convient.')
+    pipeline = HurluBerlu(llm_client=stub)
+
+    result = pipeline.extract_claims(PipelineResult(question="Q ?", raw_answer="..."))
+
+    assert [claim.text for claim in result.claims] == ["Affirmation A."]
+
+
+def test_extract_claims_without_a_json_array_returns_no_claims():
+    """Réponse sans tableau : aucune affirmation, et surtout pas d'exception — une
+    seule levée non rattrapée interrompt un run d'évaluation entier."""
+    stub = StubOllamaClient(response="Je ne peux pas répondre à cette demande.")
+    pipeline = HurluBerlu(llm_client=stub)
+
+    result = pipeline.extract_claims(PipelineResult(question="Q ?", raw_answer="..."))
+
+    assert result.claims == []
+
+
+def test_extract_claims_on_malformed_json_returns_no_claims():
+    """Tableau trouvé mais JSON invalide (virgule en trop) : même exigence."""
+    stub = StubOllamaClient(response='["Affirmation A.", ]')
+    pipeline = HurluBerlu(llm_client=stub)
+
+    result = pipeline.extract_claims(PipelineResult(question="Q ?", raw_answer="..."))
+
+    assert result.claims == []
 
 
 def test_extract_claims_on_empty_answer_returns_no_claims():

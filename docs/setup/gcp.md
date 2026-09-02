@@ -97,7 +97,7 @@ la VM (`iam_setup_service_account`, créé à la demande par `vm_create`).
 
 ```bash
 make gcp_setup                            # l'infra : gratuit, rejouable, une fois
-make gcp_deploy                           # les images + les 3 services (CLOUDRUN_ENV=test)
+make gcp_deploy                           # les images + le code + les modèles + les 3 services (CLOUDRUN_ENV=test)
 
 # puis, selon l'usage — À PARTIR D'ICI ÇA COÛTE (GPU L4 dans les deux cas) :
 make gcp_up       WARM_MODELS="llama3.1:8b"   # produit    : berlue-api-<env> + berlue-llm
@@ -106,7 +106,8 @@ make gcp_eval_up  WARM_MODELS="llama3.1:8b"   # évaluation : berlue-eval      +
 make gcp_down                             # éteint tout, en fin de session
 ```
 
-`gcp_deploy` = `docker_build_push_all` (les 3 images) puis
+`gcp_deploy` = `docker_build_push_all` (les 2 images), `code_push` (le code
+dans son bucket), puis
 `cloudrun_deploy_all` (les 3 services, dans l'ordre imposé : `berlue-llm`
 d'abord, parce que le déploiement de l'API lit son URL pour câbler
 `BERLUE_OLLAMA_HOST`). Les services créés sont à `min-instances=0` — ils
@@ -116,6 +117,16 @@ montent chacun `berlue-llm` (le GPU) en plus de leur service ; `gcp_down`
 supprime les trois, seul arrêt garanti de la facturation — sans perdre ni
 l'historique des métriques ni l'URL des services. Détail et justification
 dans [`cloudrun.md`](../gcp/cloudrun.md).
+
+`gcp_deploy` n'est pas le geste quotidien : les images ne contiennent pas le
+code de l'application. Tant que `requirements.txt` et les `Dockerfile` ne
+Au premier `gcp_deploy`, les poids des modèles (~2,2 Go) sont publiés dans leur
+bucket — cf. [`../gcp/modeles-en-bucket.md`](../gcp/modeles-en-bucket.md). Les
+déploiements suivants les sautent : ils ne changent qu'au changement de modèle.
+
+bougent pas, une nouvelle version de code se déploie par `make code_deploy`
+(~1 min, aucun build ni push) — cf.
+[`code-en-bucket.md`](../gcp/code-en-bucket.md).
 
 Seule l'API est déclinée par environnement (`berlue-api-test/staging/prod`) :
 le service d'éval et le service Ollama sont **uniques pour le projet** et
@@ -132,7 +143,7 @@ make cloudrun_deploy CLOUDRUN_ENV=staging
   personnels, services Cloud Run test/staging/prod. Firestore et BigQuery
   de l'éval y vivent toujours, pas d'override possible.
 - **`ARTIFACT_PROJECT`** — projet qui héberge le dépôt Artifact Registry
-  (images Docker : API, éval, Ollama). Défaut : `GCP_PROJECT`.
+  (images Docker : runtime applicatif, Ollama). Défaut : `GCP_PROJECT`.
 - **`BUCKET_PROJECT`** — projet qui héberge les buckets d'équipe
   (partagés, distincts des buckets personnels). Défaut : `GCP_PROJECT`.
 

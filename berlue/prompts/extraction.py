@@ -35,8 +35,12 @@ JSON Response:
 
 === END OF EXAMPLES ===
 
+=== INPUT TO PROCESS (this is the real input, not a request for input) ===
+
 <question>{question}</question>
 <answer>{answer_text}</answer>
+
+Output ONLY the JSON array. Do not acknowledge these instructions. Do not ask for input.
 
 JSON Response:
 """

@@ -38,21 +38,26 @@ CLOUDRUN_SERVICE_ACCOUNT ?= $(CLOUDRUN_SA_EMAIL)
 # --execution-environment=gen2 selon la version de gcloud/Cloud Run au
 # moment du premier vrai déploiement — jamais testé contre un projet réel,
 # à ajouter ici si `gcloud run deploy` le réclame.
-cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
-	@# L'API charge l'index FAISS au démarrage (lifespan de berlue/api/fast.py) :
-	@# une version absente du bucket donne un conteneur qui ne boote pas, avec
-	@# l'erreur enfouie dans les logs Cloud Run après plusieurs minutes d'attente.
+# Un service qui monte l'index RAG doit d'abord vérifier qu'il existe dans le
+# bucket : sans lui le conteneur ne boote pas (API) ou casse au premier appel
+# (service d'éval), avec l'erreur enfouie dans les logs Cloud Run après
+# plusieurs minutes d'attente. Prérequis de cloudrun_deploy et
+# cloudrun_eval_service_deploy, jamais appelé directement.
+rag_index_check:
 	@gcloud storage ls gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/index.faiss >/dev/null 2>&1 </dev/null || { \
 		echo "❌ Index RAG introuvable : gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/index.faiss"; \
-		echo "   Sans lui, $(GAR_IMAGE)-$(CLOUDRUN_ENV) ne démarrera pas."; \
 		echo "   Versions présentes dans le bucket :"; \
 		gcloud storage ls gs://$(RAG_BUCKET_NAME)/faiss/ 2>/dev/null </dev/null | sed -e 's#.*/faiss/#     #' -e 's#/$$##' || echo "     (aucune)"; \
 		echo "   👉 construire et publier le corpus attendu (chemin normal) :"; \
 		echo "      make download_fever_data_full && make build_fever_index && make rag_index_upload"; \
-		echo "   👉 ou, pour un test ponctuel sur un corpus réduit déjà publié :"; \
-		echo "      make cloudrun_deploy RAG_CORPUS_VERSION=<version ci-dessus>"; \
+		echo "   👉 ou, pour un test ponctuel sur un corpus déjà publié :"; \
+		echo "      make <cible> RAG_CORPUS_VERSION=<version ci-dessus>"; \
 		exit 1; \
 	}
+
+cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
+	@$(MAKE) --no-print-directory _code_version_check
+	@$(MAKE) --no-print-directory _models_check
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
@@ -61,7 +66,7 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		exit 1; \
 	fi; \
 	gcloud run deploy $(GAR_IMAGE)-$(CLOUDRUN_ENV) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
+		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		--memory $(GAR_MEMORY) \
 		--cpu $(GAR_CPU) \
 		--timeout=$(GAR_TIMEOUT) \
@@ -73,7 +78,11 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
 		--add-volume=name=rag,type=cloud-storage,bucket=$(RAG_BUCKET_NAME) \
 		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
-		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION) \
+		--add-volume=name=code,type=cloud-storage,bucket=$(CODE_BUCKET_NAME) \
+		--add-volume-mount=volume=code,mount-path=/mnt/code \
+		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
+		--add-volume-mount=volume=models,mount-path=/mnt/models \
+		--update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),HF_HOME=/mnt/models,HF_HUB_OFFLINE=1 \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
 # Accès par personne sur les services Cloud Run du projet. CLOUDRUN_ROLE =
@@ -181,7 +190,7 @@ rag_index_upload: gcp_check_cli_auth ## Upload l'index FAISS local (data/fever/f
 	@echo "✅ Index disponible sur gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/ — assure-toi que RAG_CORPUS_VERSION=$(RAG_CORPUS_VERSION) au prochain cloudrun_deploy pour le brancher."
 
 # ==============================================================================
-# SERVICE CLOUD RUN — ÉVAL (image berlue-eval, cf. Dockerfile.eval-service)
+# SERVICE CLOUD RUN — ÉVAL (image $(GAR_RUNTIME_IMAGE), commune avec l'API)
 # ==============================================================================
 # Service qui reste en vie entre deux appels (min-instances basculé par
 # gcp_eval_up/gcp_down) plutôt qu'un conteneur neuf par exécution : le
@@ -199,19 +208,54 @@ WARMUP ?= false
 BASELINE ?= false
 COVERAGE ?= false
 
-cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Cloud Run d'éval
-	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE)..."
+# Ressources et modèles du service d'éval. Depuis que `run_eval` construit un
+# vrai `BerluePipeline` (et non plus le mock), ce service charge en mémoire
+# l'index FAISS, le NLI de SelfCheckGPT et le modèle d'embedding : les défauts
+# Cloud Run (512 Mio / 1 vCPU) ne suffisent pas.
+# Le service d'éval n'a pas de GPU : SelfCheckNLI (DeBERTa-large, 435M
+# paramètres, K passages par affirmation), l'embedding des affirmations et la
+# recherche FAISS exhaustive tournent tous sur ces vCPU. Le GPU de berlue-llm
+# étant facturé pendant tout ce temps, un vCPU d'éval supplémentaire (~0,024
+# $/h) est très vite rentable face au L4 (~0,67 $/h) qui attend.
+EVAL_MEMORY ?= 8Gi
+EVAL_CPU ?= 8
+# Le mode dataset est séquentiel (pas de --concurrency côté éval) : une tranche
+# de quelques centaines de lignes dépasse les 900s par défaut. Maximum Cloud
+# Run : 3600.
+EVAL_TIMEOUT ?= 3600
+# Modèles réellement appelés par le pipeline sur le service — à ne pas
+# confondre avec MODEL_ID, qui n'est qu'une étiquette de scope en mode dataset.
+# Vides = les défauts de berlue/params.py s'appliquent (pas de valeur dupliquée
+# ici, qui dériverait).
+EVAL_SELFCHECK_MODEL ?=
+EVAL_EXTRACT_MODEL ?=
+EVAL_RAG_MODEL ?=
+
+# Partage désormais l'image applicative de l'API : les deux ne diffèrent que par
+# BERLUE_APP_MODULE, servi par le même entrypoint.
+cloudrun_eval_service_deploy: gcp_check_cli_auth rag_index_check ## Crée ou met à jour le service Cloud Run d'éval (même image que l'API, cf. BERLUE_APP_MODULE) — monte l'index RAG (RAG_CORPUS_VERSION) ; EVAL_SELFCHECK_MODEL/EVAL_EXTRACT_MODEL/EVAL_RAG_MODEL pour choisir les modèles du pipeline
+	@$(MAKE) --no-print-directory _code_version_check
+	@$(MAKE) --no-print-directory _models_check
+	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE) ($(EVAL_CPU) vCPU/$(EVAL_MEMORY), corpus $(RAG_CORPUS_VERSION))..."
 	gcloud run deploy $(CLOUDRUN_EVAL_SERVICE) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest \
+		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
+		--cpu=$(EVAL_CPU) \
+		--memory=$(EVAL_MEMORY) \
 		--min-instances=0 \
 		--max-instances=1 \
 		--max=1 \
 		--concurrency=1 \
-		--timeout=900 \
-		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
+		--timeout=$(EVAL_TIMEOUT) \
+		--add-volume=name=rag,type=cloud-storage,bucket=$(RAG_BUCKET_NAME) \
+		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
+		--add-volume=name=code,type=cloud-storage,bucket=$(CODE_BUCKET_NAME) \
+		--add-volume-mount=volume=code,mount-path=/mnt/code \
+		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
+		--add-volume-mount=volume=models,mount-path=/mnt/models \
+		--update-env-vars=HF_HOME=/mnt/models,HF_HUB_OFFLINE=1,GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION)$(if $(EVAL_SELFCHECK_MODEL),$(comma)BERLUE_OLLAMA_MODEL=$(EVAL_SELFCHECK_MODEL),)$(if $(EVAL_EXTRACT_MODEL),$(comma)EXTRACT_MODEL=$(EVAL_EXTRACT_MODEL),)$(if $(EVAL_RAG_MODEL),$(comma)RAG_MODEL=$(EVAL_RAG_MODEL),) \
 		--no-allow-unauthenticated
 	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
 	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \
@@ -290,8 +334,13 @@ gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournen
 LLM_NUM_PARALLEL ?= 4
 LLM_CONCURRENCY ?= 4
 LLM_CONTEXT_LENGTH ?=
-LLM_CPU ?= 4
-LLM_MEMORY ?= 16Gi
+# 8, le plafond : le chargement d'un modèle de 14 B en profite, et c'est la config
+# de référence documentée (8 vCPU / 32 Gi).
+LLM_CPU ?= 8
+# 32 Gi et non 16 : un modèle de 14 B occupe ~12 Go une fois chargé (constaté le
+# 01/09 avec qwen2.5:14b, « model runner has unexpectedly stopped » à 16 Gi), et on
+# en charge un second à côté. scripts/ollama_memory_check.sh vérifie après coup.
+LLM_MEMORY ?= 32Gi
 # Une virgule littérale dans un argument de $(if ...) serait lue comme le
 # séparateur then/else de $(if) lui-même — passer par une variable l'évite.
 comma := ,
@@ -328,6 +377,37 @@ cloudrun_llm_url: ## Affiche l'URL du service Ollama
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--format "value(status.url)"
+
+# Gestion explicite de ce qui occupe la VRAM de berlue-llm. `Dockerfile.llm`
+# fixe OLLAMA_KEEP_ALIVE=-1 (un modèle chargé ne se décharge jamais tout seul)
+# et OLLAMA_MAX_LOADED_MODELS vaut 3 sur un L4 unique : au-delà de 3 modèles,
+# Ollama évince tout seul et paie un rechargement (11-35s mesuré) en pleine
+# exécution — le déclencheur décrit dans docs/gcp/infra-gpu.md. Enchaîner
+# plusieurs runs sur des tailles de modèle différentes demande donc de
+# décharger explicitement, plutôt que de subir l'éviction.
+llm_models_ps: gcp_check_cli_auth ## Liste les modèles actuellement chargés en VRAM sur berlue-llm (et leur échéance)
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	curl -sf "$$URL/api/ps" -H "Authorization: Bearer $$TOKEN" | python3 -m json.tool
+
+llm_model_load: gcp_check_cli_auth ## Charge MODEL en VRAM sur berlue-llm et l'y épingle (req : MODEL=nom:tag)
+	@if [ -z "$(MODEL)" ]; then echo "❌ MODEL manquant. 👉 make llm_model_load MODEL=qwen2.5:14b"; exit 1; fi
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	echo "⬇️  Pull de $(MODEL) si absent du disque..."; \
+	curl -sf -X POST "$$URL/api/pull" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$(MODEL)\",\"stream\":false}" > /dev/null; \
+	echo "🔥 Chargement de $(MODEL) en VRAM (keep_alive=-1)..."; \
+	curl -sf -X POST "$$URL/api/generate" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$(MODEL)\",\"keep_alive\":-1}" > /dev/null; \
+	echo "✅ $(MODEL) chargé et épinglé."; \
+	bash scripts/ollama_memory_check.sh "$$URL" "$$TOKEN" "$(LLM_MEMORY)" "$(MODEL)"
+
+llm_model_unload: gcp_check_cli_auth ## Décharge MODEL de la VRAM de berlue-llm sans le supprimer du disque (req : MODEL=nom:tag)
+	@if [ -z "$(MODEL)" ]; then echo "❌ MODEL manquant. 👉 make llm_model_unload MODEL=qwen2.5:14b"; exit 1; fi
+	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
+	TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$URL); \
+	echo "🧯 Déchargement de $(MODEL) (keep_alive=0)..."; \
+	curl -sf -X POST "$$URL/api/generate" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$(MODEL)\",\"keep_alive\":0}" > /dev/null; \
+	echo "✅ $(MODEL) déchargé (toujours sur disque, rechargement sans re-pull)."
 
 ollama_load_test_gcp: gcp_check_cli_auth ## Stress-test de charge sur berlue-llm (cf. scripts/ollama_load_test.py) — nécessite le service déjà chaud (make gcp_up ou gcp_eval_up, WARM_MODELS="...")
 	@URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)"); \
@@ -417,12 +497,29 @@ cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU L4, coûteux) et ch
 	echo "✅ $(CLOUDRUN_LLM_SERVICE) prêt ($$LLM_URL)."; \
 	if [ -z "$(WARM_MODELS)" ]; then \
 		echo "ℹ️  WARM_MODELS vide : aucun modèle préchargé — le premier appel généré paiera le chargement en VRAM."; \
+	fi
+	@$(MAKE) --no-print-directory llm_warm
+
+# Préchauffe WARM_MODELS sur un berlue-llm DÉJÀ monté, sans toucher au
+# min-instances : c'est le geste à part quand on change de modèles sans vouloir
+# relancer un gcp_up complet. Appelé aussi par cloudrun_llm_up.
+llm_warm: gcp_check_cli_auth ## Pull + charge WARM_MODELS="m1 m2" en VRAM sur berlue-llm (service déjà monté ; n'allume rien)
+	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
+	if [ -z "$$LLM_URL" ]; then \
+		echo "❌ $(CLOUDRUN_LLM_SERVICE) n'est pas déployé. Lancez : make gcp_deploy"; \
+		exit 1; \
 	fi; \
+	if [ -z "$(WARM_MODELS)" ]; then \
+		echo "ℹ️  WARM_MODELS vide — rien à préchauffer. Ex. : make llm_warm WARM_MODELS=\"phi3:14b llama3.2:3b\""; \
+		exit 0; \
+	fi; \
+	LLM_TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$LLM_URL); \
 	for MODEL in $(WARM_MODELS); do \
 		echo "⬇️  Pull + warmup de $$MODEL sur $(CLOUDRUN_LLM_SERVICE)..."; \
 		curl -sf -X POST "$$LLM_URL/api/pull" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$$MODEL\",\"stream\":false}" > /dev/null; \
 		curl -sf -X POST "$$LLM_URL/api/generate" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$$MODEL\",\"prompt\":\"hi\",\"stream\":false}" > /dev/null; \
 		echo "✅ $$MODEL chaud."; \
+		bash scripts/ollama_memory_check.sh "$$LLM_URL" "$$LLM_TOKEN" "$(LLM_MEMORY)" "$$MODEL" || exit 1; \
 	done
 
 gcp_up: cloudrun_llm_up ## Monte berlue-api-<env> ET berlue-llm à min-instances=1 (usage produit) ; WARM_MODELS="m1 m2" pour précharger des modèles

@@ -40,7 +40,7 @@ si disponible.
 
 Clés écrites (les mêmes que [`.env.sample`](../../.env.sample), qui fait
 foi) : `GCP_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS` (optionnel),
-`BUCKET_SUFFIX`, `RUN_ENV`, `PORT`, `DATA_SIZE`, `USE_MOCK`,
+`BUCKET_SUFFIX`, `RUN_ENV`, `PORT`, `DATA_SIZE`,
 `NOTIFY_BASE_URL` (optionnel), `BERLUE_LOG_LEVEL`, `EXTRACT_MODEL`. Les
 valeurs par défaut proposées sont volontairement non vides : une clé
 présente mais vide dans `.env` écrase le défaut de `berlue/params.py` par

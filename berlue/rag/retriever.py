@@ -9,15 +9,16 @@ from pathlib import Path
 import faiss
 from sentence_transformers import SentenceTransformer
 
-from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict, Verdict
-from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
+from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict
+from berlue.params import NUM_PREDICT_RAG, RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
 
 logger = logging.getLogger(__name__)
 
-# Labels FEVER (str du dataset) -> Verdict (enum du contrat interne berlue.core.schemas).
-# "NOT ENOUGH INFO" n'apparaît jamais parmi les labels indexés (indexer.build_index ne
-# garde que SUPPORTS/REFUTES) ; gardé ici pour les retours anticipés de verify_claim.
-FEVER_LABEL_TO_VERDICT = {
+# Verdict rendu par le LLM du RAG (str du prompt) -> RagJudgment, le contrat interne.
+# Ce ne sont PAS les labels FEVER du dataset : ceux-ci ("SUPPORTS"/"REFUTES") décrivent
+# les extraits fournis au prompt, pas la décision. "NOT ENOUGH INFO" n'est plus produit
+# par prompts/rag.py mais reste accepté, d'anciennes réponses pouvant le contenir.
+RAG_VERDICT_TO_JUDGMENT = {
     "FEVER_CONFIRMS": RagJudgment.FEVER_CONFIRMS,
     "FEVER_REFUTES": RagJudgment.FEVER_REFUTES,
     "LIKELY_TRUE": RagJudgment.LIKELY_TRUE,
@@ -25,6 +26,19 @@ FEVER_LABEL_TO_VERDICT = {
     "NOT ENOUGH INFO": RagJudgment.I_DONT_KNOWN,
     "I_DONT_KNOW": RagJudgment.I_DONT_KNOWN,
 }
+
+
+def _source_de(evidence: dict) -> str:
+    """Titre de la page Wikipédia d'un extrait FEVER, ou "FEVER" à défaut.
+
+    `evidence_url` est imbriqué sur quatre niveaux et sa forme varie selon les
+    entrées : une indexation directe `[0][0][2]` levait une IndexError qui faisait
+    perdre le verdict entier.
+    """
+    try:
+        return evidence["evidence_url"][0][0][2]
+    except KeyError, IndexError, TypeError:
+        return "FEVER"
 
 
 class RagRetriever:
@@ -71,7 +85,9 @@ class RagRetriever:
         for i in range(len(distances[0])):
             dist = distances[0][i]
             idx = indices[0][i]
-            if idx < len(self.metadata["claims"]):
+            # FAISS renvoie -1 pour un voisin manquant : sans la borne basse, `-1`
+            # passait le test et injectait le DERNIER document du corpus comme preuve.
+            if 0 <= idx < len(self.metadata["claims"]):
                 evidences.append(
                     {
                         "text": self.metadata["claims"][idx],
@@ -91,7 +107,7 @@ class RagRetriever:
         logger.info("\n===============================\n")
 
         if not evidences:
-            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
 
         # 2. Préparation du contexte (liste de dictionnaires convertie en chaîne formatée)
         # On inclut l'index pour la traçabilité, le texte, et surtout le statut de vérité (label)
@@ -110,7 +126,7 @@ class RagRetriever:
 
         # 4. Appel au LLM (via Ollama)
         try:
-            response_text = self.llm_client.generate(prompt)
+            response_text = self.llm_client.generate(prompt, num_predict=NUM_PREDICT_RAG)
             match = re.search(r"\{.*\}", response_text, re.DOTALL)
             clean_json_str = match.group(0) if match else "{}"
             llm_result = json.loads(clean_json_str)
@@ -129,28 +145,41 @@ class RagRetriever:
             used_idx = llm_result.get("used_evidence_index")
             used_idx = used_idx[0] if isinstance(used_idx, list) else used_idx
 
-            # Si le LLM n'a pas assez d'infos, on ne renvoie AUCUNE preuve
-            if (
-                verdict_str == "NOT ENOUGH INFO"
-                or used_idx is None
-                or not isinstance(used_idx, int)
-                or used_idx >= len(evidences)
-            ):
-                final_evidence = None
-                verdict_str = "NOT ENOUGH INFO"
-                confidence = 0.0
-            else:
-                # On récupère LA preuve spécifique que le LLM a choisi
+            # L'index cité est-il exploitable ? `isinstance(True, int)` valant vrai en
+            # Python, on écarte explicitement les booléens.
+            index_valide = (
+                isinstance(used_idx, int) and not isinstance(used_idx, bool) and 0 <= used_idx < len(evidences)
+            )
+
+            if index_valide:
+                # LA preuve précise que le LLM a choisie.
                 chosen_ev = evidences[used_idx]
                 final_evidence = Evidence(
                     text=chosen_ev["text"],
-                    source=chosen_ev["evidence_url"][0][0][2] if chosen_ev.get("evidence_url") else "FEVER",
-                    similarity_score=confidence,
+                    source=_source_de(chosen_ev),
+                    # La distance FAISS, pas la confiance du LLM : le champ est
+                    # documenté comme un score de similarité.
+                    similarity_score=chosen_ev["distance"],
                 )
+            else:
+                # Pas de preuve citée : on n'en renvoie aucune. Le verdict, lui, survit
+                # — le prompt impose justement `used_evidence_index: null` pour
+                # LIKELY_TRUE / LIKELY_FALSE / I_DONT_KNOW, qui sont des jugements
+                # valides sans preuve en base. Seuls FEVER_CONFIRMS et FEVER_REFUTES
+                # exigent une preuve citée : sans elle, ils ne prouvent rien.
+                final_evidence = None
+                if verdict_str in ("FEVER_CONFIRMS", "FEVER_REFUTES"):
+                    logger.warning(
+                        "⚠️ Verdict %s sans preuve citée sur l'affirmation %s : dégradé en I_DONT_KNOW.",
+                        verdict_str,
+                        claim.id,
+                    )
+                    verdict_str = "I_DONT_KNOW"
+                    confidence = 0.0
 
             return RagVerdict(
                 claim_id=claim.id,
-                verdict=FEVER_LABEL_TO_VERDICT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
+                verdict=RAG_VERDICT_TO_JUDGMENT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
                 confidence=confidence,
                 evidence=final_evidence,
             )
@@ -159,10 +188,10 @@ class RagRetriever:
             # Si le JSON est trouvé mais mal formé (ex: virgule manquante)
             logger.warning("⚠️ Erreur de parsing JSON sur l'affirmation %s : %s", claim.id, e)
             logger.warning("Texte problématique : %s", clean_json_str)
-            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
         except Exception as e:
             logger.warning("⚠️ Erreur inattendue sur l'affirmation %s : %s", claim.id, e)
-            return RagVerdict(claim_id=claim.id, verdict=Verdict.NOT_ENOUGH_INFO, confidence=0.0, evidence=None)
+            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
 
     def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
         """Vérifie une liste d'affirmations, une par une."""

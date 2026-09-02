@@ -57,10 +57,11 @@ Params utilisés (`berlue.params`) : `EVAL_FIRESTORE_PROJECT`,
 `EVAL_BIGQUERY_PROJECT`, `BQ_DATASET`, `EVAL_SERVICE_ACCOUNT`.
 """
 
+import json
+import logging
 import os
 import subprocess
 import threading
-import time
 from datetime import UTC, datetime, timedelta
 
 import google.auth
@@ -72,8 +73,11 @@ from google.cloud import bigquery
 from berlue.api.schemas import ConfusionMatrix
 from berlue.core.schemas import Verdict
 from berlue.evaluation.result_store import EvalScope, _hash, _matrix_row_to_object, _matrix_to_values
+from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
 from berlue.evaluation.timing import mark
 from berlue.params import BQ_DATASET, EVAL_BIGQUERY_PROJECT, EVAL_FIRESTORE_PROJECT, EVAL_SERVICE_ACCOUNT
+
+logger = logging.getLogger(__name__)
 
 _MATRIX_COLUMNS = (
     "ground_truth_true_predicted_true",
@@ -90,6 +94,14 @@ def _doc_id(*parts) -> str:
     unique — deux appels avec les mêmes composantes retombent sur le même
     id, ce qui permet le dédoublonnage à la création (409 si déjà présent)."""
     return _hash("|".join(str(p) for p in parts))
+
+
+# Marge retranchée à l'échéance annoncée d'un jeton : une requête peut partir juste
+# avant l'expiration et arriver juste après.
+_TOKEN_SAFETY_MARGIN = timedelta(minutes=5)
+# Durée supposée quand la source ne publie pas d'échéance (gcloud CLI en local) —
+# les jetons Google vivent une heure, on reste large.
+_TOKEN_ASSUMED_LIFETIME = timedelta(minutes=45)
 
 
 def _running_on_cloud_run() -> bool:
@@ -113,20 +125,28 @@ def _access_token() -> str:
       impersonation explicite de `sa-berlue` — les ADC standard n'ont pas
       cette option ici (bloquées par la même politique), cf. docstring du
       module. Nécessite `roles/iam.serviceAccountTokenCreator` sur ce SA.
+
+    Retourne `(jeton, échéance)` — l'échéance en UTC naïf, convention google-auth.
     """
     if _running_on_cloud_run():
         mark("_access_token() start (ADC via métadonnées)")
         credentials, _ = google.auth.default()
         credentials.refresh(google.auth.transport.requests.Request())
         mark("_access_token() fini")
-        return credentials.token
+        # Échéance réelle du jeton, pas une durée supposée : le serveur de
+        # métadonnées Cloud Run sert un jeton MUTUALISÉ entre tous les appelants
+        # de l'instance, souvent déjà bien entamé — un `refresh()` peut rendre un
+        # jeton auquel il ne reste que quelques minutes.
+        expiry = credentials.expiry or (datetime.utcnow() + _TOKEN_ASSUMED_LIFETIME)
+        return credentials.token, expiry
 
     if not EVAL_SERVICE_ACCOUNT:
         raise RuntimeError(
             "❌ EVAL_SERVICE_ACCOUNT non résolu (GCP_PROJECT absent ?) — impossible de s'authentifier auprès de GCP."
         )
     cmd = ["gcloud", "auth", "print-access-token", "--impersonate-service-account", EVAL_SERVICE_ACCOUNT]
-    return subprocess.check_output(cmd, text=True).strip()
+    # La CLI ne publie pas d'échéance : durée supposée.
+    return subprocess.check_output(cmd, text=True).strip(), datetime.utcnow() + _TOKEN_ASSUMED_LIFETIME
 
 
 class _AccessTokenCredentials(google.auth.credentials.Credentials):
@@ -135,8 +155,8 @@ class _AccessTokenCredentials(google.auth.credentials.Credentials):
     automatiquement avant expiration."""
 
     def refresh(self, request) -> None:
-        self.token = _access_token()
-        self.expiry = datetime.utcnow() + timedelta(minutes=50)  # naive UTC, convention google-auth
+        self.token, expiry = _access_token()
+        self.expiry = expiry - _TOKEN_SAFETY_MARGIN  # naive UTC, convention google-auth
 
 
 class _FirestoreRest:
@@ -148,13 +168,27 @@ class _FirestoreRest:
     def __init__(self, project: str):
         self.project = project
         self._token: str | None = None
-        self._token_expires_at = 0.0
+        self._token_expiry = datetime.min  # naive UTC — force un premier appel
 
-    def _headers(self) -> dict:
-        if self._token is None or time.monotonic() >= self._token_expires_at:
-            self._token = _access_token()
-            self._token_expires_at = time.monotonic() + 50 * 60
+    def _headers(self, force_refresh: bool = False) -> dict:
+        if force_refresh or self._token is None or datetime.utcnow() >= self._token_expiry:
+            self._token, expiry = _access_token()
+            self._token_expiry = expiry - _TOKEN_SAFETY_MARGIN
         return {"Authorization": f"Bearer {self._token}"}
+
+    def _request(self, method: str, url: str, **kwargs) -> requests.Response:
+        """Appel Firestore avec renouvellement du jeton en cas de 401.
+
+        L'échéance calculée reste une prévision : le jeton peut être révoqué, ou
+        l'horloge décaler. Un 401 sur une écriture interrompait tout un run d'éval
+        de plusieurs centaines de lignes ; on retente une fois avec un jeton frais.
+        Les codes attendus par les appelants (404 sur `get`, 409 sur `create`) sont
+        rendus tels quels, c'est à eux de les interpréter."""
+        response = requests.request(method, url, headers=self._headers(), **kwargs)
+        if response.status_code == 401:
+            logger.warning("🔑 Firestore a rendu 401 — renouvellement du jeton et nouvelle tentative.")
+            response = requests.request(method, url, headers=self._headers(force_refresh=True), **kwargs)
+        return response
 
     def _documents_url(self) -> str:
         return f"{self._API_BASE}/projects/{self.project}/databases/(default)/documents"
@@ -166,7 +200,7 @@ class _FirestoreRest:
         return f"projects/{self.project}/databases/(default)/documents/{collection}/{doc_id}"
 
     def get(self, collection: str, doc_id: str) -> dict | None:
-        response = requests.get(self._doc_url(collection, doc_id), headers=self._headers())
+        response = self._request("GET", self._doc_url(collection, doc_id))
         if response.status_code == 404:
             return None
         response.raise_for_status()
@@ -175,10 +209,10 @@ class _FirestoreRest:
     def create(self, collection: str, doc_id: str, data: dict) -> bool:
         """Crée le document avec l'id imposé `doc_id` — retourne `False`
         (pas d'erreur) si un document avec cet id existe déjà (409)."""
-        response = requests.post(
+        response = self._request(
+            "POST",
             f"{self._documents_url()}/{collection}",
             params={"documentId": doc_id},
-            headers=self._headers(),
             json={"fields": _to_fields(data)},
         )
         if response.status_code == 409:
@@ -200,8 +234,7 @@ class _FirestoreRest:
                 }
             ]
         }
-        response = requests.post(f"{self._documents_url()}:commit", headers=self._headers(), json=body)
-        response.raise_for_status()
+        self._request("POST", f"{self._documents_url()}:commit", json=body).raise_for_status()
 
     def query(self, collection: str, filters: dict) -> list[dict]:
         """Documents de `collection` dont tous les champs de `filters`
@@ -224,7 +257,7 @@ class _FirestoreRest:
             )
             body["structuredQuery"]["where"] = where
 
-        response = requests.post(f"{self._documents_url()}:runQuery", headers=self._headers(), json=body)
+        response = self._request("POST", f"{self._documents_url()}:runQuery", json=body)
         response.raise_for_status()
         results = []
         for entry in response.json():
@@ -241,8 +274,7 @@ class _FirestoreRest:
         for i in range(0, len(names), 500):
             chunk = names[i : i + 500]
             body = {"writes": [{"delete": name} for name in chunk]}
-            response = requests.post(f"{self._documents_url()}:commit", headers=self._headers(), json=body)
-            response.raise_for_status()
+            self._request("POST", f"{self._documents_url()}:commit", json=body).raise_for_status()
         return len(names)
 
 
@@ -274,6 +306,9 @@ def _from_value(fv: dict):
 
 def _from_fields(fields: dict) -> dict:
     return {k: _from_value(v) for k, v in fields.items()}
+
+
+logger = logging.getLogger(__name__)
 
 
 def _non_null(**kwargs) -> dict:
@@ -413,6 +448,42 @@ class GcpResultStore:
 
     def _prediction_id(self, scope: EvalScope, question: str, answer: str) -> str:
         key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version", "eval_version")
+        return _doc_id(*key.values(), _hash(question), _hash(answer))
+
+    def get_signals(self, scope: EvalScope, question: str, answer: str) -> dict | None:
+        """Signaux pré-fusion déjà en cache, ou `None`. Un cache hit signifie qu'on ne
+        rappelle ni le RAG ni SelfCheck : seule la fusion sera recalculée."""
+        doc = self.fs.get("eval_signals", self._signals_id(scope, question, answer))
+        if not doc:
+            return None
+        signals = json.loads(doc["signals"])
+        # Un format plus ancien est traité comme une absence : mieux vaut recalculer
+        # que relire de travers.
+        return signals if signals.get("format_version") == SIGNALS_FORMAT_VERSION else None
+
+    def put_signals(self, scope: EvalScope, question: str, answer: str, signals: dict) -> bool:
+        """Stocke les signaux pré-fusion s'ils ne sont pas déjà en cache."""
+        key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")
+        created = self.fs.create(
+            "eval_signals",
+            self._signals_id(scope, question, answer),
+            {
+                **key,
+                "question": question,
+                "answer": answer,
+                # Sérialisé en une chaîne plutôt qu'en map imbriquée : Firestore ne
+                # sait pas indexer des tableaux d'objets, et rien ici n'est requêté
+                # autrement que par identifiant de document.
+                "signals": json.dumps(signals, ensure_ascii=False),
+                "computed_at": datetime.now(UTC).isoformat(),
+            },
+        )
+        if created:
+            self._register_new_row("eval_signals", key)
+        return created
+
+    def _signals_id(self, scope: EvalScope, question: str, answer: str) -> str:
+        key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")
         return _doc_id(*key.values(), _hash(question), _hash(answer))
 
     def list_predictions(self, scope: EvalScope) -> list[dict]:
@@ -735,8 +806,9 @@ class GcpResultStore:
         judge_model: str | None = None,
         scope: str = "all",
     ) -> dict[str, int]:
-        if scope not in ("all", "results", "matrices"):
-            raise ValueError(f"❌ scope de purge invalide : {scope!r} (doit être all, results ou matrices)")
+        scopes_valides = ("all", "results", "matrices", "signals", "fusion")
+        if scope not in scopes_valides:
+            raise ValueError(f"❌ scope de purge invalide : {scope!r} (doit être {', '.join(scopes_valides)})")
 
         mode1_filters = _non_null(
             dataset=dataset,
@@ -746,6 +818,8 @@ class GcpResultStore:
             eval_version=eval_version,
         )
         mode1_gen_filters = _non_null(**mode1_filters, generation_version=generation_version)
+        # Les signaux ne portent pas d'eval_version (cf. LocalResultStore._create_tables).
+        signals_filters = {k: v for k, v in mode1_filters.items() if k != "eval_version"}
         answer_filters = _non_null(model_id=model_id, generation_version=generation_version)
         judge_filters = _non_null(**answer_filters, judge_model=judge_model, eval_version=eval_version)
         baseline_filters = _non_null(
@@ -763,24 +837,52 @@ class GcpResultStore:
         # incrément en cours au passage.
         self.flush_registry()
 
+        # Si AUCUN des filtres demandés ne s'applique à une table, on l'exclut : la
+        # suppression y serait non bornée alors qu'on a demandé quelque chose de précis
+        # (cf. LocalResultStore.purge). Un filtre partiellement applicable, lui, reste
+        # honoré — purger un scope complet doit atteindre les tables qui n'ont pas tous
+        # ses axes.
+        demandes = _non_null(
+            dataset=dataset,
+            ratio=ratio,
+            model_id=model_id,
+            pipeline_version=pipeline_version,
+            generation_version=generation_version,
+            eval_version=eval_version,
+            judge_model=judge_model,
+        )
+
+        def concerne(filters: dict) -> bool:
+            """Vrai si au moins un filtre demandé s'applique à cette table."""
+            return not demandes or any(k in filters for k in demandes)
+
+        def firestore(table: str, filters: dict) -> int:
+            if not concerne(filters):
+                return 0
+            n = self.fs.delete_matching(table, filters)
+            self.fs.delete_matching("_scope_registry", {"table": table, **filters})
+            return n
+
+        def bigquery(table: str, filters: dict) -> int:
+            return self._purge_bigquery(table, filters) if concerne(filters) else 0
+
         counts: dict[str, int] = {}
+        if scope in ("all", "results", "fusion"):
+            counts["predictions_deleted"] = firestore("eval_predictions", mode1_filters)
+        if scope in ("all", "signals"):
+            counts["signals_deleted"] = firestore("eval_signals", signals_filters)
         if scope in ("all", "results"):
-            counts["predictions_deleted"] = self.fs.delete_matching("eval_predictions", mode1_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_predictions", **mode1_filters})
-            counts["llm_answers_deleted"] = self.fs.delete_matching("llm_answers", answer_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "llm_answers", **answer_filters})
-            counts["judge_verdicts_deleted"] = self.fs.delete_matching("judge_verdicts", judge_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "judge_verdicts", **judge_filters})
-            counts["berlue_generated_deleted"] = self.fs.delete_matching("eval_berlue_generated", mode1_gen_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_berlue_generated", **mode1_gen_filters})
-            counts["baseline_generated_deleted"] = self.fs.delete_matching("eval_baseline_generated", baseline_filters)
-            self.fs.delete_matching("_scope_registry", {"table": "eval_baseline_generated", **baseline_filters})
+            counts["llm_answers_deleted"] = firestore("llm_answers", answer_filters)
+            counts["judge_verdicts_deleted"] = firestore("judge_verdicts", judge_filters)
+            counts["berlue_generated_deleted"] = firestore("eval_berlue_generated", mode1_gen_filters)
+            counts["baseline_generated_deleted"] = firestore("eval_baseline_generated", baseline_filters)
+        if scope in ("all", "matrices", "fusion"):
+            counts["matrices_deleted"] = bigquery("eval_matrices", mode1_filters)
+        # Les matrices du mode 2 ne sont pas des sorties de fusion du mode 1 :
+        # "fusion" ne doit pas y toucher.
         if scope in ("all", "matrices"):
-            counts["matrices_deleted"] = self._purge_bigquery("eval_matrices", mode1_filters)
-            counts["matrices_generated_berlue_deleted"] = self._purge_bigquery(
-                "eval_matrices_generated_berlue", mode1_gen_filters
-            )
-            counts["matrices_generated_baseline_deleted"] = self._purge_bigquery(
+            counts["matrices_generated_berlue_deleted"] = bigquery("eval_matrices_generated_berlue", mode1_gen_filters)
+            counts["matrices_generated_baseline_deleted"] = bigquery(
                 "eval_matrices_generated_baseline", baseline_filters
             )
         return counts
