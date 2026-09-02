@@ -54,6 +54,11 @@ class PredictInput(BaseModel):
     question: str
     answer: str | None = None
     llm: LLMConfig = LLMConfig()
+    # Force le recalcul même si la question est déjà en cache. Le résultat obtenu
+    # REMPLACE l'entrée existante : c'est le geste qui suit un changement de
+    # prompt ou de seuils, que la clé de cache ne voit pas et qui laisserait
+    # sinon servir une réponse d'avant le changement.
+    ignore_cache: bool = False
 
 
 # Les seules valeurs qu'un statut peut prendre. Un `str` libre laissait les deux

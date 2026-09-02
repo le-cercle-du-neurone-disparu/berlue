@@ -195,3 +195,104 @@ def test_publication_publie_chaque_temperature(tmp_path):
 def test_publication_sans_rien_a_publier(tmp_path):
     _, _, faux = _deux_magasins(tmp_path)
     assert _publier(faux) == 0
+
+
+# ==============================================================================
+# ignore_cache : forcer le recalcul et REMPLACER l'entrée
+# ==============================================================================
+
+
+def _service_avec_pipeline_compte(monkeypatch):
+    """BerlueService dont le pipeline est simulé et compte ses exécutions."""
+    from unittest.mock import MagicMock
+
+    import berlue.api.service as svc
+    from berlue.api.service import BerlueService
+
+    appels = {"n": 0}
+
+    class FauxPipeline:
+        def __init__(self, **kwargs):
+            pass
+
+        def generate_response(self, question):
+            appels["n"] += 1
+            resultat = MagicMock()
+            resultat.raw_answer = f"réponse {appels['n']}"
+            resultat.fused_verdicts = []
+            return resultat
+
+        def extract_claims(self, r):
+            return r
+
+        def generate_samples(self, r):
+            return r
+
+        def evaluate_selfcheck(self, r):
+            return r
+
+        def evaluate_rag(self, r):
+            return r
+
+        def fuse_results(self, r):
+            r.fused_verdicts = []
+            return r
+
+    monkeypatch.setattr(svc, "HurluBerlu", FauxPipeline)
+    monkeypatch.setattr(svc, "OllamaClient", lambda **kwargs: MagicMock())
+    return BerlueService(), appels
+
+
+def _payload(ignore_cache=False):
+    from berlue.api.schemas import LLMConfig, PredictInput
+
+    return PredictInput(
+        question="Quelle est la capitale ?",
+        llm=LLMConfig(name="llama3.2:3b", temperature=0.0),
+        ignore_cache=ignore_cache,
+    )
+
+
+def test_ignore_cache_force_le_recalcul(tmp_path, monkeypatch):
+    service, appels = _service_avec_pipeline_compte(monkeypatch)
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+
+    service.predict(_payload(), retriever=None, extractor=None, store=store)
+    assert appels["n"] == 1
+
+    # Sans le drapeau : servi depuis le cache, le pipeline ne tourne pas.
+    r = service.predict(_payload(), retriever=None, extractor=None, store=store)
+    assert appels["n"] == 1
+    assert r.origin.cached is True
+
+    # Avec le drapeau : le pipeline tourne malgré l'entrée présente.
+    r = service.predict(_payload(ignore_cache=True), retriever=None, extractor=None, store=store)
+    assert appels["n"] == 2
+    assert r.origin.cached is False
+
+
+def test_ignore_cache_remplace_l_entree_existante(tmp_path, monkeypatch):
+    """Le drapeau saute la lecture, jamais l'écriture : contourner le cache sans
+    le mettre à jour laisserait la vieille réponse au prochain appelant, ce qui
+    est l'inverse du geste recherché après un changement de prompt."""
+    service, _ = _service_avec_pipeline_compte(monkeypatch)
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+
+    service.predict(_payload(), retriever=None, extractor=None, store=store)
+    assert store.get_predict_cache("Quelle est la capitale ?", 0.0)["payload"]["full_llm_answer"] == "réponse 1"
+
+    service.predict(_payload(ignore_cache=True), retriever=None, extractor=None, store=store)
+    assert store.get_predict_cache("Quelle est la capitale ?", 0.0)["payload"]["full_llm_answer"] == "réponse 2"
+
+    # Et l'appel suivant, sans drapeau, reçoit bien la nouvelle version.
+    r = service.predict(_payload(), retriever=None, extractor=None, store=store)
+    assert r.origin.cached is True
+    assert r.full_llm_answer == "réponse 2"
+
+
+def test_ignore_cache_est_faux_par_defaut():
+    """Les clients existants — Aletheia notamment — n'envoient pas ce champ et
+    doivent continuer à bénéficier du cache."""
+    from berlue.api.schemas import PredictInput
+
+    assert PredictInput(question="Q").ignore_cache is False

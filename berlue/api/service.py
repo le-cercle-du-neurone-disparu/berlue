@@ -15,13 +15,21 @@ class BerlueService:
 
         `store` active le cache de prédiction. Absent, le pipeline tourne
         toujours — un appel direct ou un test n'a pas à fournir de magasin.
+
+        `payload.ignore_cache` saute la LECTURE du cache, jamais son écriture :
+        le résultat recalculé remplace l'entrée existante. Un paramètre qui se
+        contenterait de contourner le cache laisserait la vieille réponse en
+        place, et le prochain appelant la recevrait — l'inverse de ce qu'on
+        cherche après un changement de prompt.
         """
         modeles = (payload.llm.name, EXTRACT_MODEL, RAG_MODEL)
 
-        if store is not None:
+        if store is not None and not payload.ignore_cache:
             en_cache = self._lire_cache(store, payload, modeles)
             if en_cache is not None:
                 return en_cache
+        elif payload.ignore_cache:
+            logger.info("🔄 Cache ignoré à la demande — le pipeline va tourner et remplacer l'entrée.")
 
         # 1. Création du client cible via le payload
         target_llm = OllamaClient(model=payload.llm.name, temperature=payload.llm.temperature)
