@@ -15,6 +15,7 @@ from berlue.params import (
     OLLAMA_MODEL,
     RAG_EMBEDDING_MODEL,
     RAG_MODEL,
+    SELFCHECK_NLI_MODEL,
 )
 
 setup_logging()
@@ -110,7 +111,11 @@ def root():
             "extraction": EXTRACT_MODEL,
             "rag": RAG_MODEL,
             "judge": JUDGE_MODEL,
-            "nli": NLI_MODEL,
+            # Deux modèles distincts, et les confondre a déjà induit en erreur :
+            # selfcheck_nli juge la cohérence à chaque requête, nli_baseline ne
+            # sert qu'à l'évaluation comparative.
+            "selfcheck_nli": SELFCHECK_NLI_MODEL,
+            "nli_baseline": NLI_MODEL,
             "embeddings": RAG_EMBEDDING_MODEL,
         },
     }

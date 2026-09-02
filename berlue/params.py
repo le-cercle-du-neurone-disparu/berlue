@@ -136,7 +136,21 @@ RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.1:8b")
 RAG_SYSTEM_PROMPT = _RAG_SYSTEM_PROMPT
 
 # --- NLI léger ---
+# NLI_MODEL : modèle de la LIGNE DE BASE d'évaluation, à laquelle on compare
+# Berlue. Rien dans le pipeline ne s'en sert — le juge de cohérence de SelfCheck
+# est un autre modèle, cf. SELFCHECK_NLI_MODEL ci-dessous.
 NLI_MODEL = os.environ.get("BERLUE_NLI_MODEL", "microsoft/deberta-v3-small")
+
+# Modèle chargé par SelfCheckNLI, celui qui juge la cohérence à chaque /predict.
+# Lu depuis le paquet plutôt que redéclaré : une constante recopiée mentirait le
+# jour où le paquet change de défaut, et c'est exactement ce qui s'est produit —
+# l'API annonçait deberta-v3-small alors qu'elle utilisait deberta-v3-large-mnli.
+try:
+    from selfcheckgpt.utils import NLIConfig as _NLIConfig
+
+    SELFCHECK_NLI_MODEL = _NLIConfig.nli_model
+except Exception:  # pragma: no cover - dépend d'un paquet optionnel
+    SELFCHECK_NLI_MODEL = "inconnu"
 NLI_BASELINE_PATH = os.environ.get("BERLUE_NLI_BASELINE_PATH", "./models/nli_tfidf_logreg.joblib")
 
 # --- Données ---
