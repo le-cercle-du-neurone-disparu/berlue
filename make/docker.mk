@@ -219,6 +219,25 @@ image_source_check: ## Vérifie que les images pointées par IMAGE_SOURCE_* exis
 #
 #   make image_reader_grant CONSUMER_PROJECT=<id ou numéro du projet du collègue>
 
+# À lancer CHEZ LE CONSOMMATEUR : le propriétaire du dépôt doit poser
+# l'autorisation, mais le numéro de projet dont il a besoin n'est lisible que
+# depuis le projet consommateur. Cette cible produit la ligne exacte à lui
+# renvoyer, plutôt qu'un échange sur ce qu'est un numéro de projet.
+image_reader_request: gcp_check_cli_auth ## Affiche la commande à envoyer au propriétaire des images pour qu'il autorise VOTRE Cloud Run
+	@NUM=$$(gcloud projects describe $(GCP_PROJECT) --format="value(projectNumber)" 2>/dev/null </dev/null); \
+	if [ -z "$$NUM" ]; then \
+		echo "❌ Numéro de projet illisible pour $(GCP_PROJECT) — êtes-vous authentifié sur le bon projet ?"; \
+		exit 1; \
+	fi; \
+	echo "📋 Envoyez cette ligne au propriétaire du dépôt d'images :"; \
+	echo ""; \
+	echo "    make image_reader_grant CONSUMER_PROJECT=$$NUM"; \
+	echo ""; \
+	echo "   (projet $(GCP_PROJECT), agent Cloud Run service-$$NUM@serverless-robot-prod.iam.gserviceaccount.com)"; \
+	echo "   Une fois qu'il l'a lancée, mettez dans votre .env :"; \
+	echo "       IMAGE_SOURCE_PROJECT=<son projet>"; \
+	echo "   puis vérifiez avec : make image_source_check"
+
 image_reader_grant: gcp_check_cli_auth ## Autorise le Cloud Run d'un AUTRE projet à tirer nos images (CONSUMER_PROJECT=<id|numéro> requis)
 	@if [ -z "$(CONSUMER_PROJECT)" ]; then \
 		echo "❌ ERREUR : CONSUMER_PROJECT manquant."; \
