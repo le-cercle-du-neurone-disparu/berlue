@@ -85,3 +85,45 @@ def test_verify_claim_ne_fabrique_pas_de_preuve_sur_une_affirmation_hors_corpus(
 def test_premier_objet_json(nom, reponse, attendu):
     objet = _premier_objet_json(reponse)
     assert objet == attendu
+
+
+# --- Récupération d'une réponse tronquée ---------------------------------------
+# Une génération peut s'arrêter en cours : plafond de tokens, fenêtre de contexte
+# saturée. Le verdict est alors complet mais l'objet n'est pas refermé. Tout jeter
+# faisait conclure « pas assez d'infos » là où le modèle avait tranché — observé en
+# conditions réelles sur trois affirmations d'affilée.
+
+
+@pytest.mark.parametrize(
+    ("nom", "reponse", "verdict_attendu"),
+    [
+        (
+            "tronqué juste après la confiance",
+            '{\n "reasoning": "x",\n "used_evidence_index": 2,\n "verdict": "FEVER_REFUTES",\n "confidence": 0.99',
+            "FEVER_REFUTES",
+        ),
+        (
+            "tronqué au milieu d'une clé",
+            '{\n "reasoning": "x",\n "verdict": "LIKELY_FALSE",\n "confid',
+            "LIKELY_FALSE",
+        ),
+        (
+            "virgule finale laissée par la coupure",
+            '{\n "verdict": "LIKELY_TRUE",\n "confidence": 0.8,',
+            "LIKELY_TRUE",
+        ),
+    ],
+)
+def test_recupere_un_verdict_dans_une_reponse_tronquee(nom, reponse, verdict_attendu):
+    assert _premier_objet_json(reponse).get("verdict") == verdict_attendu
+
+
+def test_une_reponse_coupee_avant_le_verdict_ne_donne_pas_de_verdict():
+    """On ne devine pas : coupée trop tôt, la réponse ne porte aucun verdict et le
+    pipeline doit conclure à l'ignorance, pas inventer une classification."""
+    assert _premier_objet_json('{\n "reasoning": "Excerpt 0 is about').get("verdict") is None
+
+
+def test_la_recuperation_ne_change_rien_a_une_reponse_complete():
+    complet = '{"verdict": "FEVER_CONFIRMS", "confidence": 1.0, "used_evidence_index": 0}'
+    assert _premier_objet_json(complet) == {"verdict": "FEVER_CONFIRMS", "confidence": 1.0, "used_evidence_index": 0}

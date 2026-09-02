@@ -52,8 +52,43 @@ def _premier_objet_json(texte: str) -> dict:
     debut = texte.find("{")
     if debut == -1:
         return {}
-    objet, _fin = json.JSONDecoder().raw_decode(texte, debut)
+    try:
+        objet, _fin = json.JSONDecoder().raw_decode(texte, debut)
+    except json.JSONDecodeError:
+        objet = _reparer_objet_tronque(texte[debut:])
+        if objet is None:
+            raise
     return objet
+
+
+def _reparer_objet_tronque(texte: str) -> dict | None:
+    """Récupère un objet JSON coupé avant sa fin, ou `None` si c'est irrécupérable.
+
+    Une génération peut s'arrêter au milieu — plafond de tokens atteint, fenêtre
+    de contexte saturée. La réponse porte alors un verdict complet mais aucune
+    accolade fermante, et tout était jeté : un `FEVER_REFUTES` à 0.99 était perdu
+    aussi sûrement qu'une réponse absurde, et le pipeline concluait « pas assez
+    d'infos » là où le modèle avait tranché.
+
+    On raccourcit donc depuis la fin jusqu'à obtenir un objet décodable, puis on
+    referme. Rien n'est inventé, mais un nombre coupé peut être relu plus court —
+    `0.95` tronqué après le `9` se lit `0.9`. L'imprécision est bornée et vaut
+    mieux que de perdre le verdict entier ; une chaîne coupée, elle, donne un
+    verdict que le pipeline ne reconnaîtra pas et traitera comme une ignorance.
+    """
+    decodeur = json.JSONDecoder()
+    # On raccourcit depuis la fin jusqu'à ce qu'une fermeture rende le texte
+    # décodable. La virgule finale éventuelle est retirée avec le reste.
+    for fin in range(len(texte), 0, -1):
+        fragment = texte[:fin].rstrip().rstrip(",")
+        if not fragment:
+            break
+        try:
+            objet, _ = decodeur.raw_decode(fragment + "}")
+        except json.JSONDecodeError:
+            continue
+        return objet if isinstance(objet, dict) else None
+    return None
 
 
 class RagRetriever:
