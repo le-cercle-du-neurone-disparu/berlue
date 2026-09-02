@@ -66,7 +66,7 @@ cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run se
 		exit 1; \
 	fi; \
 	gcloud run deploy $(GAR_IMAGE)-$(CLOUDRUN_ENV) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
+		--image $(RUNTIME_IMAGE_URI) \
 		--memory $(GAR_MEMORY) \
 		--cpu $(GAR_CPU) \
 		--timeout=$(GAR_TIMEOUT) \
@@ -238,7 +238,7 @@ cloudrun_eval_service_deploy: gcp_check_cli_auth rag_index_check ## Crée ou met
 	@$(MAKE) --no-print-directory _models_check
 	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE) ($(EVAL_CPU) vCPU/$(EVAL_MEMORY), corpus $(RAG_CORPUS_VERSION))..."
 	gcloud run deploy $(CLOUDRUN_EVAL_SERVICE) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
+		--image $(RUNTIME_IMAGE_URI) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
@@ -348,7 +348,7 @@ comma := ,
 cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU L4, privé — IAM requis pour l'appeler) ; LLM_NUM_PARALLEL/LLM_CONCURRENCY/LLM_CONTEXT_LENGTH/LLM_CPU/LLM_MEMORY pour un test de parallélisme
 	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU L4, NUM_PARALLEL=$(LLM_NUM_PARALLEL), $(LLM_CPU) vCPU/$(LLM_MEMORY))..."
 	gcloud run deploy $(CLOUDRUN_LLM_SERVICE) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest \
+		--image $(LLM_IMAGE_URI) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--gpu=1 \

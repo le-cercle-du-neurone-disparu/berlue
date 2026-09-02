@@ -63,6 +63,25 @@ GAR_IMAGE = berlue-api
 # dans son .env : ARTIFACT_PROJECT=<id-du-projet-partagé>.
 ARTIFACT_PROJECT ?= $(GCP_PROJECT)
 
+# Registre depuis lequel Cloud Run TIRE les images, distinct de celui où on les
+# POUSSE. ARTIFACT_PROJECT sert aux deux par défaut ; les trois variables
+# ci-dessous permettent de déployer sur une image construite ailleurs — celle
+# d'un collègue, ou une image de référence partagée — sans rien pousser dans ce
+# projet-là. À surcharger dans .env :
+#   IMAGE_SOURCE_PROJECT=<projet-qui-héberge-l-image>
+# Le compte de service Cloud Run doit y avoir roles/artifactregistry.reader :
+# `make image_source_grant` le lui donne (à lancer par qui a les droits sur le
+# projet source), et `make image_source_check` vérifie que l'image est lisible.
+IMAGE_SOURCE_PROJECT ?= $(ARTIFACT_PROJECT)
+IMAGE_SOURCE_REGION ?= $(GCP_REGION)
+IMAGE_SOURCE_REPO ?= $(ARTIFACTSREPO)
+
+# Les URI complètes, construites une fois : c'est ce que les déploiements Cloud
+# Run consomment, pour que la source d'une image ne soit jamais recopiée à la
+# main dans trois cibles.
+RUNTIME_IMAGE_URI = $(IMAGE_SOURCE_REGION)-docker.pkg.dev/$(IMAGE_SOURCE_PROJECT)/$(IMAGE_SOURCE_REPO)/$(GAR_RUNTIME_IMAGE):prod
+LLM_IMAGE_URI = $(IMAGE_SOURCE_REGION)-docker.pkg.dev/$(IMAGE_SOURCE_PROJECT)/$(IMAGE_SOURCE_REPO)/$(GAR_LLM_IMAGE):latest
+
 # Idem pour les buckets d'équipe (partagés, pas les buckets personnels de
 # chacun cf. BUCKET_NAME/BUCKET_SUFFIX dans le Makefile racine et .env). Défaut
 # GCP_PROJECT, à surcharger dans .env : BUCKET_PROJECT=<id-du-projet-partagé>.
