@@ -40,6 +40,17 @@ def _source_de(evidence: dict) -> str:
         return "FEVER"
 
 
+class RagPanne(RuntimeError):
+    """Le RAG n'a pas pu se prononcer pour une raison TECHNIQUE.
+
+    À distinguer d'un `I_DONT_KNOW`, qui est un jugement : le modèle a répondu et
+    dit ne pas savoir. Ici il n'a pas répondu, ou sa réponse est inexploitable.
+    Les confondre faisait passer une panne pour une ignorance, et le pipeline
+    concluait « incertain » là où il aurait dû annoncer une erreur — observé sur
+    trois affirmations dont les verdicts, corrects, avaient été perdus au parsing.
+    """
+
+
 def _premier_objet_json(texte: str) -> dict:
     r"""Décode le premier objet JSON complet de `texte` et ignore ce qui suit.
 
@@ -157,6 +168,8 @@ class RagRetriever:
         logger.info("\n===============================\n")
 
         if not evidences:
+            # Ce n'est pas une panne : la recherche a fonctionné et n'a rien trouvé.
+            # Le RAG dit qu'il ne sait pas, ce qui est un jugement recevable.
             return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
 
         # 2. Préparation du contexte (liste de dictionnaires convertie en chaîne formatée)
@@ -242,13 +255,14 @@ class RagRetriever:
             )
 
         except json.JSONDecodeError as e:
-            # Si le JSON est trouvé mais mal formé (ex: virgule manquante)
             logger.warning("⚠️ Erreur de parsing JSON sur l'affirmation %s : %s", claim.id, e)
             logger.warning("Réponse brute du modèle : %s", response_text)
-            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
+            raise RagPanne(f"réponse du RAG inexploitable sur l'affirmation {claim.id}") from e
+        except RagPanne:
+            raise
         except Exception as e:
             logger.warning("⚠️ Erreur inattendue sur l'affirmation %s : %s", claim.id, e)
-            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
+            raise RagPanne(f"échec du RAG sur l'affirmation {claim.id} : {e}") from e
 
     def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
         """Vérifie une liste d'affirmations, une par une."""
