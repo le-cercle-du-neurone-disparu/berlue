@@ -21,7 +21,18 @@ async def test_root_returns_greeting():
     assert body["greeting"] == "Hello from Berlue API"
     # Chaque étage doit être nommé : c'est la seule façon de savoir, face à une
     # instance déployée, quel modèle a produit un verdict donné.
-    assert set(body["models"]) == {"generation", "extraction", "rag", "judge", "nli", "embeddings"}
+    assert set(body["models"]) == {
+        "generation",
+        "extraction",
+        "rag",
+        "judge",
+        # Deux modèles NLI distincts : celui qui juge la cohérence à chaque
+        # requête, et la ligne de base qui ne sert qu'à l'évaluation. Les
+        # confondre a déjà fait annoncer le mauvais modèle.
+        "selfcheck_nli",
+        "nli_baseline",
+        "embeddings",
+    }
     assert all(body["models"].values())
 
 
