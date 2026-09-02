@@ -10,7 +10,7 @@ import faiss
 from sentence_transformers import SentenceTransformer
 
 from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict
-from berlue.params import RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
+from berlue.params import NUM_PREDICT_RAG, RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class RagRetriever:
 
         # 4. Appel au LLM (via Ollama)
         try:
-            response_text = self.llm_client.generate(prompt)
+            response_text = self.llm_client.generate(prompt, num_predict=NUM_PREDICT_RAG)
             match = re.search(r"\{.*\}", response_text, re.DOTALL)
             clean_json_str = match.group(0) if match else "{}"
             llm_result = json.loads(clean_json_str)

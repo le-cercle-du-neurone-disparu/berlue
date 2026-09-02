@@ -128,6 +128,18 @@ class OllamaClient:
         if not resp_text:
             raise RuntimeError(f"Ollama a généré une réponse vide ou nulle (modèle: {self.model}).")
 
+        # `done_reason == "length"` signifie que `num_predict` a coupé la génération.
+        # Le texte rendu est amputé — un JSON tronqué en plein milieu ne parse pas et
+        # dégénère silencieusement en résultat vide en aval. On le signale plutôt que
+        # de le subir : c'est un défaut de configuration, pas une réponse du modèle.
+        if response.get("done_reason") == "length":
+            logger.warning(
+                "✂️ Génération tronquée par num_predict=%s (modèle: %s) — le résultat est amputé. "
+                "Relever la borne pour ce type d'appel.",
+                num_predict,
+                self.model,
+            )
+
         if self.verbose:
             logger.debug("📥 [Ollama:%s, %.2fs] Réponse :\n%s", self.model, elapsed, resp_text)
 
@@ -146,7 +158,9 @@ class OllamaClient:
         self.generate(prompt=prompt, temperature=temperature)
         return time.monotonic() - start
 
-    def generate_many(self, prompt: str, k: int, temperature_min: float, temperature_max: float) -> list[str]:
+    def generate_many(
+        self, prompt: str, k: int, temperature_min: float, temperature_max: float, num_predict: int | None = None
+    ) -> list[str]:
         """
         Génère `k` réponses indépendantes au même prompt, chacune à une température
         choisie dans `[temperature_min, temperature_max]`.
@@ -166,7 +180,7 @@ class OllamaClient:
         for temp in temperatures:
             logger.debug("🔄 Génération en cours (Température: %.2f)...", temp)
             # On réutilise notre méthode unitaire
-            resp = self.generate(prompt, temperature=temp)
+            resp = self.generate(prompt, temperature=temp, num_predict=num_predict)
             responses.append(resp)
             logger.debug("   → %s", resp)
             logger.debug("-" * 60)

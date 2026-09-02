@@ -5,7 +5,7 @@ import uuid
 
 from berlue.core.schemas import Claim
 from berlue.llm.client import OllamaClient
-from berlue.params import EXTRACT_SYSTEM_PROMPT
+from berlue.params import EXTRACT_SYSTEM_PROMPT, NUM_PREDICT_EXTRACTION
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) ->
     # On injecte maintenant la question ET la réponse dans le prompt
     prompt = EXTRACT_SYSTEM_PROMPT.format(question=question, answer_text=answer_text)
 
-    raw_response = llm_extract.generate(prompt=prompt, temperature=0.0)
+    raw_response = llm_extract.generate(prompt=prompt, temperature=0.0, num_predict=NUM_PREDICT_EXTRACTION)
 
     # 1. Extraction du tableau JSON. Non gourmand : `\[.*\]` en DOTALL allait du
     # premier `[` au dernier `]` de la réponse, avalant tout ce qu'il y avait entre.

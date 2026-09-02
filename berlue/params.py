@@ -154,6 +154,26 @@ TRAIN_RATIO = float(os.environ.get("BERLUE_TRAIN_RATIO", "0.8"))
 # --- MLOps ---
 MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucination_tracker.db")
 
+# --- Bornes de génération (num_predict) ---
+# Sans borne, un modèle qui ignore la consigne de longueur génère jusqu'à saturer
+# `n_ctx_slot` (4096 sur nos serveurs) puis enchaîne les *context shifts*, chacun
+# coûtant plusieurs secondes : un seul appel dépasse alors le timeout client et fait
+# tomber le run entier. Constaté deux fois — sur GCP (bloqué à 97/100) et en local
+# (91/300).
+#
+# Les valeurs sont dimensionnées sur les longueurs réellement produites (mesurées sur
+# 30 traces, ~4 caractères par token), avec une marge large : la sécurité ne dépend pas
+# de leur précision, seulement du fait d'être nettement sous `n_ctx`. Une borne trop
+# serrée tronquerait un JSON en plein milieu — d'où l'avertissement émis par
+# `OllamaClient.generate` quand la borne est atteinte.
+#
+#   réponse et échantillons : max observé 126  -> 300 (valeur déjà retenue en mode généré)
+#   extraction              : max observé  35  -> 400 (la réponse brute peut préambuler)
+#   RAG                     : max observé 172  -> 600 (le raisonnement peut s'allonger)
+NUM_PREDICT_ANSWER = int(os.environ.get("BERLUE_NUM_PREDICT_ANSWER", "300"))
+NUM_PREDICT_EXTRACTION = int(os.environ.get("BERLUE_NUM_PREDICT_EXTRACTION", "400"))
+NUM_PREDICT_RAG = int(os.environ.get("BERLUE_NUM_PREDICT_RAG", "600"))
+
 # --- Fusion des scores ---
 # Fonctionnel de référence : claude-doc/specification-fusion-2026-09-02.md.
 #

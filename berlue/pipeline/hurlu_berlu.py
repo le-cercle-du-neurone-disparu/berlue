@@ -2,7 +2,7 @@ import logging
 
 from berlue.core.schemas import PipelineResult, RagJudgment, Verdict
 from berlue.llm.client import OllamaClient
-from berlue.params import OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
+from berlue.params import NUM_PREDICT_ANSWER, OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
 from berlue.pipeline.extraction import do_extraction
 from berlue.pipeline.fusion import do_fusion
 from berlue.rag.retriever import RagRetriever
@@ -40,7 +40,7 @@ class HurluBerlu:
         prompt = OLLAMA_SYSTEM_PROMPT.format(question=question)
 
         # Appel au LLM
-        answer = self.llm_client.generate(prompt=prompt)
+        answer = self.llm_client.generate(prompt=prompt, num_predict=NUM_PREDICT_ANSWER)
 
         return PipelineResult(question=question, raw_answer=answer)
 
