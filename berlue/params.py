@@ -108,7 +108,12 @@ OLLAMA_SYSTEM_PROMPT = _OLLAMA_SYSTEM_PROMPT
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
 
 # --- EXTRACTION ---
-EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "llama3.2:3b")
+# Extraction et RAG tournent sur un modèle plus gros que celui évalué : ce sont
+# les deux étages qui doivent COMPRENDRE (découper une réponse en affirmations,
+# juger une affirmation), pas produire. 8B est le compromis retenu — pas un qwen,
+# décevant sur ces deux tâches à l'essai, et pas un 14B, qui portait une requête
+# /predict de trois affirmations à 6 min 24 sur Cloud Run.
+EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "llama3.1:8b")
 # EXTRACT_MODEL = os.environ.get("EXTRACT_MODEL", "qwen2.5:0.5b")
 EXTRACT_SYSTEM_PROMPT = _EXTRACT_SYSTEM_PROMPT
 
@@ -129,7 +134,7 @@ RAG_INDEX_DIR = "data/fever/faiss"
 # Surchargeable pour pointer vers un volume monté (ex. GCS FUSE sur Cloud
 # Run, cf. docs/gcp/cloudrun.md) plutôt que le chemin local par défaut.
 RAG_VECTOR_DB_PATH = os.environ.get("RAG_VECTOR_DB_PATH", "data/fever/faiss")
-RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.2:3b")  # phi3.5:latest
+RAG_MODEL = os.environ.get("RAG_MODEL", "llama3.1:8b")
 RAG_SYSTEM_PROMPT = _RAG_SYSTEM_PROMPT
 
 # --- NLI léger ---
