@@ -379,7 +379,8 @@ llm_model_load: gcp_check_cli_auth ## Charge MODEL en VRAM sur berlue-llm et l'y
 	curl -sf -X POST "$$URL/api/pull" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$(MODEL)\",\"stream\":false}" > /dev/null; \
 	echo "🔥 Chargement de $(MODEL) en VRAM (keep_alive=-1)..."; \
 	curl -sf -X POST "$$URL/api/generate" -H "Authorization: Bearer $$TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$(MODEL)\",\"keep_alive\":-1}" > /dev/null; \
-	echo "✅ $(MODEL) chargé et épinglé."
+	echo "✅ $(MODEL) chargé et épinglé."; \
+	bash scripts/ollama_memory_check.sh "$$URL" "$$TOKEN" "$(LLM_MEMORY)" "$(MODEL)"
 
 llm_model_unload: gcp_check_cli_auth ## Décharge MODEL de la VRAM de berlue-llm sans le supprimer du disque (req : MODEL=nom:tag)
 	@if [ -z "$(MODEL)" ]; then echo "❌ MODEL manquant. 👉 make llm_model_unload MODEL=qwen2.5:14b"; exit 1; fi
@@ -483,6 +484,7 @@ cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU L4, coûteux) et ch
 		curl -sf -X POST "$$LLM_URL/api/pull" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"name\":\"$$MODEL\",\"stream\":false}" > /dev/null; \
 		curl -sf -X POST "$$LLM_URL/api/generate" -H "Authorization: Bearer $$LLM_TOKEN" -H "Content-Type: application/json" -d "{\"model\":\"$$MODEL\",\"prompt\":\"hi\",\"stream\":false}" > /dev/null; \
 		echo "✅ $$MODEL chaud."; \
+		bash scripts/ollama_memory_check.sh "$$LLM_URL" "$$LLM_TOKEN" "$(LLM_MEMORY)" "$$MODEL" || exit 1; \
 	done
 
 gcp_up: cloudrun_llm_up ## Monte berlue-api-<env> ET berlue-llm à min-instances=1 (usage produit) ; WARM_MODELS="m1 m2" pour précharger des modèles
