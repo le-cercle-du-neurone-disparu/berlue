@@ -228,7 +228,8 @@ gcp_share_with: gcp_check_cli_auth ## Donne à une personne tous les accès néc
 	@$(MAKE) --no-print-directory artifact_registry_grant USER=$(SHARE_EMAIL) ROLE=reader
 	@$(MAKE) --no-print-directory gcs_grant BUCKET=$(RAG_BUCKET_NAME) USER=$(SHARE_EMAIL) BUCKET_ROLE=reader
 	@$(MAKE) --no-print-directory cloudrun_grant USER=$(SHARE_EMAIL) CLOUDRUN_ROLE=operator
-	@echo "✅ $(SHARE_EMAIL) peut lancer l'éval, consulter les données et opérer les Cloud Run."
+	@$(MAKE) --no-print-directory console_grant USER=$(SHARE_EMAIL)
+	@echo "✅ $(SHARE_EMAIL) peut lancer l'éval, consulter les données et les logs, et opérer les Cloud Run."
 
 gcp_unshare_with: gcp_check_cli_auth ## Retire à une personne tous les accès donnés par gcp_share_with — `make gcp_unshare_with alice@example.com`
 	@if [ -z "$(SHARE_EMAIL)" ]; then \
@@ -237,6 +238,7 @@ gcp_unshare_with: gcp_check_cli_auth ## Retire à une personne tous les accès d
 		exit 1; \
 	fi
 	@echo "👥 Fermeture des accès pour $(SHARE_EMAIL) sur $(GCP_PROJECT)..."
+	@$(MAKE) --no-print-directory console_revoke USER=$(SHARE_EMAIL) || true
 	@$(MAKE) --no-print-directory cloudrun_revoke USER=$(SHARE_EMAIL) CLOUDRUN_ROLE=operator || true
 	@$(MAKE) --no-print-directory gcs_revoke BUCKET=$(RAG_BUCKET_NAME) USER=$(SHARE_EMAIL) BUCKET_ROLE=reader || true
 	@$(MAKE) --no-print-directory artifact_registry_revoke USER=$(SHARE_EMAIL) ROLE=reader || true
@@ -244,6 +246,46 @@ gcp_unshare_with: gcp_check_cli_auth ## Retire à une personne tous les accès d
 	@$(MAKE) --no-print-directory firestore_revoke USER=$(SHARE_EMAIL) FIRESTORE_ROLE=reader || true
 	@$(MAKE) --no-print-directory cloudrun_sa_revoke USER=$(SHARE_EMAIL) CLOUDRUN_SA_ROLE=impersonate || true
 	@echo "✅ Accès retirés pour $(SHARE_EMAIL)."
+
+# Rôles au niveau du projet, en lecture seule, qui rendent la Console utilisable :
+# sans eux, on ne peut ouvrir une ressource qu'en connaissant son URL exacte.
+#   logging.viewer         lire les logs des services Cloud Run
+#   storage.bucketViewer   voir la liste des buckets (un accès par bucket ne la donne pas)
+#   bigquery.metadataViewer  voir la liste des datasets et des tables
+# Firestore n'est pas ici : son rôle de lecture est déjà donné par firestore_grant.
+CONSOLE_ROLES = roles/logging.viewer roles/storage.bucketViewer roles/bigquery.metadataViewer
+
+console_grant: gcp_check_cli_auth ## Donne à une personne les listings et les logs dans la Console (USER=email requis) — lecture seule
+	@if [ -z "$(USER)" ]; then \
+		echo "❌ ERREUR : USER manquant."; \
+		echo "👉 Essayez : make console_grant USER=personne@example.com"; \
+		exit 1; \
+	fi
+	@for ROLE in $(CONSOLE_ROLES); do \
+		echo "🔐 $$ROLE pour $(USER) sur $(GCP_PROJECT)..."; \
+		gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
+			--member="user:$(USER)" \
+			--role="$$ROLE" \
+			--condition=None \
+			--quiet </dev/null >/dev/null; \
+	done
+	@echo "✅ $(USER) voit les logs Cloud Run, la liste des buckets et celle des datasets."
+
+console_revoke: gcp_check_cli_auth ## Retire les listings et les logs dans la Console (USER=email requis)
+	@if [ -z "$(USER)" ]; then \
+		echo "❌ ERREUR : USER manquant."; \
+		echo "👉 Essayez : make console_revoke USER=personne@example.com"; \
+		exit 1; \
+	fi
+	@for ROLE in $(CONSOLE_ROLES); do \
+		echo "🔓 Retrait de $$ROLE pour $(USER)..."; \
+		gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+			--member="user:$(USER)" \
+			--role="$$ROLE" \
+			--condition=None \
+			--quiet </dev/null >/dev/null || true; \
+	done
+	@echo "✅ Accès Console retirés pour $(USER)."
 
 gcp_project_list: ## Liste tous les projets GCP disponibles pour votre compte
 	@echo "📋 Listing des projets GCP..."
