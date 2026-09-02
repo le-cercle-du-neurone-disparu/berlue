@@ -1,6 +1,8 @@
 """Tests pour `berlue.evaluation.result_store` — SQLite sur fichier temporaire
 (`tmp_path`), aucune infra externe requise."""
 
+import sqlite3
+from contextlib import closing
 from dataclasses import replace
 
 import pytest
@@ -535,3 +537,115 @@ def test_purge_n_efface_pas_les_tables_que_le_filtre_ne_concerne_pas(tmp_path):
     assert result["judge_verdicts_deleted"] == 0
     assert store.get_generated_answer("m", "v1", "q") == "une réponse générée"
     assert store.get_judge_verdict("m", "v1", "judge-1", "v1", "q") == Verdict.SUPPORTED
+
+
+# ==============================================================================
+# CACHE DE PRÉDICTION (`predict_cache`)
+# ==============================================================================
+# Table sans rapport avec les scopes d'évaluation ci-dessus : sa clé est la
+# question normalisée et la température, et un modèle y est identifié par sa
+# taille (cf. berlue.api.predict_cache).
+
+PAYLOAD = {"question": "Q", "claims": [], "full_llm_answer": "A"}
+MODELES = ("phi3:14b", "phi3:14b", "phi3:14b")
+
+
+def test_predict_cache_absent_rend_none(tmp_path):
+    assert _store(tmp_path).get_predict_cache("Quelle est la capitale ?", 0.0) is None
+
+
+def test_predict_cache_aller_retour(tmp_path):
+    store = _store(tmp_path)
+    store.put_predict_cache("Quelle est la capitale ?", 0.0, *MODELES, PAYLOAD)
+    entree = store.get_predict_cache("Quelle est la capitale ?", 0.0)
+    assert entree["payload"] == PAYLOAD
+    assert entree["generator_model"] == "phi3:14b"
+
+
+def test_predict_cache_insensible_a_la_casse_et_aux_espaces(tmp_path):
+    """La clé est la question normalisée : c'est tout l'intérêt du cache face à
+    des utilisateurs qui retapent leur question."""
+    store = _store(tmp_path)
+    store.put_predict_cache("  Quelle est la CAPITALE ?  ", 0.0, *MODELES, PAYLOAD)
+    assert store.get_predict_cache("quelle est la capitale ?", 0.0) is not None
+
+
+def test_predict_cache_conserve_la_question_d_origine(tmp_path):
+    """La clé est normalisée, mais c'est la formulation de l'utilisateur qu'on
+    réaffiche."""
+    store = _store(tmp_path)
+    store.put_predict_cache("Quelle est la CAPITALE ?", 0.0, *MODELES, PAYLOAD)
+    assert store.get_predict_cache("quelle est la capitale ?", 0.0)["question"] == "Quelle est la CAPITALE ?"
+
+
+def test_predict_cache_separe_les_temperatures(tmp_path):
+    """Deux températures donnent deux réponses différentes : les confondre
+    viderait le curseur de son sens."""
+    store = _store(tmp_path)
+    store.put_predict_cache("Une question", 0.0, *MODELES, PAYLOAD)
+    assert store.get_predict_cache("Une question", 0.3) is None
+
+
+def test_predict_cache_remplace_au_lieu_d_empiler(tmp_path):
+    """Un recalcul par d'autres modèles prend la place de l'ancien : sans ça le
+    cache resterait figé sur la première réponse jamais produite."""
+    store = _store(tmp_path)
+    store.put_predict_cache("Une question", 0.0, *MODELES, PAYLOAD)
+    store.put_predict_cache("Une question", 0.0, "llama3.2:3b", "llama3.1:8b", "llama3.1:8b", {"claims": ["x"]})
+    entree = store.get_predict_cache("Une question", 0.0)
+    assert entree["generator_model"] == "llama3.2:3b"
+    assert entree["payload"] == {"claims": ["x"]}
+    assert len(store.list_predict_cache()) == 1
+
+
+def test_predict_cache_ignore_un_format_perime(tmp_path):
+    """Un schéma de PredictOutput qui change doit invalider les entrées, pas
+    produire une désérialisation de travers en production."""
+    store = _store(tmp_path)
+    store.put_predict_cache("Une question", 0.0, *MODELES, PAYLOAD)
+    with closing(sqlite3.connect(str(tmp_path / "eval.db"))) as conn:
+        conn.execute("UPDATE predict_cache SET format_version = format_version + 1")
+        conn.commit()
+    assert store.get_predict_cache("Une question", 0.0) is None
+
+
+def test_purge_predict_cache_sans_filtre_vide_tout(tmp_path):
+    store = _store(tmp_path)
+    store.put_predict_cache("Question A", 0.0, *MODELES, PAYLOAD)
+    store.put_predict_cache("Question B", 0.3, *MODELES, PAYLOAD)
+    assert store.purge_predict_cache() == 2
+    assert store.list_predict_cache() == []
+
+
+@pytest.mark.parametrize(
+    ("filtre", "restantes"),
+    [
+        ({"question": "Question A"}, ["Question B", "Question B"]),
+        ({"temperature": 0.3}, ["Question A", "Question B"]),
+        ({"generator_model": "llama3.2:3b"}, ["Question A", "Question B"]),
+    ],
+)
+def test_purge_predict_cache_filtree(tmp_path, filtre, restantes):
+    store = _store(tmp_path)
+    store.put_predict_cache("Question A", 0.0, *MODELES, PAYLOAD)
+    store.put_predict_cache("Question B", 0.0, "llama3.2:3b", "llama3.1:8b", "llama3.1:8b", PAYLOAD)
+    store.put_predict_cache("Question B", 0.3, *MODELES, PAYLOAD)
+    store.purge_predict_cache(**filtre)
+    assert sorted(e["question"] for e in store.list_predict_cache()) == sorted(restantes)
+
+
+def test_purge_predict_cache_normalise_la_question(tmp_path):
+    """Le filtre doit viser la même clé que l'écriture, sans quoi une purge
+    ciblée échouerait sur une différence de casse."""
+    store = _store(tmp_path)
+    store.put_predict_cache("Quelle est la CAPITALE ?", 0.0, *MODELES, PAYLOAD)
+    assert store.purge_predict_cache(question="  quelle est la capitale ?  ") == 1
+
+
+def test_une_purge_d_evaluation_ne_touche_pas_le_cache_de_prediction(tmp_path):
+    """Les deux familles de cache sont indépendantes : un `purge(scope="all")`
+    sur l'évaluation ne doit pas effacer les prédictions, et réciproquement."""
+    store = _store(tmp_path)
+    store.put_predict_cache("Une question", 0.0, *MODELES, PAYLOAD)
+    store.purge(scope="all")
+    assert len(store.list_predict_cache()) == 1

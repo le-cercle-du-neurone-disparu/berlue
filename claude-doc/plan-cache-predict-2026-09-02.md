@@ -170,10 +170,10 @@ les tâtonnements de la journée. Aletheia peut l'afficher discrètement.
 `make predict_cache_purge`, avec des filtres facultatifs :
 
 ```
-make predict_cache_purge                          # tout
-make predict_cache_purge QUESTION="capitale..."   # une question, toutes températures
-make predict_cache_purge MODEL=llama3.2:3b        # un générateur
-make predict_cache_purge TEMPERATURE=0.3          # une température
+make predict_cache_purge                                # tout
+make predict_cache_purge CACHE_QUESTION="capitale..."   # une question, toutes températures
+make predict_cache_purge CACHE_MODEL=llama3.2:3b        # un générateur
+make predict_cache_purge CACHE_TEMPERATURE=0.3          # une température
 ```
 
 Une purge sans filtre vide tout : c'est explicite et c'est le geste courant

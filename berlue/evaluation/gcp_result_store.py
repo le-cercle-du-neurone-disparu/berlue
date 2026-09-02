@@ -70,6 +70,7 @@ import google.auth.transport.requests
 import requests
 from google.cloud import bigquery
 
+from berlue.api.predict_cache import CACHE_FORMAT_VERSION, normaliser_question
 from berlue.api.schemas import ConfusionMatrix
 from berlue.core.schemas import Verdict
 from berlue.evaluation.result_store import EvalScope, _hash, _matrix_row_to_object, _matrix_to_values
@@ -219,6 +220,20 @@ class _FirestoreRest:
             return False
         response.raise_for_status()
         return True
+
+    def write(self, collection: str, doc_id: str, data: dict) -> None:
+        """Écrit le document, qu'il existe déjà ou non.
+
+        `create()` refuse un document existant, ce qui convient aux caches
+        d'évaluation où une entrée déjà calculée ne doit jamais être écrasée.
+        Le cache de prédiction a la règle inverse : un recalcul par des modèles
+        plus gros doit prendre la place de l'ancien.
+        """
+        self._request(
+            "PATCH",
+            self._doc_url(collection, doc_id),
+            json={"fields": _to_fields(data)},
+        ).raise_for_status()
 
     def increment(self, collection: str, doc_id: str, field: str, by: int) -> None:
         """Incrémente atomiquement `field` de `by` sur un document déjà
@@ -481,6 +496,92 @@ class GcpResultStore:
         if created:
             self._register_new_row("eval_signals", key)
         return created
+
+    def _predict_cache_id(self, question: str, temperature: float) -> str:
+        return _doc_id(normaliser_question(question), float(temperature))
+
+    def purge_predict_cache(
+        self,
+        question: str | None = None,
+        temperature: float | None = None,
+        generator_model: str | None = None,
+    ) -> int:
+        """Vide le cache de prédiction, éventuellement filtré. Rend le nombre de
+        documents supprimés. Voir `LocalResultStore.purge_predict_cache` pour
+        pourquoi c'est une méthode à part et non un scope de `purge()`."""
+        filtres = {}
+        if question is not None:
+            filtres["question_key"] = normaliser_question(question)
+        if temperature is not None:
+            filtres["temperature"] = float(temperature)
+        if generator_model is not None:
+            filtres["generator_model"] = generator_model
+        return self.fs.delete_matching("predict_cache", filtres)
+
+    def get_predict_cache(self, question: str, temperature: float) -> dict | None:
+        """Entrée de cache pour cette question et cette température, ou `None`.
+        Rend l'entrée telle quelle : c'est à l'appelant de décider, via
+        `predict_cache.satisfait`, si les modèles qui l'ont produite conviennent."""
+        doc = self.fs.get("predict_cache", self._predict_cache_id(question, temperature))
+        if not doc:
+            return None
+        # Un format plus ancien est traité comme une absence : mieux vaut
+        # recalculer que désérialiser de travers un schéma qui a changé.
+        if int(doc.get("format_version", 0)) != CACHE_FORMAT_VERSION:
+            return None
+        return {
+            "question": doc["question"],
+            "generator_model": doc["generator_model"],
+            "extract_model": doc["extract_model"],
+            "rag_model": doc["rag_model"],
+            "payload": json.loads(doc["payload"]),
+            "computed_at": doc["computed_at"],
+        }
+
+    def put_predict_cache(
+        self,
+        question: str,
+        temperature: float,
+        generator_model: str,
+        extract_model: str,
+        rag_model: str,
+        payload: dict,
+    ) -> None:
+        """Écrit ou remplace l'entrée de cache pour (question, température)."""
+        self.fs.write(
+            "predict_cache",
+            self._predict_cache_id(question, temperature),
+            {
+                "question_key": normaliser_question(question),
+                "temperature": float(temperature),
+                "question": question,
+                "generator_model": generator_model,
+                "extract_model": extract_model,
+                "rag_model": rag_model,
+                # Sérialisé en chaîne, comme les signaux : Firestore n'indexe pas
+                # les tableaux d'objets, et rien ici n'est requêté autrement que
+                # par identifiant de document.
+                "payload": json.dumps(payload, ensure_ascii=False),
+                "format_version": CACHE_FORMAT_VERSION,
+                "computed_at": datetime.now(UTC).isoformat(),
+            },
+        )
+
+    def list_predict_cache(self) -> list[dict]:
+        """Contenu du cache de prédiction, du plus récent au plus ancien."""
+        docs = self.fs.query("predict_cache", {})
+        entrees = [
+            {
+                "question": d["question"],
+                "temperature": d["temperature"],
+                "generator_model": d["generator_model"],
+                "extract_model": d["extract_model"],
+                "rag_model": d["rag_model"],
+                "computed_at": d["computed_at"],
+            }
+            for d in docs
+        ]
+        return sorted(entrees, key=lambda e: e["computed_at"], reverse=True)
 
     def _signals_id(self, scope: EvalScope, question: str, answer: str) -> str:
         key = scope.as_dict("dataset", "ratio", "model_id", "pipeline_version")

@@ -83,6 +83,23 @@ class ClaimResult(BaseModel):
     evidence_text: str
 
 
+class PredictOrigin(BaseModel):
+    """D'où vient un résultat, et par quels modèles il a été produit.
+
+    Sans ça, un verdict servi depuis le cache est indiscernable d'un verdict
+    frais. Ça compte d'autant plus que le cache compare les modèles par leur
+    TAILLE : une réponse de `phi3:14b` peut être servie à qui demande
+    `llama3.2:3b`, et seuls ces champs le disent. Ils nomment les modèles
+    RÉELLEMENT utilisés, jamais ceux demandés.
+    """
+
+    cached: bool
+    generator_model: str
+    extract_model: str
+    rag_model: str
+    computed_at: str | None = None
+
+
 class PredictOutput(BaseModel):
     """
     Payload de réponse pour l'endpoint de prédiction, contenant la réponse du
@@ -93,6 +110,9 @@ class PredictOutput(BaseModel):
     llm_used: LLMConfig
     full_llm_answer: str
     claims: list[ClaimResult]
+    # Facultatif : une réponse produite hors du chemin de cache (tests, appels
+    # directs) reste valide sans ce champ.
+    origin: PredictOrigin | None = None
 
 
 # ==============================================================================
