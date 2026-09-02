@@ -165,6 +165,22 @@ quels modèles elle a été calculée. Sans ça, un verdict servi depuis le cach
 est indiscernable d'un verdict frais, et le prochain diagnostic recommencera
 les tâtonnements de la journée. Aletheia peut l'afficher discrètement.
 
+## 4 bis. Forcer le recalcul
+
+`PredictInput` porte un drapeau `ignore_cache`, faux par défaut :
+
+```json
+{"question": "...", "llm": {"name": "llama3.2:3b", "temperature": 0.0}, "ignore_cache": true}
+```
+
+Il saute la **lecture** du cache, jamais son **écriture** : le résultat recalculé
+remplace l'entrée existante. Un drapeau qui se contenterait de contourner le
+cache laisserait la vieille réponse en place, et le prochain appelant la
+recevrait — l'inverse de ce qu'on cherche après un changement de prompt.
+
+Le défaut à `false` garde les clients existants inchangés : ils n'envoient pas
+ce champ et continuent de bénéficier du cache.
+
 ## 5. La purge
 
 `make predict_cache_purge`, avec des filtres facultatifs :
