@@ -34,6 +34,14 @@ async def test_root_returns_greeting():
         "embeddings",
     }
     assert all(body["models"].values())
+    # Un index réduit et l'index complet se déploient de la même façon : sans
+    # cette information, un « rien trouvé » est ininterprétable.
+    assert "rag_index" in body
+    assert "path" in body["rag_index"]
+    # Ce qu'Ollama a sur disque, et ce qu'il tient en mémoire — la sonde ne doit
+    # pas échouer si le serveur est injoignable, mais elle doit le dire.
+    assert "llm" in body
+    assert "available" in body["llm"] or "erreur" in body["llm"]
 
 
 @pytest.mark.asyncio
