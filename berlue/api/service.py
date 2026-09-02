@@ -1,13 +1,28 @@
-from berlue.api.schemas import STATUS_BY_VERDICT, ClaimResult, PredictInput, PredictOutput
+import logging
+
+from berlue.api.predict_cache import satisfait
+from berlue.api.schemas import STATUS_BY_VERDICT, ClaimResult, PredictInput, PredictOrigin, PredictOutput
 from berlue.llm.client import OllamaClient
+from berlue.params import EXTRACT_MODEL, RAG_MODEL
 from berlue.pipeline.hurlu_berlu import HurluBerlu
+
+logger = logging.getLogger(__name__)
 
 
 class BerlueService:
-    def predict(self, payload: PredictInput, retriever, extractor) -> PredictOutput:
+    def predict(self, payload: PredictInput, retriever, extractor, store=None) -> PredictOutput:
+        """Exécute le pipeline et retourne une réponse typée Pydantic.
+
+        `store` active le cache de prédiction. Absent, le pipeline tourne
+        toujours — un appel direct ou un test n'a pas à fournir de magasin.
         """
-        Exécute le pipeline et retourne une réponse typée Pydantic.
-        """
+        modeles = (payload.llm.name, EXTRACT_MODEL, RAG_MODEL)
+
+        if store is not None:
+            en_cache = self._lire_cache(store, payload, modeles)
+            if en_cache is not None:
+                return en_cache
+
         # 1. Création du client cible via le payload
         target_llm = OllamaClient(model=payload.llm.name, temperature=payload.llm.temperature)
 
@@ -35,9 +50,69 @@ class BerlueService:
             claims_output.append(claim_res)
 
         # 5. Retourne l'objet global PredictOutput
-        return PredictOutput(
-            question=payload.question, llm_used=payload.llm, full_llm_answer=res.raw_answer, claims=claims_output
+        sortie = PredictOutput(
+            question=payload.question,
+            llm_used=payload.llm,
+            full_llm_answer=res.raw_answer,
+            claims=claims_output,
+            origin=PredictOrigin(
+                cached=False,
+                generator_model=modeles[0],
+                extract_model=modeles[1],
+                rag_model=modeles[2],
+            ),
         )
+
+        if store is not None:
+            self._ecrire_cache(store, payload, modeles, sortie)
+
+        return sortie
+
+    def _lire_cache(self, store, payload: PredictInput, modeles: tuple[str, str, str]) -> PredictOutput | None:
+        """Résultat en cache utilisable pour cette requête, ou `None`.
+
+        L'entrée ne convient que si les modèles qui l'ont produite sont au moins
+        aussi gros que ceux demandés. Une lecture qui échoue n'est pas une
+        erreur de prédiction : on recalcule.
+        """
+        try:
+            entree = store.get_predict_cache(payload.question, payload.llm.temperature)
+        except Exception:
+            logger.warning("⚠️ Lecture du cache de prédiction impossible — le pipeline va tourner.", exc_info=True)
+            return None
+
+        if entree is None:
+            return None
+
+        caches = (entree["generator_model"], entree["extract_model"], entree["rag_model"])
+        if not satisfait(modeles, caches):
+            return None
+
+        sortie = PredictOutput(**entree["payload"])
+        # L'origine est réécrite à la lecture : elle doit nommer les modèles de
+        # l'entrée servie, pas ceux enregistrés au moment de son calcul si le
+        # schéma venait à diverger.
+        sortie.origin = PredictOrigin(
+            cached=True,
+            generator_model=caches[0],
+            extract_model=caches[1],
+            rag_model=caches[2],
+            computed_at=entree["computed_at"],
+        )
+        return sortie
+
+    def _ecrire_cache(self, store, payload: PredictInput, modeles: tuple[str, str, str], sortie: PredictOutput) -> None:
+        """Enregistre le résultat. Une écriture qui échoue ne doit jamais faire
+        échouer une requête : la prédiction calculée reste valide."""
+        try:
+            store.put_predict_cache(
+                payload.question,
+                payload.llm.temperature,
+                *modeles,
+                sortie.model_dump(exclude={"origin"}),
+            )
+        except Exception:
+            logger.warning("⚠️ Écriture du cache de prédiction impossible — le résultat reste valide.", exc_info=True)
 
     def get_available_llms(self) -> list[str]:
         """

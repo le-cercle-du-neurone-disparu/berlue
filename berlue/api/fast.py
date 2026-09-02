@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from berlue.api.fast_eval import eval_router
+from berlue.api.fast_eval import eval_router, get_store
 from berlue.api.schemas import LLMListOutput, PredictInput, PredictOutput
 from berlue.llm.client import OllamaClient
 from berlue.logging_config import setup_logging
@@ -133,7 +133,12 @@ def predict_endpoint(payload: PredictInput):
     Évalue une question avec un LLM et détecte les hallucinations.
     """
     try:
-        return app.state.service.predict(payload=payload, retriever=app.state.retriever, extractor=app.state.extractor)
+        return app.state.service.predict(
+            payload=payload,
+            retriever=app.state.retriever,
+            extractor=app.state.extractor,
+            store=get_store(),
+        )
     except Exception as e:
         logger.exception("❌ Erreur de prédiction")
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e

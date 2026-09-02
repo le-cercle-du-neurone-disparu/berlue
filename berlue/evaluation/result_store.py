@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from berlue.api.predict_cache import CACHE_FORMAT_VERSION, normaliser_question
 from berlue.api.schemas import ConfusionMatrix, ConfusionRow
 from berlue.core.schemas import Verdict
 from berlue.evaluation.signals import SIGNALS_FORMAT_VERSION
@@ -154,6 +155,27 @@ class LocalResultStore:
                 signals TEXT NOT NULL,
                 computed_at TEXT NOT NULL,
                 UNIQUE(dataset, ratio, model_id, pipeline_version, question_hash, answer_hash)
+            )
+            """
+        )
+        # Cache des prédictions de /predict — sans rapport avec les tables d'éval
+        # ci-dessus, et régi par d'autres règles : un modèle y est identifié par
+        # sa TAILLE, pas par son tag exact (cf. berlue.api.predict_cache). Une
+        # seule ligne par (question normalisée, température) : un recalcul par des
+        # modèles plus gros remplace, il n'empile pas de variantes.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS predict_cache (
+                question_key TEXT NOT NULL,
+                temperature REAL NOT NULL,
+                question TEXT NOT NULL,
+                generator_model TEXT NOT NULL,
+                extract_model TEXT NOT NULL,
+                rag_model TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                format_version INTEGER NOT NULL,
+                computed_at TEXT NOT NULL,
+                PRIMARY KEY (question_key, temperature)
             )
             """
         )
@@ -329,6 +351,130 @@ class LocalResultStore:
             )
             conn.commit()
         return cursor.rowcount > 0
+
+    def purge_predict_cache(
+        self,
+        question: str | None = None,
+        temperature: float | None = None,
+        generator_model: str | None = None,
+    ) -> int:
+        """Vide le cache de prédiction, éventuellement filtré. Rend le nombre de
+        lignes supprimées.
+
+        Méthode à part, et non un scope de `purge()` : les filtres de l'éval
+        (`dataset`, `ratio`, `model_id`…) n'ont aucune colonne correspondante
+        ici. Les y mêler donnerait soit une purge qui ne fait rien sans le dire,
+        soit une suppression non bornée déclenchée par un filtre sans rapport —
+        la faute qui a déjà détruit `llm_answers` et `judge_verdicts`. Une purge
+        d'évaluation ne touche donc jamais ce cache, et réciproquement.
+        """
+        clauses, valeurs = [], []
+        if question is not None:
+            clauses.append("question_key=?")
+            valeurs.append(normaliser_question(question))
+        if temperature is not None:
+            clauses.append("temperature=?")
+            valeurs.append(float(temperature))
+        if generator_model is not None:
+            clauses.append("generator_model=?")
+            valeurs.append(generator_model)
+
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        with closing(self._connect()) as conn:
+            cursor = conn.execute(f"DELETE FROM predict_cache{where}", valeurs)  # noqa: S608 -- clauses construites ici, valeurs paramétrées
+            conn.commit()
+            return cursor.rowcount
+
+    def get_predict_cache(self, question: str, temperature: float) -> dict | None:
+        """Entrée de cache pour cette question et cette température, ou `None`.
+
+        Rend l'entrée telle quelle : c'est à l'appelant de décider, via
+        `predict_cache.satisfait`, si les modèles qui l'ont produite conviennent
+        à sa requête. Séparer la lecture de la décision permet de tester la règle
+        sans base, et de la réutiliser à la publication vers GCP.
+        """
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                """
+                SELECT question, generator_model, extract_model, rag_model, payload,
+                       format_version, computed_at
+                FROM predict_cache WHERE question_key=? AND temperature=?
+                """,
+                (normaliser_question(question), float(temperature)),
+            ).fetchone()
+        if not row:
+            return None
+        # Un format plus ancien est traité comme une absence : mieux vaut
+        # recalculer que désérialiser de travers un schéma qui a changé.
+        if row[5] != CACHE_FORMAT_VERSION:
+            return None
+        return {
+            "question": row[0],
+            "generator_model": row[1],
+            "extract_model": row[2],
+            "rag_model": row[3],
+            "payload": json.loads(row[4]),
+            "computed_at": row[6],
+        }
+
+    def put_predict_cache(
+        self,
+        question: str,
+        temperature: float,
+        generator_model: str,
+        extract_model: str,
+        rag_model: str,
+        payload: dict,
+    ) -> None:
+        """Écrit ou remplace l'entrée de cache pour (question, température).
+
+        `REPLACE` et non `INSERT OR IGNORE` : quand des modèles plus gros ont
+        recalculé, leur résultat doit prendre la place de l'ancien, sinon le
+        cache resterait figé sur la première réponse jamais produite.
+        """
+        with closing(self._connect()) as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO predict_cache
+                (question_key, temperature, question, generator_model, extract_model,
+                 rag_model, payload, format_version, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    normaliser_question(question),
+                    float(temperature),
+                    question,
+                    generator_model,
+                    extract_model,
+                    rag_model,
+                    json.dumps(payload, ensure_ascii=False),
+                    CACHE_FORMAT_VERSION,
+                    datetime.now(UTC).isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def list_predict_cache(self) -> list[dict]:
+        """Contenu du cache de prédiction, du plus récent au plus ancien —
+        de quoi inspecter sans ouvrir la base."""
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                """
+                SELECT question, temperature, generator_model, extract_model, rag_model, computed_at
+                FROM predict_cache ORDER BY computed_at DESC
+                """
+            ).fetchall()
+        return [
+            {
+                "question": r[0],
+                "temperature": r[1],
+                "generator_model": r[2],
+                "extract_model": r[3],
+                "rag_model": r[4],
+                "computed_at": r[5],
+            }
+            for r in rows
+        ]
 
     def get_signals(self, scope: EvalScope, question: str, answer: str) -> dict | None:
         """Signaux pré-fusion déjà en cache, ou `None`. Un cache hit signifie qu'on ne
