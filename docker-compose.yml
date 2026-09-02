@@ -1,6 +1,6 @@
 services:
   api:
-    image: ${GAR_IMAGE}:dev
+    image: ${GAR_RUNTIME_IMAGE:-berlue-runtime}:dev
     env_file: .env
     ports:
       - "8000:8000"
@@ -11,7 +11,13 @@ services:
     stdin_open: true # Active le mode interactif (équivalent à -i)
     tty: true        # Alloue un pseudo-TTY (équivalent à -t)
     volumes:
-      # Monte votre code local dans le conteneur pour le rechargement à chaud
-      - ./berlue:/api/berlue
-    # Démarre l'API avec le rechargement automatique activé
+      # L'image ne contient pas le code (il vient du bucket en GCP, cf.
+      # docker/entrypoint.sh) : en local on le monte directement dans /app, ce
+      # que l'entrypoint reconnaît — d'où aussi le rechargement à chaud.
+      - ./berlue:/app/berlue
+      - ./models:/app/models
+      - ./data:/app/data
+    # Court-circuite l'entrypoint : --reload n'a de sens qu'ici, avec le code
+    # bind-monté depuis le poste.
+    entrypoint: []
     command: sh -c "exec uvicorn berlue.api.fast:app --host 0.0.0.0 --port 8000 --reload"

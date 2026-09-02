@@ -1,23 +1,30 @@
-# 1. Récupère l'image de base dynamiquement (passée par le Makefile)
+# Image d'exécution unique des deux services applicatifs Berlue : l'API
+# (`berlue.api.fast:app`) et le service d'éval (`berlue.api.eval_service:app`)
+# ne différaient que par le module servi — un seul jeu de dépendances, une
+# seule image, le module choisi par BERLUE_APP_MODULE au déploiement.
+#
+# Elle ne contient PAS le code de `berlue/` : il arrive au démarrage du bucket
+# de code monté en volume (cf. docker/entrypoint.sh, make/code.mk). Le code
+# pèse 1 Mo, les dépendances ~6,5 Go — les enfermer dans la même image
+# imposait un build + push complet à chaque ligne de Python changée.
 ARG DOCKER_BASE_IMAGE=python:3.10.6-slim
 FROM ${DOCKER_BASE_IMAGE}
 
-WORKDIR /api
+WORKDIR /app
 
-# 2. Installe les dépendances (production uniquement !)
 COPY requirements.txt requirements.txt
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 3. Copie le code source et installe le package
-COPY berlue berlue
-COPY setup.py setup.py
+COPY docker/entrypoint.sh /usr/local/bin/berlue-entrypoint
+RUN chmod +x /usr/local/bin/berlue-entrypoint
 
-# Optionnel : décommenter si vous avez des modèles figés stockés localement
-# COPY models models
+# Le package n'est pas installé (pas de `pip install .`, il n'est pas là au
+# build) : il est importé depuis /app, où l'entrypoint dépose le code.
+ENV PYTHONPATH=/app
+# Sortie non bufferisée — sinon les marqueurs horodatés de
+# `berlue.evaluation.timing` n'apparaissent dans les logs Cloud Run qu'à
+# l'extinction du conteneur.
+ENV PYTHONUNBUFFERED=1
 
-# 4. Astuce production : installe le package sans les dépendances [dev] !
-RUN pip install . && rm -rf build *.egg-info
-
-# 5. Démarre l'API (utilise exec pour bien gérer les signaux comme CTRL+C)
-CMD ["sh", "-c", "exec uvicorn berlue.api.fast:app --host 0.0.0.0 --port $PORT"]
+ENTRYPOINT ["/usr/local/bin/berlue-entrypoint"]

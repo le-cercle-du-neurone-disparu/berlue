@@ -185,6 +185,26 @@ else
     ko "gs://${RAG_BUCKET_NAME} absent — make rag_bucket_create"
 fi
 
+# --- Bucket de code ----------------------------------------------------------
+# L'image applicative ne contient pas le code : sans ce bucket, ni l'API ni le
+# service d'éval ne démarrent (cf. docs/gcp/code-en-bucket.md).
+echo ""
+echo "Bucket de code"
+if gcloud storage buckets describe "gs://${CODE_BUCKET_NAME}" --project="$BUCKET_PROJECT" >/dev/null 2>&1 </dev/null; then
+    ok "gs://${CODE_BUCKET_NAME} présent"
+    code_version="${CODE_VERSION:-current}"
+    if gcloud storage ls "gs://${CODE_BUCKET_NAME}/${code_version}/berlue/params.py" >/dev/null 2>&1 </dev/null; then
+        ok "code publié pour CODE_VERSION=${code_version}"
+    else
+        warn "aucun code pour CODE_VERSION=${code_version} — les services ne démarreront pas (make code_push)"
+        present=$(gcloud storage ls "gs://${CODE_BUCKET_NAME}/" 2>/dev/null </dev/null \
+            | sed -e "s#.*/${CODE_BUCKET_NAME}/##" -e 's#/$##' | tr '\n' ' ')
+        echo "      versions présentes : ${present:-aucune}"
+    fi
+else
+    ko "gs://${CODE_BUCKET_NAME} absent — make code_bucket_create"
+fi
+
 # --- Verdict -----------------------------------------------------------------
 echo ""
 if [ "$FAILURES" -eq 0 ]; then
@@ -205,6 +225,8 @@ Reste à faire à la main (volontairement hors de gcp_setup) :
                           make gcp_eval_up WARM_MODELS="llama3.1:8b"   (eval + LLM)
      et toujours        : make gcp_down    (les 3 a 0 — coût, cf. docs/gcp/cloudrun.md)
   3. Index RAG: make download_fever_data_full && make build_fever_index && make rag_index_upload
+  4. Code applicatif : make code_push (puis make code_deploy à chaque changement
+     de Python — aucun rebuild d'image, cf. docs/gcp/code-en-bucket.md)
 MANUEL
 
 [ "$FAILURES" -eq 0 ]

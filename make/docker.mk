@@ -3,23 +3,30 @@
 # ==============================================================================
 
 docker_build_local: ## Build l'image Docker locale pour les tests (tag surchargeable : DOCKER_TAG=... , défaut dev)
-	@echo "🐳 Build de l'image Docker locale $(GAR_IMAGE):$(DOCKER_TAG)..."
+	@echo "🐳 Build de l'image Docker locale $(GAR_RUNTIME_IMAGE):$(DOCKER_TAG)..."
 	docker build \
 		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		--build-arg PACKAGE_NAME=$(PACKAGE_NAME) \
-		--tag=$(GAR_IMAGE):$(DOCKER_TAG) .
+		--tag=$(GAR_RUNTIME_IMAGE):$(DOCKER_TAG) .
 
-docker_run_local: ## Lance le conteneur Docker local sur le port 8000 (tag surchargeable : DOCKER_TAG=... , défaut dev)
-	@echo "🏃‍♂️ Lancement du conteneur $(GAR_IMAGE):$(DOCKER_TAG)..."
+# L'image ne contient pas le code (cf. Dockerfile) : en local on le bind-monte
+# dans /app, ce que l'entrypoint reconnaît et respecte (aucune copie depuis un
+# bucket). BERLUE_APP_MODULE choisit le service — API par défaut, éval avec
+# `make docker_run_local BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE)`.
+docker_run_local: ## Lance le conteneur Docker local sur le port 8000, code local monté (tag : DOCKER_TAG=..., service : BERLUE_APP_MODULE=...)
+	@echo "🏃‍♂️ Lancement du conteneur $(GAR_RUNTIME_IMAGE):$(DOCKER_TAG) ($(BERLUE_APP_MODULE))..."
 	@echo "👉 Allez sur http://localhost:8000"
 	docker run -it \
 		--env-file .env \
 		-e PORT=8000 \
+		-e BERLUE_APP_MODULE=$(BERLUE_APP_MODULE) \
+		-v $(PWD)/berlue:/app/berlue:ro \
+		-v $(PWD)/models:/app/models:ro \
+		-v $(PWD)/data:/app/data \
 		-p 8000:8000 \
-		$(GAR_IMAGE):$(DOCKER_TAG)
+		$(GAR_RUNTIME_IMAGE):$(DOCKER_TAG)
 
 compose_up: docker_build_local ## Lance l'API via docker-compose (rechargement à chaud, code monté en volume)
-	@echo "🐳 Lancement via docker compose (image $(GAR_IMAGE):dev)..."
+	@echo "🐳 Lancement via docker compose (image $(GAR_RUNTIME_IMAGE):dev)..."
 	docker compose up
 
 compose_down: ## Arrête et supprime les conteneurs/réseau docker-compose
@@ -120,47 +127,34 @@ docker_auth_if_available: ## Comme docker_auth, mais se contente d'un avertissem
 		echo "⚠️  Docker introuvable — authentification Docker sautée (nécessaire seulement pour build/push des images)."; \
 	fi
 
-# Les 3 images du projet, build + push. Indépendantes de CLOUDRUN_ENV : une
-# seule image API `:prod` est promue d'un environnement à l'autre (cf.
-# cloudrun_deploy), jamais rebuildée par environnement.
-docker_build_push_all: ## Build et push les 3 images (API, service d'éval, Ollama) vers Artifact Registry
+# Les 2 images du projet, build + push. Indépendantes de CLOUDRUN_ENV et du
+# code applicatif : `berlue-runtime` ne porte que les dépendances, et sert
+# aussi bien l'API que le service d'éval (le module servi est choisi au
+# déploiement, cf. BERLUE_APP_MODULE). Elle n'a donc à être rebuildée que
+# quand requirements.txt ou le Dockerfile changent — un changement de Python
+# passe par `make code_deploy` (cf. make/code.mk).
+docker_build_push_all: ## Build et push les 2 images (runtime applicatif, Ollama) vers Artifact Registry
 	@command -v docker >/dev/null 2>&1 || { \
 		echo "❌ Docker introuvable — indispensable pour builder les images."; \
 		exit 1; \
 	}
 	@$(MAKE) --no-print-directory docker_build_prod
 	@$(MAKE) --no-print-directory docker_push_prod
-	@$(MAKE) --no-print-directory docker_build_eval_service
-	@$(MAKE) --no-print-directory docker_push_eval_service
 	@$(MAKE) --no-print-directory docker_build_llm
 	@$(MAKE) --no-print-directory docker_push_llm
-	@echo "✅ 3 images à jour dans $(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)."
+	@echo "✅ 2 images à jour dans $(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)."
 
-docker_build_prod: ## Build l'image Docker pour la production (linux/amd64)
-	@echo "🏗️ Build de l'image de production..."
+docker_build_prod: ## Build l'image runtime applicatif pour la production (linux/amd64)
+	@echo "🏗️ Build de l'image runtime $(GAR_RUNTIME_IMAGE)..."
 	docker build \
 		--platform linux/amd64 \
 		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		--build-arg PACKAGE_NAME=$(PACKAGE_NAME) \
-		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
+		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		.
 
-docker_push_prod: ## Push l'image de production vers Artifact Registry
+docker_push_prod: ## Push l'image runtime applicatif vers Artifact Registry
 	@echo "🚀 Push de l'image vers Artifact Registry ($(ARTIFACT_PROJECT))..."
-	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod
-
-docker_build_eval_service: ## Build l'image du service Cloud Run d'éval (Dockerfile.eval-service, linux/amd64)
-	@echo "🏗️ Build de l'image service d'éval $(GAR_EVAL_SERVICE_IMAGE)..."
-	docker build \
-		--platform linux/amd64 \
-		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		-f Dockerfile.eval-service \
-		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest \
-		.
-
-docker_push_eval_service: ## Push l'image service d'éval vers Artifact Registry
-	@echo "🚀 Push de l'image service d'éval vers Artifact Registry ($(ARTIFACT_PROJECT))..."
-	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest
+	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod
 
 docker_build_llm: ## Build l'image du service Cloud Run Ollama (Dockerfile.llm, linux/amd64)
 	@echo "🏗️ Build de l'image LLM $(GAR_LLM_IMAGE)..."

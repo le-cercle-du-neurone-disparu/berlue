@@ -35,7 +35,9 @@ propre page : [`cloudrun.md`](cloudrun.md).
 
 ## Artifact Registry
 
-Dépôt d'images Docker (image API `:prod`, image d'éval, image Ollama).
+Dépôt d'images Docker : `berlue-runtime:prod` (l'API **et** le service
+d'éval, cf. [`code-en-bucket.md`](code-en-bucket.md)) et `berlue-llm`
+(Ollama).
 Provisionné par `make gcp_setup` : API activée dans `ARTIFACT_PROJECT`,
 dépôt créé, droit de push accordé à votre compte et authentification
 Docker configurée. Les commandes unitaires restent utiles pour réparer un

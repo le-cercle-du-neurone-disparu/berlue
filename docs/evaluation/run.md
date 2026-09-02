@@ -169,8 +169,8 @@ pour simuler plusieurs workers sur le même scope) :
 code Python lui-même (`GcpResultStore` bascule déjà seul entre
 impersonation locale et identité Cloud Run — cf.
 [`auth.md`](../gcp/auth.md)) — mais un vrai chemin d'exécution existe : le
-service Cloud Run `berlue-eval` (`berlue.api.eval_service`,
-`Dockerfile.eval-service`), tourne en continu (`min-instances=1`,
+service Cloud Run `berlue-eval` (`berlue.api.eval_service`, servi par l'image
+applicative unique via `BERLUE_APP_MODULE`), tourne en continu (`min-instances=1`,
 monté/éteint par `gcp_eval_up`/`gcp_down`) plutôt qu'un conteneur neuf par
 exécution — même contrat de flags que la CLI locale, reçus en JSON par un
 endpoint `POST /invoke` :
