@@ -102,6 +102,40 @@ def _reparer_objet_tronque(texte: str) -> dict | None:
     return None
 
 
+def _bloc_trace(claim, evidences: list[dict], meta: dict, resultat: dict, verdict_final: str) -> str:
+    """Trace d'une vérification, en un seul bloc.
+
+    Un seul appel au journal plutôt qu'une dizaine : les lignes d'une même
+    affirmation restaient auparavant dispersées entre des séparateurs, et il
+    fallait les recoller à la main pour comprendre une décision. Les métadonnées
+    de génération y figurent parce que c'est là qu'on les cherche quand un
+    verdict manque — `done_reason` dit si le modèle s'est arrêté de lui-même, et
+    le nombre de caractères si la réponse est arrivée entière.
+    """
+    lignes = [
+        f"┌─ RAG · affirmation {claim.id}",
+        f"│ affirmation  : {claim.text}",
+        "│ extraits     :" if evidences else "│ extraits     : aucun",
+    ]
+    for i, ev in enumerate(evidences):
+        lignes.append(f"│   [{i}] d={ev['distance']:.3f} {ev['label']:<9} {ev['text']}")
+    if meta:
+        lignes.append(
+            f"│ génération   : {meta.get('modele')} · {meta.get('secondes')}s · "
+            f"{meta.get('tokens')} tokens · {meta.get('caracteres')} car. · fin={meta.get('done_reason')}"
+        )
+    preuve = resultat.get("used_evidence_index")
+    lignes.append(
+        f"│ verdict      : {verdict_final} · confiance {resultat.get('confidence')} · "
+        f"preuve {'aucune' if preuve is None else f'[{preuve}]'}"
+    )
+    raisonnement = str(resultat.get("reasoning", "")).strip()
+    if raisonnement:
+        lignes.append(f"│ raisonnement : {raisonnement}")
+    lignes.append("└─")
+    return "\n".join(lignes)
+
+
 class RagRetriever:
     def __init__(
         self,
@@ -134,10 +168,6 @@ class RagRetriever:
         # 1. Génération l'embedding de l'affirmation
         claim_embedding = self.model.encode(claim.text, convert_to_numpy=True).reshape(1, -1)
 
-        logger.info("\n===============================\n")
-        logger.info(f"claim : {claim.text}")
-        logger.info("\n===============================\n")
-
         # 2. Recherche dans l'index
         distances, indices = self.index.search(claim_embedding, top_k)
 
@@ -163,10 +193,6 @@ class RagRetriever:
         # 1. Récupération des preuves (le contexte)
         evidences = self.retrieve(claim, top_k=3)  # Top 3 est souvent suffisant pour un LLM
 
-        logger.info("\n===============================\n")
-        logger.info(f"evidences : {evidences}")
-        logger.info("\n===============================\n")
-
         if not evidences:
             # Ce n'est pas une panne : la recherche a fonctionné et n'a rien trouvé.
             # Le RAG dit qu'il ne sait pas, ce qui est un jugement recevable.
@@ -180,10 +206,6 @@ class RagRetriever:
 
         context_texts = json.dumps(context_list, ensure_ascii=False, indent=2)
 
-        logger.info("\n===============================\n")
-        logger.info(f"chunks JSON : \n{context_texts}")
-        logger.info("\n===============================\n")
-
         # 3. Construction du prompt blindé anti-hallucination
         prompt = RAG_SYSTEM_PROMPT.format(claim_text=claim.text, context_texts=context_texts)
 
@@ -192,15 +214,7 @@ class RagRetriever:
             response_text = self.llm_client.generate(prompt, num_predict=NUM_PREDICT_RAG)
             llm_result = _premier_objet_json(response_text)
 
-            logger.info("\n=========== llm_result ===============\n")
-            logger.info(f"{llm_result}")
-            logger.info("\n===============================\n")
-
             verdict_str = llm_result.get("verdict", "NOT ENOUGH INFO")
-
-            logger.info("\n=========== verdict_str ===============\n")
-            logger.info(f"{verdict_str}")
-            logger.info("\n===============================\n")
 
             confidence = float(llm_result.get("confidence", 0.0))
             used_idx = llm_result.get("used_evidence_index")
@@ -247,6 +261,17 @@ class RagRetriever:
                     verdict_str = "I_DONT_KNOW"
                     confidence = 0.0
 
+            logger.info(
+                "%s",
+                _bloc_trace(
+                    claim,
+                    evidences,
+                    getattr(self.llm_client, "derniere_generation", {}),
+                    {**llm_result, "confidence": confidence},
+                    verdict_str,
+                ),
+            )
+
             return RagVerdict(
                 claim_id=claim.id,
                 verdict=RAG_VERDICT_TO_JUDGMENT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
@@ -255,8 +280,15 @@ class RagRetriever:
             )
 
         except json.JSONDecodeError as e:
-            logger.warning("⚠️ Erreur de parsing JSON sur l'affirmation %s : %s", claim.id, e)
-            logger.warning("Réponse brute du modèle : %s", response_text)
+            meta = getattr(self.llm_client, "derniere_generation", {})
+            logger.warning(
+                "┌─ RAG · affirmation %s — RÉPONSE ILLISIBLE\n"
+                "│ erreur       : %s\n"
+                "│ génération   : %s · %ss · %s tokens · %s car. · fin=%s\n"
+                "│ réponse brute:\n%s\n└─",
+                claim.id, e, meta.get("modele"), meta.get("secondes"), meta.get("tokens"),
+                meta.get("caracteres"), meta.get("done_reason"), response_text,
+            )
             raise RagPanne(f"réponse du RAG inexploitable sur l'affirmation {claim.id}") from e
         except RagPanne:
             raise
