@@ -167,3 +167,40 @@ docker_build_llm: ## Build l'image du service Cloud Run Ollama (Dockerfile.llm, 
 docker_push_llm: ## Push l'image LLM vers Artifact Registry
 	@echo "🚀 Push de l'image LLM vers Artifact Registry ($(ARTIFACT_PROJECT))..."
 	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest
+
+# ==============================================================================
+# IMAGE VENUE D'UN AUTRE PROJET
+# ==============================================================================
+# Quand IMAGE_SOURCE_PROJECT désigne un projet tiers, Cloud Run n'y a aucun
+# droit par défaut : le déploiement échoue tard, sur une erreur de permission
+# peu parlante. Ces deux cibles rendent le problème visible avant.
+
+image_source_grant: gcp_check_cli_auth ## Autorise le compte de service Cloud Run de CE projet à tirer les images de IMAGE_SOURCE_PROJECT (à lancer par qui a les droits sur le projet source)
+	@if [ "$(IMAGE_SOURCE_PROJECT)" = "$(GCP_PROJECT)" ]; then \
+		echo "ℹ️  IMAGE_SOURCE_PROJECT vaut $(GCP_PROJECT) : les images sont déjà locales, rien à autoriser."; \
+		exit 0; \
+	fi
+	@echo "🔐 Lecture de $(IMAGE_SOURCE_REPO) ($(IMAGE_SOURCE_PROJECT)) pour $(CLOUDRUN_SA_EMAIL)..."
+	gcloud artifacts repositories add-iam-policy-binding $(IMAGE_SOURCE_REPO) \
+		--location=$(IMAGE_SOURCE_REGION) \
+		--project=$(IMAGE_SOURCE_PROJECT) \
+		--member="serviceAccount:$(CLOUDRUN_SA_EMAIL)" \
+		--role="roles/artifactregistry.reader" \
+		--quiet </dev/null >/dev/null
+	@echo "✅ $(CLOUDRUN_SA_EMAIL) peut tirer les images de $(IMAGE_SOURCE_PROJECT)."
+
+image_source_check: ## Vérifie que les images pointées par IMAGE_SOURCE_* existent et sont lisibles avec vos droits
+	@echo "🔎 Source des images : $(IMAGE_SOURCE_REGION)-docker.pkg.dev/$(IMAGE_SOURCE_PROJECT)/$(IMAGE_SOURCE_REPO)"
+	@FAIL=0; \
+	for URI in "$(RUNTIME_IMAGE_URI)" "$(LLM_IMAGE_URI)"; do \
+		if gcloud artifacts docker images describe "$$URI" >/dev/null 2>&1 </dev/null; then \
+			echo "  ✅ $$URI"; \
+		else \
+			echo "  ❌ $$URI — absente, ou illisible avec votre compte"; \
+			FAIL=1; \
+		fi; \
+	done; \
+	if [ "$$FAIL" = "1" ]; then \
+		echo "   👉 Si le dépôt est dans un autre projet : make image_source_grant (côté projet source)."; \
+		exit 1; \
+	fi
