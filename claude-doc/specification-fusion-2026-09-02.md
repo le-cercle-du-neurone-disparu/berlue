@@ -182,8 +182,8 @@ n'affirme rien : il n'y a rien dont être confiant, donc 0.00. Corrige le point 
 
 | nom | valeur de départ | statut |
 |---|---|---|
-| `FUSION_WEIGHT_RAG` | 0.50 | 50/50 visé avec SelfCheck hors preuve FEVER |
-| `FUSION_WEIGHT_SELFCHECK_CHARGE` | 0.50 | SelfCheck accuse — **50/50 exact** avec le RAG |
+| `FUSION_WEIGHT_RAG` | 0.50 | 50/50 d'influence globale visé avec SelfCheck hors preuve FEVER |
+| `FUSION_WEIGHT_SELFCHECK_CHARGE` | 0.65 | SelfCheck accuse — compense son bridage à décharge pour une influence **globale** de ~50 % |
 | `FUSION_WEIGHT_SELFCHECK_DECHARGE` | 0.35 | SelfCheck disculpe — au plafond de `0,727 × RAG`, au-delà duquel un modèle cohérent annulerait un jugement catégorique |
 | `FUSION_DIVERGENCE_NEUTRE` | 0.50 | **à calibrer** — notée `d0` dans les formules |
 | `FUSION_BANDE_RAG_MIN` / `FUSION_BANDE_RAG_MAX` | 0.40 / 0.60 | à calibrer |

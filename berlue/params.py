@@ -182,19 +182,27 @@ NUM_PREDICT_RAG = int(os.environ.get("BERLUE_NUM_PREDICT_RAG", "600"))
 # de nos jeux, donc hors preuve documentaire la décision se joue entre deux sources
 # — la conviction propre du modèle du RAG, et SelfCheck.
 #
-# Objectif : 50/50 entre les deux. Atteint exactement quand SelfCheck accuse.
+# Objectif : 50/50 d'influence GLOBALE entre les deux, pas direction par direction.
 #
-# Côté décharge, un 50/50 strict est arithmétiquement impossible sans perdre le cas
-# d'usage du projet. Pour qu'un RAG catégorique « c'est faux » reste CONTREDIT face
-# à un modèle parfaitement stable — l'hallucination stable — il faut :
+# Côté décharge, SelfCheck est bridé par nécessité : pour qu'un RAG catégorique
+# « c'est faux » reste CONTREDIT face à un modèle parfaitement stable —
+# l'hallucination stable, le cas d'usage du projet — il faut
 #
-#     (0·RAG + décharge·0,95) / (RAG + décharge) < seuil de 0,40
+#     (0·RAG + décharge·0,95) / (RAG + décharge) < FUSION_SEUIL_FAUX
 #     soit  décharge < 0,727 · RAG,  donc < 0,36 ici.
 #
-# La valeur retenue, 0,35, est la plus proche du 50/50 que cette contrainte autorise
-# (59/41). Au-delà, un modèle cohérent annulerait un jugement catégorique, ce que la
-# règle « la cohérence ne peut que charger, jamais disculper » interdit —
-# `test_hallucination_stable_est_contredite` garde cette limite.
+# Sa part y plafonne donc à 41 %. Le poids à charge compense au-dessus de 50 % pour
+# que la moyenne des deux revienne à 50 : 56,5 % à charge, 41,2 % à décharge, soit
+# 48,8 % en moyenne. C'est le réglage le plus proche d'un vrai 50/50 sans franchir
+# la falaise mesurée à charge = 0,75, où le taux d'accusation sur les réponses
+# VRAIES saute de 38 % à 56 % sans que la séparation progresse.
+#
+# Pondérer par la fréquence réelle des deux directions (87 % d'accusations) aurait
+# été trompeur : cette proportion vient de la saturation de SelfCheck avec le 1b,
+# la figer dans le réglage reviendrait à inscrire un défaut dans la formule.
+#
+# `test_hallucination_stable_est_contredite` et
+# `test_la_decharge_ne_peut_pas_annuler_un_jugement_categorique` gardent la limite.
 #
 # Mesuré : ce rééquilibrage ne change aucun verdict sur les données actuelles. Il
 # prendra effet quand SelfCheck cessera d'être saturé (divergence médiane 0,95 avec
@@ -204,7 +212,7 @@ FUSION_WEIGHT_RAG = float(os.environ.get("BERLUE_FUSION_WEIGHT_RAG", "0.5"))
 # informatif qu'une divergence faible. Se contredire n'a qu'une lecture (le modèle
 # ne sait pas) ; être cohérent en a deux (il sait, ou il se trompe avec constance).
 # La cohérence ne peut donc pas peser autant que l'incohérence.
-FUSION_WEIGHT_SELFCHECK_CHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_CHARGE", "0.5"))
+FUSION_WEIGHT_SELFCHECK_CHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_CHARGE", "0.65"))
 FUSION_WEIGHT_SELFCHECK_DECHARGE = float(os.environ.get("BERLUE_FUSION_WEIGHT_SELFCHECK_DECHARGE", "0.35"))
 
 # Divergence à laquelle SelfCheck est neutre : en deçà il penche vers le vrai,

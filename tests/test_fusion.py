@@ -249,7 +249,7 @@ TABLEAU = [
     (RagJudgment.LIKELY_TRUE, 1.00, 0.50, None, Verdict.SUPPORTED, Fondement.CONVICTION, 0.79),
     (RagJudgment.LIKELY_TRUE, 1.00, 0.90, None, Verdict.NOT_ENOUGH_INFO, Fondement.CONVICTION, 0.00),
     (RagJudgment.LIKELY_TRUE, 0.60, 0.90, None, Verdict.NOT_ENOUGH_INFO, Fondement.CONVICTION, 0.00),
-    (RagJudgment.LIKELY_FALSE, 1.00, 0.90, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.95),
+    (RagJudgment.LIKELY_FALSE, 1.00, 0.90, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.94),
     (RagJudgment.LIKELY_FALSE, 1.00, 0.05, None, Verdict.CONTRADICTED, Fondement.CONVICTION, 0.61),
     (RagJudgment.LIKELY_FALSE, 0.50, 0.05, None, Verdict.NOT_ENOUGH_INFO, Fondement.CONVICTION, 0.00),
     (RagJudgment.LIKELY_TRUE, 1.00, None, "panne SelfCheck", Verdict.PANNE, Fondement.AUCUN, 0.00),
@@ -293,6 +293,13 @@ def test_la_decharge_ne_peut_pas_annuler_un_jugement_categorique():
     assert _fuse(rag=_rag(RagJudgment.LIKELY_FALSE, 1.0), divergence=0.05).verdict == Verdict.CONTRADICTED
 
 
-def test_selfcheck_et_le_rag_pesent_pareil_quand_selfcheck_accuse():
-    """Le 50/50 visé est atteint exactement du côté accusation."""
-    assert params.FUSION_WEIGHT_SELFCHECK_CHARGE == params.FUSION_WEIGHT_RAG
+def test_influence_globale_de_selfcheck_proche_de_la_moitie():
+    """Le 50/50 visé est GLOBAL, pas direction par direction : SelfCheck étant bridé
+    quand il disculpe (cf. test ci-dessus), son poids à charge compense au-dessus de
+    50 % pour que la moyenne des deux revienne à ~50."""
+    r = params.FUSION_WEIGHT_RAG
+    part_charge = params.FUSION_WEIGHT_SELFCHECK_CHARGE / (r + params.FUSION_WEIGHT_SELFCHECK_CHARGE)
+    part_decharge = params.FUSION_WEIGHT_SELFCHECK_DECHARGE / (r + params.FUSION_WEIGHT_SELFCHECK_DECHARGE)
+    moyenne = (part_charge + part_decharge) / 2
+    assert 0.45 <= moyenne <= 0.55, f"influence moyenne de SelfCheck : {moyenne:.1%}"
+    assert part_charge > 0.5, "le poids à charge doit compenser le bridage à décharge"
