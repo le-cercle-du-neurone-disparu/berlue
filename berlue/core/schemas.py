@@ -108,6 +108,12 @@ class PipelineResult:
     # --- 5. La Fusion Finale ---
     fused_verdicts: list[FusedVerdict] = field(default_factory=list)
 
+    # Détail de chaque vérification RAG — extraits remontés avec leur distance,
+    # réponse brute du modèle, métadonnées de génération. Toujours rempli : ce
+    # sont les mêmes données que la trace journalisée, et les collecter coûte
+    # quelques dictionnaires. C'est l'API qui décide de les exposer ou non.
+    rag_traces: list[dict] = field(default_factory=list)
+
     # Renseigné quand un composant a échoué. La réponse entière est alors invalide,
     # pour TOUTES les affirmations et pas seulement celle qui a échoué, et la question
     # doit être rejouée. Distinct d'un RAG qui répond « je ne sais pas » : ça, c'est

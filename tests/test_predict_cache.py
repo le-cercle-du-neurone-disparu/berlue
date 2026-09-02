@@ -218,8 +218,14 @@ def _service_avec_pipeline_compte(monkeypatch):
         def generate_response(self, question):
             appels["n"] += 1
             resultat = MagicMock()
+            resultat.question = question
             resultat.raw_answer = f"réponse {appels['n']}"
+            resultat.claims = []
+            resultat.samples = []
+            resultat.selfcheck_scores = []
+            resultat.rag_traces = []
             resultat.fused_verdicts = []
+            resultat.panne = None
             return resultat
 
         def extract_claims(self, r):
@@ -296,3 +302,66 @@ def test_ignore_cache_est_faux_par_defaut():
     from berlue.api.schemas import PredictInput
 
     assert PredictInput(question="Q").ignore_cache is False
+
+
+# ==============================================================================
+# debug : le détail lisible, dans la réponse et dans le cache
+# ==============================================================================
+
+
+def _payload_debug(debug=False, ignore_cache=False):
+    from berlue.api.schemas import LLMConfig, PredictInput
+
+    return PredictInput(
+        question="Quelle est la capitale ?",
+        llm=LLMConfig(name="llama3.2:3b", temperature=0.0),
+        debug=debug,
+        ignore_cache=ignore_cache,
+    )
+
+
+def test_debug_absent_par_defaut(tmp_path, monkeypatch):
+    """Un client qui ne demande rien ne reçoit rien de plus — Aletheia comprise."""
+    service, _ = _service_avec_pipeline_compte(monkeypatch)
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+
+    resultat = service.predict(_payload_debug(), retriever=None, extractor=None, store=store)
+    assert resultat.debug is None
+
+
+def test_debug_rend_du_texte_lisible(tmp_path, monkeypatch):
+    service, _ = _service_avec_pipeline_compte(monkeypatch)
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+
+    resultat = service.predict(_payload_debug(debug=True), retriever=None, extractor=None, store=store)
+    assert isinstance(resultat.debug, str)
+    assert "BERLUE · détail de l'analyse" in resultat.debug
+    assert "Quelle est la capitale ?" in resultat.debug
+
+
+def test_le_debug_est_mis_en_cache_et_resservi(tmp_path, monkeypatch):
+    """Calculé même sans être demandé, pour qu'une réponse resservie puisse
+    montrer le détail de son propre calcul plutôt que rien."""
+    service, appels = _service_avec_pipeline_compte(monkeypatch)
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+
+    # Premier appel SANS debug : le détail doit tout de même être stocké.
+    service.predict(_payload_debug(), retriever=None, extractor=None, store=store)
+    assert appels["n"] == 1
+    assert store.get_predict_cache("Quelle est la capitale ?", 0.0)["payload"]["debug"]
+
+    # Second appel AVEC debug : servi depuis le cache, détail compris.
+    resultat = service.predict(_payload_debug(debug=True), retriever=None, extractor=None, store=store)
+    assert appels["n"] == 1
+    assert resultat.origin.cached is True
+    assert "BERLUE · détail de l'analyse" in resultat.debug
+
+
+def test_le_debug_du_cache_reste_masque_si_non_demande(tmp_path, monkeypatch):
+    service, _ = _service_avec_pipeline_compte(monkeypatch)
+    store = LocalResultStore(db_path=str(tmp_path / "eval.db"))
+
+    service.predict(_payload_debug(debug=True), retriever=None, extractor=None, store=store)
+    resultat = service.predict(_payload_debug(), retriever=None, extractor=None, store=store)
+    assert resultat.origin.cached is True
+    assert resultat.debug is None

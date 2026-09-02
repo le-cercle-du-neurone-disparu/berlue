@@ -59,6 +59,11 @@ class PredictInput(BaseModel):
     # prompt ou de seuils, que la clé de cache ne voit pas et qui laisserait
     # sinon servir une réponse d'avant le changement.
     ignore_cache: bool = False
+    # Joint au résultat le détail de chaque étage — extraits remontés avec leur
+    # distance, réponse du modèle RAG, divergence SelfCheck. Hors debug, la
+    # réponse reste identique à ce qu'elle était : un client qui ne demande rien
+    # ne reçoit rien de plus.
+    debug: bool = False
 
 
 # Les seules valeurs qu'un statut peut prendre. Un `str` libre laissait les deux
@@ -118,6 +123,11 @@ class PredictOutput(BaseModel):
     # Facultatif : une réponse produite hors du chemin de cache (tests, appels
     # directs) reste valide sans ce champ.
     origin: PredictOrigin | None = None
+    # Texte lisible du détail de l'analyse — le même que celui journalisé par le
+    # serveur. Absent sauf si la requête a demandé `debug: true`, mais TOUJOURS
+    # calculé et mis en cache : une réponse resservie doit pouvoir montrer son
+    # propre détail, pas rien.
+    debug: str | None = None
 
 
 # ==============================================================================

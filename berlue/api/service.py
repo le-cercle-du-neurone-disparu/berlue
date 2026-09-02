@@ -5,6 +5,7 @@ from berlue.api.schemas import STATUS_BY_VERDICT, ClaimResult, PredictInput, Pre
 from berlue.llm.client import OllamaClient
 from berlue.params import EXTRACT_MODEL, RAG_MODEL
 from berlue.pipeline.hurlu_berlu import HurluBerlu
+from berlue.rag.retriever import bloc_trace
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +70,15 @@ class BerlueService:
                 extract_model=modeles[1],
                 rag_model=modeles[2],
             ),
+            debug=_construire_debug(res, modeles),
         )
 
         if store is not None:
             self._ecrire_cache(store, payload, modeles, sortie)
 
+        # Calculé et mis en cache dans tous les cas, exposé seulement sur demande.
+        if not payload.debug:
+            sortie.debug = None
         return sortie
 
     def _lire_cache(self, store, payload: PredictInput, modeles: tuple[str, str, str]) -> PredictOutput | None:
@@ -97,6 +102,11 @@ class BerlueService:
             return None
 
         sortie = PredictOutput(**entree["payload"])
+        # Le détail vient du calcul qui a produit CETTE réponse : le resservir
+        # avec elle est cohérent. On le masque seulement si l'appelant n'en veut
+        # pas.
+        if not payload.debug:
+            sortie.debug = None
         # L'origine est réécrite à la lecture : elle doit nommer les modèles de
         # l'entrée servie, pas ceux enregistrés au moment de son calcul si le
         # schéma venait à diverger.
@@ -132,3 +142,50 @@ class BerlueService:
         naturellement jusqu'au endpoint FastAPI.
         """
         return OllamaClient().list_models()
+
+
+def _construire_debug(res, modeles: tuple[str, str, str]) -> str:
+    """Rend en texte lisible tout ce qui n'existait que dans les logs du serveur.
+
+    Le même rendu que le journal, à partir des mêmes données : diagnostiquer
+    depuis l'API et depuis les logs doit montrer la même chose, sinon on corrige
+    d'après une version ce qu'on a observé sur l'autre.
+
+    Les trois étages sont appariés par identifiant d'affirmation, jamais par
+    position : une affirmation peut manquer d'un côté — RAG en panne, score
+    SelfCheck absent — et un appariement positionnel décalerait tout le reste
+    sans rien signaler.
+    """
+    divergences = {sc.claim_id: sc.divergence_score for sc in res.selfcheck_scores}
+    fusions = {v.claim_id: v for v in res.fused_verdicts}
+
+    lignes = [
+        "═══ BERLUE · détail de l'analyse ═══",
+        f"question   : {res.question}",
+        f"réponse    : {res.raw_answer}",
+        f"modèles    : génération {modeles[0]} · extraction {modeles[1]} · RAG {modeles[2]}",
+        f"affirmations : {len(res.claims)} · échantillons SelfCheck : {len(res.samples)}",
+    ]
+    if res.panne:
+        lignes.append(f"⚠️ PANNE   : {res.panne} — aucun verdict n'est rendu.")
+    lignes.append("")
+
+    traces = {t["claim_id"]: t for t in res.rag_traces}
+    for claim in res.claims:
+        detail = dict(traces.get(claim.id) or {"claim_id": claim.id, "claim_text": claim.text, "evidences": []})
+        detail["selfcheck_divergence"] = divergences.get(claim.id)
+        fusion = fusions.get(claim.id)
+        if fusion:
+            detail["fusion_verdict"] = fusion.verdict.value
+            detail["fusion_confidence"] = fusion.confidence
+            detail["fusion_explanation"] = fusion.explanation
+            detail["fusion_fondement"] = fusion.fondement.value
+        lignes.append(bloc_trace(detail))
+        lignes.append("")
+
+    if res.samples:
+        lignes.append("═══ échantillons SelfCheck ═══")
+        for i, echantillon in enumerate(res.samples, 1):
+            lignes.append(f"  [{i}] {echantillon}")
+
+    return "\n".join(lignes)

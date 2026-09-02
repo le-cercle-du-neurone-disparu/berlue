@@ -95,8 +95,11 @@ class HurluBerlu:
         logger.debug("🧠 Calcul des verdicts du RAG...")
 
         # Réécrit la liste au lieu d'y ajouter : un double appel dupliquait tout.
+        result.rag_traces = []
         try:
-            result.rag_scores = [self.retriever.verify_claim(claim=claim) for claim in result.claims]
+            result.rag_scores = [
+                self.retriever.verify_claim(claim=claim, traces=result.rag_traces) for claim in result.claims
+            ]
         except RagPanne as e:
             logger.warning("⚠️ RAG en panne : %s", e)
             result.rag_scores = []

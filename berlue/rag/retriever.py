@@ -102,34 +102,62 @@ def _reparer_objet_tronque(texte: str) -> dict | None:
     return None
 
 
-def _bloc_trace(claim, evidences: list[dict], meta: dict, resultat: dict, verdict_final: str) -> str:
-    """Trace d'une vérification, en un seul bloc.
+def _trace(claim, evidences: list[dict], meta: dict, resultat: dict, verdict_final: str) -> dict:
+    """Détail d'une vérification, sous forme de données.
 
-    Un seul appel au journal plutôt qu'une dizaine : les lignes d'une même
-    affirmation restaient auparavant dispersées entre des séparateurs, et il
-    fallait les recoller à la main pour comprendre une décision. Les métadonnées
-    de génération y figurent parce que c'est là qu'on les cherche quand un
-    verdict manque — `done_reason` dit si le modèle s'est arrêté de lui-même, et
-    le nombre de caractères si la réponse est arrivée entière.
+    Sert deux usages à partir d'une seule construction : la trace journalisée et
+    le champ `debug` de l'API. Les dupliquer les aurait fait diverger.
+    """
+    return {
+        "claim_id": claim.id,
+        "claim_text": claim.text,
+        "evidences": [
+            {"index": i, "distance": ev["distance"], "label": ev["label"], "text": ev["text"]}
+            for i, ev in enumerate(evidences)
+        ],
+        "generation": dict(meta),
+        "verdict": verdict_final,
+        "confidence": resultat.get("confidence"),
+        "used_evidence_index": resultat.get("used_evidence_index"),
+        "reasoning": resultat.get("reasoning"),
+    }
+
+
+def bloc_trace(detail: dict) -> str:
+    """Rend une vérification en texte lisible, à partir des données de `_trace`.
+
+    Publique parce que l'API s'en sert pour son champ `debug` : le journal du
+    serveur et le retour HTTP doivent montrer exactement la même chose, sinon
+    on diagnostique sur une version et on corrige d'après l'autre.
     """
     lignes = [
-        f"┌─ RAG · affirmation {claim.id}",
-        f"│ affirmation  : {claim.text}",
-        "│ extraits     :" if evidences else "│ extraits     : aucun",
+        f"┌─ RAG · affirmation {detail['claim_id']}",
+        f"│ affirmation  : {detail['claim_text']}",
+        "│ extraits     :" if detail["evidences"] else "│ extraits     : aucun",
     ]
-    for i, ev in enumerate(evidences):
-        lignes.append(f"│   [{i}] d={ev['distance']:.3f} {ev['label']:<9} {ev['text']}")
+    for ev in detail["evidences"]:
+        lignes.append(f"│   [{ev['index']}] d={ev['distance']:.3f} {ev['label']:<9} {ev['text']}")
+    meta = detail.get("generation") or {}
     if meta:
         lignes.append(
             f"│ génération   : {meta.get('modele')} · {meta.get('secondes')}s · "
             f"{meta.get('tokens')} tokens · {meta.get('caracteres')} car. · fin={meta.get('done_reason')}"
         )
-    preuve = resultat.get("used_evidence_index")
+    preuve = detail.get("used_evidence_index")
     lignes.append(
-        f"│ verdict      : {verdict_final} · confiance {resultat.get('confidence')} · "
+        f"│ verdict RAG  : {detail.get('verdict')} · confiance {detail.get('confidence')} · "
         f"preuve {'aucune' if preuve is None else f'[{preuve}]'}"
     )
-    raisonnement = str(resultat.get("reasoning", "")).strip()
+    if detail.get("selfcheck_divergence") is not None:
+        lignes.append(f"│ SelfCheck    : divergence {detail['selfcheck_divergence']:.2f}")
+    if detail.get("fusion_verdict"):
+        lignes.append(
+            f"│ FUSION       : {detail['fusion_verdict'].upper()} · "
+            f"confiance {detail.get('fusion_confidence')} · {detail.get('fusion_fondement')}"
+        )
+        if detail.get("fusion_explanation"):
+            lignes.append(f"│                {detail['fusion_explanation']}")
+    raisonnement = str(detail.get("reasoning") or "").strip()
     if raisonnement:
         lignes.append(f"│ raisonnement : {raisonnement}")
     lignes.append("└─")
@@ -189,7 +217,7 @@ class RagRetriever:
                 )
         return evidences
 
-    def verify_claim(self, claim: Claim) -> RagVerdict:
+    def verify_claim(self, claim: Claim, traces: list[dict] | None = None) -> RagVerdict:
         # 1. Récupération des preuves (le contexte)
         evidences = self.retrieve(claim, top_k=3)  # Top 3 est souvent suffisant pour un LLM
 
@@ -261,16 +289,11 @@ class RagRetriever:
                     verdict_str = "I_DONT_KNOW"
                     confidence = 0.0
 
-            logger.info(
-                "%s",
-                _bloc_trace(
-                    claim,
-                    evidences,
-                    getattr(self.llm_client, "derniere_generation", {}),
-                    {**llm_result, "confidence": confidence},
-                    verdict_str,
-                ),
-            )
+            meta = getattr(self.llm_client, "derniere_generation", {})
+            detail = _trace(claim, evidences, meta, {**llm_result, "confidence": confidence}, verdict_str)
+            if traces is not None:
+                traces.append(detail)
+            logger.info("%s", bloc_trace(detail))
 
             return RagVerdict(
                 claim_id=claim.id,
