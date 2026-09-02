@@ -47,6 +47,12 @@ BQ_REGION = EU
 INSTANCE = berlue
 SA_NAME = berlue-vm-sa
 ARTIFACTSREPO = berlue-repo
+
+# Image d'exécution unique des deux services applicatifs (API et éval) — cf.
+# Dockerfile. GAR_IMAGE reste le préfixe des SERVICES Cloud Run par
+# environnement ($(GAR_IMAGE)-test/staging/prod), pas un nom d'image : les
+# deux ne coïncident plus depuis que l'image est commune.
+GAR_RUNTIME_IMAGE = berlue-runtime
 GAR_IMAGE = berlue-api
 
 # Projet GCP qui héberge le dépôt Artifact Registry (images) — distinct de
@@ -100,6 +106,23 @@ GAR_TIMEOUT = 600
 # comme les autres buckets d'équipe.
 RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag
 
+# Bucket GCS dédié au CODE de l'application, monté en volume GCS FUSE sur
+# /mnt/code par les deux services applicatifs. L'image `berlue-runtime` ne
+# contient que les dépendances : le code arrive de là, et le déployer ne
+# demande plus qu'un `make code_deploy` (~1 min) au lieu d'un build + push
+# de ~10 Go (~15 min). Cf. make/code.mk, docs/gcp/code-en-bucket.md.
+# Dédié plutôt que partagé avec RAG_BUCKET_NAME pour la même raison qu'au
+# paragraphe précédent : un volume GCS FUSE monte tout le bucket.
+CODE_BUCKET_NAME = $(GCP_PROJECT)-berlue-code
+
+# Version de code active = premier niveau de dossier dans le bucket
+# (gs://$(CODE_BUCKET_NAME)/<version>/berlue/...), et donc sous-dossier du
+# montage lu par le conteneur (BERLUE_CODE_DIR=/mnt/code/<version>).
+# `current` par défaut : le flux courant écrase la même version et force une
+# nouvelle révision. Surcharger (ex. CODE_VERSION=$(git rev-parse --short HEAD))
+# pour épingler une version figée à côté, sans toucher à `current`.
+CODE_VERSION ?= current
+
 # Compte de service attaché au service Cloud Run (distinct de SA_NAME, la VM
 # d'entraînement) — droits Firestore/BigQuery nécessaires pour EVAL_STORE_TARGET=gcp
 # en exécution GCP, cf. make/gcp.mk#iam_setup_cloudrun_service_account.
@@ -119,8 +142,17 @@ CLOUDRUN_PUBLIC_prod = true
 # min-instances=1 le temps d'une session — cf. `make gcp_eval_up`/`gcp_down`,
 # docs/evaluation/execution-benchmark.md pour pourquoi). Exécute le vrai
 # pipeline Berlue (HurluBerlu, via BerluePipeline), cf. run_eval.py.
-GAR_EVAL_SERVICE_IMAGE = berlue-eval
+# Même image que l'API ($(GAR_RUNTIME_IMAGE)) : seul BERLUE_APP_MODULE change.
 CLOUDRUN_EVAL_SERVICE = berlue-eval
+
+# Module ASGI servi par chaque service applicatif — c'est tout ce qui
+# distingue les deux déploiements de l'image commune.
+BERLUE_API_MODULE = berlue.api.fast:app
+BERLUE_EVAL_MODULE = berlue.api.eval_service:app
+
+# Service lancé par docker_run_local / docker-compose (en GCP, c'est le
+# déploiement Cloud Run qui fixe la variable, pas celle-ci).
+BERLUE_APP_MODULE ?= $(BERLUE_API_MODULE)
 
 # Service Cloud Run Ollama, appelé par le service d'éval en mode
 # généré, API) — cf. Dockerfile.llm, docs/gcp/infra-gpu.md.

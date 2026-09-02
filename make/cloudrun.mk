@@ -53,6 +53,7 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		echo "      make cloudrun_deploy RAG_CORPUS_VERSION=<version ci-dessus>"; \
 		exit 1; \
 	}
+	@$(MAKE) --no-print-directory _code_version_check
 	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
@@ -61,7 +62,7 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		exit 1; \
 	fi; \
 	gcloud run deploy $(GAR_IMAGE)-$(CLOUDRUN_ENV) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_IMAGE):prod \
+		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		--memory $(GAR_MEMORY) \
 		--cpu $(GAR_CPU) \
 		--timeout=$(GAR_TIMEOUT) \
@@ -73,7 +74,9 @@ cloudrun_deploy: gcp_check_cli_auth ## Déploie sur Cloud Run selon CLOUDRUN_ENV
 		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
 		--add-volume=name=rag,type=cloud-storage,bucket=$(RAG_BUCKET_NAME) \
 		--add-volume-mount=volume=rag,mount-path=/mnt/rag \
-		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION) \
+		--add-volume=name=code,type=cloud-storage,bucket=$(CODE_BUCKET_NAME) \
+		--add-volume-mount=volume=code,mount-path=/mnt/code \
+		--update-env-vars=USE_MOCK=0,BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION) \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
 # Accès par personne sur les services Cloud Run du projet. CLOUDRUN_ROLE =
@@ -181,7 +184,7 @@ rag_index_upload: gcp_check_cli_auth ## Upload l'index FAISS local (data/fever/f
 	@echo "✅ Index disponible sur gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)/ — assure-toi que RAG_CORPUS_VERSION=$(RAG_CORPUS_VERSION) au prochain cloudrun_deploy pour le brancher."
 
 # ==============================================================================
-# SERVICE CLOUD RUN — ÉVAL (image berlue-eval, cf. Dockerfile.eval-service)
+# SERVICE CLOUD RUN — ÉVAL (image $(GAR_RUNTIME_IMAGE), commune avec l'API)
 # ==============================================================================
 # Service qui reste en vie entre deux appels (min-instances basculé par
 # gcp_eval_up/gcp_down) plutôt qu'un conteneur neuf par exécution : le
@@ -199,19 +202,29 @@ WARMUP ?= false
 BASELINE ?= false
 COVERAGE ?= false
 
-cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Cloud Run d'éval
+# Mémoire et CPU explicites plutôt que les défauts Cloud Run (512 Mio,
+# 1 vCPU) : ce service charge les mêmes modèles que l'API — NLI de
+# SelfCheckGPT et embeddings — et n'y survivrait pas, du même OOM que celui
+# mesuré le 31/08 côté API (cf. GAR_MEMORY dans config.mk). Il partage
+# maintenant l'image de l'API, autant lui donner le même gabarit.
+cloudrun_eval_service_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Cloud Run d'éval (même image que l'API, cf. BERLUE_APP_MODULE)
+	@$(MAKE) --no-print-directory _code_version_check
 	@echo "🚀 Déploiement du service $(CLOUDRUN_EVAL_SERVICE)..."
 	gcloud run deploy $(CLOUDRUN_EVAL_SERVICE) \
-		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_EVAL_SERVICE_IMAGE):latest \
+		--image $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		--service-account=$(CLOUDRUN_SA_EMAIL) \
+		--memory $(GAR_MEMORY) \
+		--cpu $(GAR_CPU) \
 		--min-instances=0 \
 		--max-instances=1 \
 		--max=1 \
 		--concurrency=1 \
 		--timeout=900 \
-		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp \
+		--add-volume=name=code,type=cloud-storage,bucket=$(CODE_BUCKET_NAME) \
+		--add-volume-mount=volume=code,mount-path=/mnt/code \
+		--update-env-vars=GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp,BERLUE_EVAL_RUN_TARGET=gcp,BERLUE_APP_MODULE=$(BERLUE_EVAL_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION) \
 		--no-allow-unauthenticated
 	@echo "🔐 Autorise sa-berlue à appeler ce service (run.invoker)..."
 	gcloud run services add-iam-policy-binding $(CLOUDRUN_EVAL_SERVICE) \

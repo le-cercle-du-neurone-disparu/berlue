@@ -44,7 +44,8 @@ et ce qui reste à faire à la main :
 ```bash
 make gcp_auth    # session gcloud
 make gcp_setup   # provisionne toute l'infra (gratuit, rejouable), puis diagnostique
-make gcp_deploy  # build/push les 3 images et déploie les 3 services Cloud Run
+make gcp_deploy  # build/push les 2 images, publie le code et déploie les 3 services Cloud Run
+make code_deploy # le geste courant ensuite : republie le code sans rebuilder d'image
 make gcp_up      # allume API + LLM (make gcp_eval_up pour éval + LLM) — à partir d'ici ça coûte
 make gcp_down    # éteint les 3, en fin de session
 ```
@@ -57,7 +58,7 @@ make gcp_down    # éteint les 3, en fin de session
 | **Dev** | [`structure.md`](docs/dev/structure.md) (plan du code) · [`linting.md`](docs/dev/linting.md) · [`tests.md`](docs/dev/tests.md) · [`logging.md`](docs/dev/logging.md) |
 | **Pipeline** (comment tourne chaque brique de Berlue) | [`hurlu_berlu.md`](docs/pipeline/hurlu_berlu.md) (orchestrateur) · [`llm.md`](docs/pipeline/llm.md) · [`extraction.md`](docs/pipeline/extraction.md) · [`selfcheck.md`](docs/pipeline/selfcheck.md) · [`rag.md`](docs/pipeline/rag.md) · [`fusion.md`](docs/pipeline/fusion.md) |
 | **Evaluation** (mesurer Berlue face à une baseline) | [`docs/evaluation/`](docs/evaluation/) |
-| **GCP** (composants, authentification, accès équipe) | [`setup/gcp.md`](docs/setup/gcp.md) · [`composants.md`](docs/gcp/composants.md) · [`cloudrun.md`](docs/gcp/cloudrun.md) · [`infra-gpu.md`](docs/gcp/infra-gpu.md) · [`auth.md`](docs/gcp/auth.md) · [`share.md`](docs/gcp/share.md) · [`aletheia-local.md`](docs/gcp/aletheia-local.md) (Aletheia local + Berlue sur GCP) |
+| **GCP** (composants, authentification, accès équipe) | [`setup/gcp.md`](docs/setup/gcp.md) · [`composants.md`](docs/gcp/composants.md) · [`cloudrun.md`](docs/gcp/cloudrun.md) · [`code-en-bucket.md`](docs/gcp/code-en-bucket.md) · [`infra-gpu.md`](docs/gcp/infra-gpu.md) · [`auth.md`](docs/gcp/auth.md) · [`share.md`](docs/gcp/share.md) · [`aletheia-local.md`](docs/gcp/aletheia-local.md) (Aletheia local + Berlue sur GCP) |
 | **Repo** (gestion du dépôt pour l'équipe) | [`github-config.md`](docs/repo/github-config.md) · [`webhook-slack.md`](docs/repo/webhook-slack.md) |
 | **Datasets** (aperçu rapide) | [`fever.md`](docs/datasets/fever.md) · [`halueval.md`](docs/datasets/halueval.md) · [`truthfulqa.md`](docs/datasets/truthfulqa.md) |
 | **Historique Etude Dataset** | [`historique-etude-data/`](historique-etude-data/) — matériel de travail, pas la doc de référence |
