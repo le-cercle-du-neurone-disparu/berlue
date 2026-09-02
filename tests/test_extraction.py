@@ -65,3 +65,34 @@ def test_le_tableau_extrait_n_avale_pas_le_texte_qui_suit():
 
 def test_reponse_vide_ne_declenche_aucun_appel():
     assert do_extraction(FakeLLM("[]"), question="Q ?", answer_text="   ") == []
+
+
+# --- Identifiants reproductibles ---------------------------------------------
+
+
+def test_les_identifiants_sont_stables_entre_deux_extractions():
+    """Un uuid4() rendait un cas impossible à rejouer depuis les logs."""
+    a = _extraire('["Première.", "Seconde."]')
+    b = _extraire('["Première.", "Seconde."]')
+    assert [c.id for c in a] == [c.id for c in b]
+
+
+def test_deux_affirmations_differentes_ont_des_identifiants_differents():
+    claims = _extraire('["Première.", "Seconde."]')
+    assert claims[0].id != claims[1].id
+
+
+def test_une_meme_affirmation_dans_deux_reponses_a_des_identifiants_differents():
+    """Le contexte compte : la même phrase extraite de deux réponses distinctes ne
+    désigne pas le même objet à vérifier."""
+    llm = FakeLLM('["Une affirmation."]')
+    a = do_extraction(llm, question="Q ?", answer_text="Première réponse.")
+    b = do_extraction(llm, question="Q ?", answer_text="Seconde réponse.")
+    assert a[0].id != b[0].id
+
+
+def test_une_affirmation_repetee_garde_des_identifiants_distincts():
+    """Le rang entre dans l'empreinte : deux occurrences identiques restent
+    distinguables, sinon la fusion en perdrait une."""
+    claims = _extraire('["Doublon.", "Doublon."]')
+    assert claims[0].id != claims[1].id

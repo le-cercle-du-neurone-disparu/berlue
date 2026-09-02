@@ -1,13 +1,26 @@
+import hashlib
 import json
 import logging
 import re
-import uuid
 
 from berlue.core.schemas import Claim
 from berlue.llm.client import OllamaClient
 from berlue.params import EXTRACT_SYSTEM_PROMPT, NUM_PREDICT_EXTRACTION
 
 logger = logging.getLogger(__name__)
+
+
+def _claim_id(answer_text: str, rank: int, text: str) -> str:
+    """Identifiant reproductible d'une affirmation.
+
+    Un `uuid4()` rendait un cas impossible à rejouer : les identifiants changeaient à
+    chaque exécution, alors qu'ils servent de clé d'appariement entre l'extraction, le
+    RAG, SelfCheck et la fusion — et qu'ils sont journalisés. Dérivé du texte de la
+    réponse, du rang et du texte de l'affirmation, il est stable d'un run à l'autre et
+    reste distinct pour deux affirmations identiques extraites de réponses différentes.
+    """
+    empreinte = hashlib.sha256(f"{answer_text}\x00{rank}\x00{text}".encode()).hexdigest()
+    return empreinte[:16]
 
 
 def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) -> list[Claim]:
@@ -46,7 +59,7 @@ def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) ->
         return []
 
     claims = []
-    for element in extracted_strings:
+    for rang, element in enumerate(extracted_strings):
         # Le prompt demande un tableau de chaînes, mais rien ne l'y contraint : un
         # `[{"claim": "..."}]` faisait lever un AttributeError non attrapé, qui
         # arrêtait tout le run d'évaluation. On ignore l'élément et on continue.
@@ -55,6 +68,8 @@ def do_extraction(llm_extract: OllamaClient, question: str, answer_text: str) ->
             continue
         claim_text = element.strip()
         if claim_text:  # Sécurité contre les chaînes vides
-            claims.append(Claim(id=str(uuid.uuid4()), text=claim_text, source_answer=answer_text))
+            claims.append(
+                Claim(id=_claim_id(answer_text, rang, claim_text), text=claim_text, source_answer=answer_text)
+            )
 
     return claims
