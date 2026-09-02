@@ -19,31 +19,30 @@ def _running_on_cloud_run() -> bool:
     return bool(os.environ.get("K_SERVICE") or os.environ.get("CLOUD_RUN_JOB"))
 
 
-def _cloud_run_auth_headers(target_url: str) -> dict:
-    """Jeton d'identité OIDC pour appeler un service Cloud Run privé
+def _cloud_run_credentials(target_url: str):
+    """Identifiants OIDC pour appeler un service Cloud Run privé
     (`--no-allow-unauthenticated`, ex. le service Ollama) depuis un autre
-    service/job Cloud Run — audience = l'URL cible elle-même. Dict vide en
-    local (Ollama local n'a pas d'auth) : ne fait un appel réseau que sur
-    Cloud Run, jamais en dev.
+    service/job Cloud Run — audience = l'URL cible elle-même. `None` en local
+    (Ollama local n'a pas d'auth) : ne fait un appel réseau que sur Cloud Run,
+    jamais en dev.
 
     `IDTokenCredentials` explicite plutôt que le helper générique
     `google.oauth2.id_token.fetch_id_token()` — ce dernier a produit un
     jeton vide sans lever d'exception en conditions réelles (Job Cloud Run
     appelant le service Ollama, jamais reproduit en local), constaté via
     les logs du service cible ("Empty Authorization header value").
+
+    L'objet est rendu plutôt que l'en-tête : un jeton d'identité ne vit qu'une
+    heure, et seuls des identifiants conservés permettent de le renouveler.
     """
     if not _running_on_cloud_run():
-        return {}
+        return None
     import google.auth.compute_engine
     import google.auth.transport.requests
 
-    credentials = google.auth.compute_engine.IDTokenCredentials(
+    return google.auth.compute_engine.IDTokenCredentials(
         google.auth.transport.requests.Request(), target_audience=target_url, use_metadata_identity_endpoint=True
     )
-    credentials.refresh(google.auth.transport.requests.Request())
-    if not credentials.token:
-        raise RuntimeError(f"❌ Jeton OIDC vide pour {target_url} après refresh() — IDTokenCredentials en échec.")
-    return {"Authorization": f"Bearer {credentials.token}"}
 
 
 class OllamaClient:
@@ -61,7 +60,44 @@ class OllamaClient:
         self.model = model
         self.temperature = temperature
         self.verbose = verbose
-        self.client = Client(host=self.host, timeout=timeout, headers=_cloud_run_auth_headers(self.host))
+        self._timeout = timeout
+        self._credentials = _cloud_run_credentials(self.host)
+        self._client = None
+
+    @property
+    def client(self) -> Client:
+        """Client HTTP dont le jeton d'authentification est toujours valide.
+
+        Un jeton d'identité Cloud Run expire au bout d'une heure. Construit une
+        seule fois puis figé dans les en-têtes, il condamnait tout client de
+        longue vie : l'extracteur et le client RAG, créés au démarrage du
+        service, tombaient en `Unauthorized` après une heure — alors que /llms,
+        qui fabrique un client neuf à chaque appel, continuait de répondre.
+        """
+        if self._credentials is None:
+            if self._client is None:
+                self._client = Client(host=self.host, timeout=self._timeout)
+            return self._client
+
+        import google.auth.transport.requests
+
+        if not self._credentials.valid:
+            self._credentials.refresh(google.auth.transport.requests.Request())
+            if not self._credentials.token:
+                raise RuntimeError(
+                    f"❌ Jeton OIDC vide pour {self.host} après refresh() — IDTokenCredentials en échec."
+                )
+            self._client = None
+        if self._client is None:
+            entetes = {"Authorization": f"Bearer {self._credentials.token}"}
+            self._client = Client(host=self.host, timeout=self._timeout, headers=entetes)
+        return self._client
+
+    @client.setter
+    def client(self, valeur: Client) -> None:
+        """Permet de substituer le client HTTP — les tests injectent un double
+        pour vérifier `generate()` sans serveur Ollama."""
+        self._client = valeur
 
     def list_models(self) -> list[str]:
         """Liste les modèles disponibles sur le serveur Ollama ciblé (`self.host`) —

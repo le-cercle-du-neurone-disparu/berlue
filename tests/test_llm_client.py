@@ -208,3 +208,39 @@ def test_une_generation_complete_ne_declenche_aucun_avertissement(monkeypatch, c
         client.generate("q", num_predict=300)
 
     assert not [r for r in caplog.records if "tronquée" in r.message]
+
+
+def test_le_client_est_reconstruit_quand_le_jeton_a_expire():
+    """Un jeton d'identité Cloud Run ne vit qu'une heure. Figé à la construction,
+    il condamnait les clients de longue vie — l'extracteur et le client RAG,
+    créés au démarrage du service, tombaient en Unauthorized au bout d'une heure.
+    L'accès au client doit donc renouveler le jeton dès qu'il n'est plus valide.
+    """
+
+    class FauxIdentifiants:
+        def __init__(self):
+            self.valid = False
+            self.token = "jeton-frais"
+            self.refresh_count = 0
+
+        def refresh(self, _requete):
+            self.refresh_count += 1
+            self.valid = True
+
+    client = OllamaClient(host="https://berlue-llm.example.run.app")
+    identifiants = FauxIdentifiants()
+    client._credentials = identifiants
+    client._client = None
+
+    premier = client.client
+    assert identifiants.refresh_count == 1
+
+    # Tant que le jeton reste valide, aucun renouvellement ni reconstruction.
+    assert client.client is premier
+    assert identifiants.refresh_count == 1
+
+    # Jeton expiré : renouvellement et nouveau client porteur du nouvel en-tête.
+    identifiants.valid = False
+    second = client.client
+    assert identifiants.refresh_count == 2
+    assert second is not premier
