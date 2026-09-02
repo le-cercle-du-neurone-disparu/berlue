@@ -5,7 +5,7 @@ from berlue.llm.client import OllamaClient
 from berlue.params import NUM_PREDICT_ANSWER, OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
 from berlue.pipeline.extraction import do_extraction
 from berlue.pipeline.fusion import do_fusion
-from berlue.rag.retriever import RagRetriever
+from berlue.rag.retriever import RagPanne, RagRetriever
 from berlue.selfcheck.sampler import sample_responses
 from berlue.selfcheck.scorer import compute_divergence
 
@@ -80,11 +80,27 @@ class HurluBerlu:
 
     # ÉTAPE 5
     def evaluate_rag(self, result: PipelineResult) -> PipelineResult:
+        """Fait juger chaque affirmation par le RAG.
 
+        Une panne du RAG — réponse illisible, appel en échec — est signalée par
+        `result.panne`, et non déguisée en « je ne sais pas ». La distinction
+        compte : ne pas savoir est un jugement recevable, que la fusion combine
+        avec SelfCheck ; ne pas comprendre la réponse du RAG est une défaillance,
+        et la fusion doit alors annoncer une erreur plutôt qu'un verdict incertain.
+
+        Une seule affirmation en panne suffit à invalider la question entière : les
+        verdicts restants porteraient sur une analyse partielle sans que rien ne le
+        signale à la lecture.
+        """
         logger.debug("🧠 Calcul des verdicts du RAG...")
 
         # Réécrit la liste au lieu d'y ajouter : un double appel dupliquait tout.
-        result.rag_scores = [self.retriever.verify_claim(claim=claim) for claim in result.claims]
+        try:
+            result.rag_scores = [self.retriever.verify_claim(claim=claim) for claim in result.claims]
+        except RagPanne as e:
+            logger.warning("⚠️ RAG en panne : %s", e)
+            result.rag_scores = []
+            result.panne = f"RAG en panne ({e})"
 
         return result
 

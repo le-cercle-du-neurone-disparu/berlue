@@ -127,3 +127,79 @@ def test_une_reponse_coupee_avant_le_verdict_ne_donne_pas_de_verdict():
 def test_la_recuperation_ne_change_rien_a_une_reponse_complete():
     complet = '{"verdict": "FEVER_CONFIRMS", "confidence": 1.0, "used_evidence_index": 0}'
     assert _premier_objet_json(complet) == {"verdict": "FEVER_CONFIRMS", "confidence": 1.0, "used_evidence_index": 0}
+
+
+# --- Panne du RAG contre ignorance du RAG --------------------------------------
+
+
+def test_une_reponse_illisible_est_une_panne_pas_une_ignorance():
+    """Ne pas savoir est un jugement que la fusion combine avec SelfCheck ; ne pas
+    comprendre la réponse du RAG est une défaillance, et le pipeline doit annoncer
+    une erreur. Les confondre faisait conclure « incertain » sur une panne."""
+    from unittest.mock import MagicMock
+
+    from berlue.core.schemas import Claim, PipelineResult, Verdict
+    from berlue.pipeline.fusion import do_fusion
+    from berlue.pipeline.hurlu_berlu import HurluBerlu
+    from berlue.rag.retriever import RagPanne
+
+    retriever = MagicMock()
+    retriever.verify_claim.side_effect = RagPanne("réponse inexploitable")
+    pipeline = HurluBerlu(llm_client=MagicMock(), llm_extract=MagicMock(), retriever=retriever)
+
+    resultat = PipelineResult(
+        question="Q", raw_answer="A", claims=[Claim(id="c1", text="Une affirmation.", source_answer="A")]
+    )
+    resultat = do_fusion(pipeline.evaluate_rag(resultat))
+
+    assert resultat.panne is not None
+    assert resultat.fused_verdicts[0].verdict == Verdict.PANNE
+
+
+def test_un_rag_qui_ne_sait_pas_ne_declenche_pas_de_panne():
+    from unittest.mock import MagicMock
+
+    from berlue.core.schemas import Claim, PipelineResult, Verdict
+    from berlue.pipeline.fusion import do_fusion
+    from berlue.pipeline.hurlu_berlu import HurluBerlu
+
+    retriever = MagicMock()
+    retriever.verify_claim.return_value = RagVerdict(
+        claim_id="c1", verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None
+    )
+    pipeline = HurluBerlu(llm_client=MagicMock(), llm_extract=MagicMock(), retriever=retriever)
+
+    resultat = PipelineResult(
+        question="Q", raw_answer="A", claims=[Claim(id="c1", text="Une affirmation.", source_answer="A")]
+    )
+    resultat = do_fusion(pipeline.evaluate_rag(resultat))
+
+    assert resultat.panne is None
+    assert resultat.fused_verdicts[0].verdict != Verdict.PANNE
+
+
+def test_une_seule_affirmation_en_panne_invalide_la_question():
+    """Les verdicts restants porteraient sur une analyse partielle sans que rien ne
+    le signale à la lecture."""
+    from unittest.mock import MagicMock
+
+    from berlue.core.schemas import Claim, PipelineResult, Verdict
+    from berlue.pipeline.fusion import do_fusion
+    from berlue.pipeline.hurlu_berlu import HurluBerlu
+    from berlue.rag.retriever import RagPanne
+
+    retriever = MagicMock()
+    retriever.verify_claim.side_effect = [
+        RagVerdict(claim_id="c1", verdict=RagJudgment.LIKELY_TRUE, confidence=0.9, evidence=None),
+        RagPanne("réponse inexploitable"),
+    ]
+    pipeline = HurluBerlu(llm_client=MagicMock(), llm_extract=MagicMock(), retriever=retriever)
+
+    resultat = PipelineResult(
+        question="Q",
+        raw_answer="A",
+        claims=[Claim(id="c1", text="Une.", source_answer="A"), Claim(id="c2", text="Deux.", source_answer="A")],
+    )
+    resultat = do_fusion(pipeline.evaluate_rag(resultat))
+
+    assert [v.verdict for v in resultat.fused_verdicts] == [Verdict.PANNE, Verdict.PANNE]
