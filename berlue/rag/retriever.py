@@ -164,7 +164,16 @@ class RagRetriever:
                 isinstance(used_idx, int) and not isinstance(used_idx, bool) and 0 <= used_idx < len(evidences)
             )
 
-            if index_valide:
+            # Une preuve n'est attachée qu'à un verdict qui en revendique une.
+            # LIKELY_TRUE, LIKELY_FALSE et I_DONT_KNOW affirment tous que la base
+            # manque d'information : leur joindre un extrait le ferait afficher
+            # comme « Preuve » par l'API, qui étiquette toute preuve présente
+            # FEVER_corpus — alors que le verdict dit ne pas s'appuyer dessus. Le
+            # prompt impose déjà `used_evidence_index: null` dans ces cas, mais le
+            # modèle ne s'y tient pas toujours.
+            verdict_avec_preuve = verdict_str in ("FEVER_CONFIRMS", "FEVER_REFUTES")
+
+            if index_valide and verdict_avec_preuve:
                 # LA preuve précise que le LLM a choisie.
                 chosen_ev = evidences[used_idx]
                 final_evidence = Evidence(
@@ -181,7 +190,7 @@ class RagRetriever:
                 # valides sans preuve en base. Seuls FEVER_CONFIRMS et FEVER_REFUTES
                 # exigent une preuve citée : sans elle, ils ne prouvent rien.
                 final_evidence = None
-                if verdict_str in ("FEVER_CONFIRMS", "FEVER_REFUTES"):
+                if verdict_avec_preuve:
                     logger.warning(
                         "⚠️ Verdict %s sans preuve citée sur l'affirmation %s : dégradé en I_DONT_KNOW.",
                         verdict_str,
