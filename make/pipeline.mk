@@ -35,9 +35,9 @@ evaluate_baseline: ## Évalue la baseline NLI seule (mode dataset) sur DATASET/R
 DATASET ?= halueval
 RATIO ?= 0.8
 MODEL_ID ?= random-mock
-PIPELINE_VERSION ?= v1
-GENERATION_VERSION ?= v1
-EVAL_VERSION ?= v1
+PIPELINE_VERSION ?= v2
+GENERATION_VERSION ?= v2
+EVAL_VERSION ?= v2
 START ?= 0
 END ?=
 
@@ -97,7 +97,11 @@ evaluate_push_to_gcp: ## Pousse un scope (résultats mode 1 et/ou matrices selon
 
 # Mode 2 (réponse générée + LLM-juge) — surchargeable comme ci-dessus, plus
 # JUDGE_MODEL : `make evaluate_model_generated JUDGE_MODEL=llama3.1:8b`.
-JUDGE_MODEL ?= qwen2.5:0.5b
+# Le défaut suit params.py (llama3.1:8b) : un juge en dessous de 7B valide quasi
+# systématiquement, ce qui vide l'évaluation de son sens — cf. le commentaire de
+# JUDGE_MODEL dans params.py. La valeur d'ici primait silencieusement sur celle
+# du code, et un run entier a été lancé avec un juge à 0,5B.
+JUDGE_MODEL ?= llama3.1:8b
 # WARMUP=true : précharge generator/judge en VRAM avant de chronométrer la
 # boucle — cf. evaluate_model_generated ci-dessous et docs/evaluation/execution-benchmark.md.
 WARMUP ?= false
