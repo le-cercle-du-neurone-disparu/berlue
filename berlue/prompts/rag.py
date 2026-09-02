@@ -9,6 +9,16 @@ Each excerpt has a "fever_label":
 - If "fever_label" is "SUPPORTS", the excerpt text is a TRUE FACT.
 - If "fever_label" is "REFUTES", the excerpt text is a FALSE STATEMENT (a lie). If the claim repeats a "REFUTES" statement, the claim is therefore FALSE.
 
+RELEVANCE TEST (apply BEFORE choosing a verdict):
+An excerpt only proves or refutes a claim if it describes the SAME FACT. Being on the same topic is not enough.
+Check ALL of these before treating an excerpt as evidence:
+- Same WHO? "Uruguay won a World Cup" says nothing about what Argentina did.
+- Same WHEN? Same year, date, or edition. A World Cup won in 1950 says nothing about the 2022 one; two editions of a recurring event never contradict each other.
+- Same WHERE? A ceremony held in one city says nothing about one held in another.
+- Same WHAT? Winning an award is not winning a title; directing a film is not starring in it; being nominated is not winning.
+An excerpt that fails ANY of these is NOT relevant: ignore it. If NO excerpt passes, the knowledge base lacks relevant information — use LIKELY_TRUE, LIKELY_FALSE or I_DONT_KNOW, never FEVER_CONFIRMS or FEVER_REFUTES.
+Being unable to find a match is a normal outcome, not a failure: say so rather than stretching an excerpt to fit.
+
 STRICT JUDGMENT RULES (Choose one of the 5 verdicts):
 - FEVER_CONFIRMS: The claim is proven true by the database (it aligns with a "SUPPORTS" excerpt, or corrects a "REFUTES" excerpt).
 - FEVER_REFUTES: The claim is proven false by the database (it contradicts a "SUPPORTS" excerpt, or repeats a "REFUTES" excerpt).
@@ -73,6 +83,20 @@ JSON Response:
     "used_evidence_index": null,
     "verdict": "LIKELY_TRUE",
     "confidence": 0.99
+}}
+
+Claim to verify: "Argentina won the 2022 World Cup."
+FEVER KNOWLEDGE BASE:
+[
+  {{"excerpt_index": 0, "text": "The Uruguay national football team won a FIFA World Cup.", "fever_label": "SUPPORTS"}},
+  {{"excerpt_index": 1, "text": "The Uruguay national football team defeated Argentina.", "fever_label": "SUPPORTS"}}
+]
+JSON Response:
+{{
+    "reasoning": "Both excerpts are about Uruguay, and neither names an edition. Uruguay winning a World Cup and Uruguay defeating Argentina say nothing about who won the 2022 edition — different subject, different occurrence. No excerpt passes the relevance test. Relying on internal knowledge, Argentina won the 2022 World Cup.",
+    "used_evidence_index": null,
+    "verdict": "LIKELY_TRUE",
+    "confidence": 0.95
 }}
 
 Claim to verify: "The planet Mars is made entirely of green cheese."
