@@ -98,6 +98,9 @@ MLFLOW_TRACKING_URI = _MLFLOW_TRACKING_URIS.get(RUN_ENV, "http://localhost:5000"
 
 # --- LLM (Ollama) ---
 OLLAMA_HOST = os.environ.get("BERLUE_OLLAMA_HOST", "http://localhost:11434")
+# Le modèle SOUS ÉVALUATION : il produit la réponse à vérifier, et c'est de lui que
+# SelfCheck tire ses échantillons — la prémisse de SelfCheckGPT étant d'échantillonner
+# le modèle qui a répondu, pas un autre.
 OLLAMA_MODEL = os.environ.get("BERLUE_OLLAMA_MODEL", "llama3.2:3b")
 OLLAMA_SYSTEM_PROMPT = _OLLAMA_SYSTEM_PROMPT
 BASE_TEMPERATURE = float(os.environ.get("BERLUE_BASE_TEMPERATURE", "0.0"))
