@@ -185,6 +185,53 @@ rag_bucket_delete: ## Supprime le bucket RAG et tout son contenu (appelé par gc
 	@echo "💣 Suppression du bucket gs://$(RAG_BUCKET_NAME)..."
 	gcloud storage rm --recursive gs://$(RAG_BUCKET_NAME)
 
+# Récupérer l'index déjà construit chez quelqu'un d'autre, plutôt que de le
+# rebâtir. Le construire suppose de télécharger 371 Mo de corpus FEVER puis de
+# calculer 109 810 embeddings — hors de portée d'une petite machine. La copie se
+# fait de bucket à bucket : rien ne transite par le poste qui lance la commande.
+#
+# Prérequis : lecture sur le bucket source, que son propriétaire accorde avec
+#   make data_buckets_grant USER=<votre email>
+#
+#   make rag_index_import RAG_SOURCE_BUCKET=<projet-du-collegue>-berlue-rag
+rag_index_import: gcp_check_cli_auth ## Copie l'index FAISS d'un bucket tiers vers le nôtre, sans le reconstruire (RAG_SOURCE_BUCKET requis)
+	@if [ -z "$(RAG_SOURCE_BUCKET)" ]; then \
+		echo "❌ ERREUR : RAG_SOURCE_BUCKET manquant."; \
+		echo "👉 make rag_index_import RAG_SOURCE_BUCKET=<projet-source>-berlue-rag"; \
+		exit 1; \
+	fi
+	@SRC="gs://$(RAG_SOURCE_BUCKET)/faiss/$(RAG_CORPUS_VERSION)"; \
+	if ! gcloud storage ls "$$SRC/index.faiss" >/dev/null 2>&1 </dev/null; then \
+		echo "❌ Index introuvable ou illisible : $$SRC/index.faiss"; \
+		echo "   Versions visibles dans le bucket source :"; \
+		gcloud storage ls "gs://$(RAG_SOURCE_BUCKET)/faiss/" 2>/dev/null </dev/null \
+			| sed -e 's#.*/faiss/#     #' -e 's#/$$##' || echo "     (aucune, ou pas de droit de lecture)"; \
+		echo "   👉 Le propriétaire doit vous accorder la lecture : make data_buckets_grant USER=<votre email>"; \
+		exit 1; \
+	fi; \
+	echo "📥 Copie de $$SRC vers gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION) (~360 Mo, de bucket à bucket)..."; \
+	gcloud storage rsync --recursive "$$SRC" "gs://$(RAG_BUCKET_NAME)/faiss/$(RAG_CORPUS_VERSION)"; \
+	echo "✅ Index importé. Vérification :"; \
+	$(MAKE) --no-print-directory rag_index_check && echo "   prêt pour make cloudrun_deploy."
+
+# Symétrique, à lancer par le PROPRIÉTAIRE des données : ouvre en lecture les
+# deux buckets lourds — l'index RAG (~360 Mo) et les poids HuggingFace (~2,1 Go).
+# Ce sont eux qui coûtent cher à reconstruire, bien plus que les images.
+data_buckets_grant: gcp_check_cli_auth ## Ouvre en lecture nos buckets RAG et modèles à une personne (USER=email requis)
+	@if [ -z "$(USER)" ]; then \
+		echo "❌ ERREUR : USER manquant."; \
+		echo "👉 make data_buckets_grant USER=personne@example.com"; \
+		exit 1; \
+	fi
+	@for B in $(RAG_BUCKET_NAME) $(MODELS_BUCKET_NAME); do \
+		echo "🔐 Lecture de gs://$$B pour $(USER)..."; \
+		gcloud storage buckets add-iam-policy-binding "gs://$$B" \
+			--member="user:$(USER)" \
+			--role="roles/storage.objectViewer" \
+			--quiet </dev/null >/dev/null; \
+	done
+	@echo "✅ $(USER) peut importer l'index RAG et les modèles sans les reconstruire."
+
 rag_index_upload: gcp_check_cli_auth ## Upload l'index FAISS local (data/fever/faiss, cf. make build_fever_index) vers gs://RAG_BUCKET_NAME/faiss/RAG_CORPUS_VERSION
 	@if [ ! -f data/fever/faiss/index.faiss ]; then \
 		echo "❌ data/fever/faiss/index.faiss introuvable — lance d'abord make build_fever_index."; \

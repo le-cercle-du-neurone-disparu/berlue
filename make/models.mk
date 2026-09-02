@@ -69,6 +69,27 @@ models_push: gcp_check_cli_auth ## Publie les poids des modèles du pipeline dan
 # Appelé par gcp_deploy : publier 2,2 Go à chaque déploiement serait absurde alors
 # que ces poids ne changent qu'au changement de modèle. On ne publie que si le
 # bucket est vide — `make models_push` force la republication.
+# Pendant de rag_index_import pour les poids HuggingFace (~2,1 Go). Les
+# reconstruire suppose de les télécharger depuis HuggingFace puis de matérialiser
+# le cache — long, et inutile si un collègue les a déjà publiés.
+#
+#   make models_import MODELS_SOURCE_BUCKET=<projet-du-collegue>-berlue-models
+models_import: gcp_check_cli_auth ## Copie les poids HuggingFace d'un bucket tiers vers le nôtre (MODELS_SOURCE_BUCKET requis)
+	@if [ -z "$(MODELS_SOURCE_BUCKET)" ]; then \
+		echo "❌ ERREUR : MODELS_SOURCE_BUCKET manquant."; \
+		echo "👉 make models_import MODELS_SOURCE_BUCKET=<projet-source>-berlue-models"; \
+		exit 1; \
+	fi
+	@if ! gcloud storage ls "gs://$(MODELS_SOURCE_BUCKET)/" >/dev/null 2>&1 </dev/null; then \
+		echo "❌ gs://$(MODELS_SOURCE_BUCKET) introuvable ou illisible."; \
+		echo "   👉 Le propriétaire doit vous accorder la lecture : make data_buckets_grant USER=<votre email>"; \
+		exit 1; \
+	fi
+	@echo "📥 Copie de gs://$(MODELS_SOURCE_BUCKET) vers gs://$(MODELS_BUCKET_NAME) (~2,1 Go, de bucket à bucket)..."
+	gcloud storage rsync --recursive "gs://$(MODELS_SOURCE_BUCKET)" "gs://$(MODELS_BUCKET_NAME)"
+	@echo "✅ Modèles importés. Vérification :"
+	@$(MAKE) --no-print-directory _models_check
+
 models_ensure: gcp_check_cli_auth ## Publie les modèles seulement s'ils sont absents du bucket (appelé par gcp_deploy)
 	@if gcloud storage ls gs://$(MODELS_BUCKET_NAME)/hub/ >/dev/null 2>&1 </dev/null; then \
 		echo "✅ Modèles déjà publiés dans gs://$(MODELS_BUCKET_NAME)/, publication sautée."; \

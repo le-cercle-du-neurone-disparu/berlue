@@ -1,12 +1,14 @@
 # IAM à appliquer
 
-Les cibles make existent et sont vérifiées ; **les droits eux-mêmes n'ont pas
-été posés**. L'exécution a été bloquée par le contrôle de sécurité de la
-session, pas par une erreur.
-
 Projet : `gen-lang-client-0242212765`.
 
-## 1. Accès Console pour l'équipe
+**Section 1 appliquée et vérifiée** le 2 septembre 2026. Les sections 2 et 3
+attendent une information des collègues, pas une décision.
+
+Pour la marche à suivre côté collègue, voir
+`docs/gcp/deployer-images-partagees.md`.
+
+## 1. Accès Console pour l'équipe — ✅ FAIT
 
 Trois personnes ont déjà `roles/run.developer`, `roles/datastore.viewer` (avec
 condition) et `artifactregistry.reader` au niveau du dépôt. Il leur manque de
@@ -38,8 +40,14 @@ correspondre, et le listing est refusé même à qui a le droit de lire. La cibl
 corrigée n'applique plus la condition qu'à l'écriture, et relancer le grant en
 `reader` pose le binding sans condition.
 
-Vérification attendue, depuis un des comptes concernés : les logs d'un service
-Cloud Run s'affichent, et les trois listings répondent.
+**Appliqué et vérifié.** Les trois comptes portent `logging.viewer`,
+`storage.bucketViewer`, `bigquery.metadataViewer` et un `datastore.viewer`
+**sans condition** — c'est ce dernier qui débloque le listing des bases.
+L'ancien binding conditionné subsiste, redondant mais inoffensif.
+
+Ils ont aussi reçu la lecture des deux buckets lourds (`data_buckets_grant`) :
+index RAG (~360 Mo) et poids HuggingFace (~2,1 Go), pour éviter de les
+reconstruire sur une petite machine.
 
 ## 2. Compte de service d'un autre projet
 
