@@ -7,7 +7,7 @@ import time
 from httpx import TimeoutException
 from ollama import Client, ResponseError
 
-from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL
+from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_NUM_CTX
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,12 @@ class OllamaClient:
         self._timeout = timeout
         self._credentials = _cloud_run_credentials(self.host)
         self._client = None
+        # Métadonnées du dernier appel — durée, raison d'arrêt, nombre de tokens.
+        # Conservées ici plutôt que rendues par `generate()`, dont la signature est
+        # un contrat utilisé partout : les appelants qui veulent tracer un appel
+        # les lisent, les autres les ignorent. Le pipeline étant séquentiel, il n'y
+        # a pas d'entrelacement à craindre.
+        self.derniere_generation: dict = {}
 
     @property
     def client(self) -> Client:
@@ -133,7 +139,7 @@ class OllamaClient:
         # `None` et `self.temperature` n'était jamais lue : la température passée au
         # constructeur — donc celle du payload de l'API — ne faisait rien.
         final_temp = temperature if temperature is not None else self.temperature
-        options = {"temperature": final_temp}
+        options = {"temperature": final_temp, "num_ctx": OLLAMA_NUM_CTX}
         if num_predict is not None:
             options["num_predict"] = num_predict
 
@@ -175,6 +181,14 @@ class OllamaClient:
                 num_predict,
                 self.model,
             )
+
+        self.derniere_generation = {
+            "modele": self.model,
+            "secondes": round(elapsed, 2),
+            "done_reason": response.get("done_reason"),
+            "tokens": response.get("eval_count"),
+            "caracteres": len(resp_text),
+        }
 
         if self.verbose:
             logger.debug("📥 [Ollama:%s, %.2fs] Réponse :\n%s", self.model, elapsed, resp_text)

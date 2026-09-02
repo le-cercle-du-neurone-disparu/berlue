@@ -175,6 +175,18 @@ MLOPS_DB_PATH = os.environ.get("BERLUE_MLOPS_DB_PATH", "./data/mlops/hallucinati
 #   RAG                     : max observé 172  -> 600 (le raisonnement peut s'allonger)
 NUM_PREDICT_ANSWER = int(os.environ.get("BERLUE_NUM_PREDICT_ANSWER", "300"))
 NUM_PREDICT_EXTRACTION = int(os.environ.get("BERLUE_NUM_PREDICT_EXTRACTION", "400"))
+# OLLAMA_NUM_CTX : fenêtre de contexte demandée à Ollama, en tokens.
+#
+# Sans consigne explicite, Ollama choisit lui-même — et la RÉDUIT quand la VRAM
+# manque, sans le signaler. Le prompt trop long est alors tronqué en silence et
+# il ne reste plus de place pour générer : la réponse est coupée avant son
+# accolade fermante, avec `done_reason: stop`, donc sans le moindre avertissement.
+# Le symptôme dépend de la charge de la machine, ce qui le rend déroutant.
+#
+# Le prompt RAG pèse à lui seul ~2000 tokens ; 8192 laisse largement de quoi
+# raisonner, et rend le comportement indépendant des conditions mémoire.
+OLLAMA_NUM_CTX = int(os.environ.get("BERLUE_OLLAMA_NUM_CTX", "8192"))
+
 NUM_PREDICT_RAG = int(os.environ.get("BERLUE_NUM_PREDICT_RAG", "600"))
 
 # --- Fusion des scores ---
