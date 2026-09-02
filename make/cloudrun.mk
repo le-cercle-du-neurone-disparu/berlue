@@ -55,6 +55,9 @@ rag_index_check:
 		exit 1; \
 	}
 
+# BERLUE_EVAL_STORE_TARGET=gcp sur le service applicatif : sans lui le cache des
+# prédictions (cf. berlue/api/predict_cache.py) écrirait dans un SQLite interne
+# au conteneur — perdu à chaque révision, et non partagé entre instances.
 cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
 	@$(MAKE) --no-print-directory _code_version_check
 	@$(MAKE) --no-print-directory _models_check
@@ -82,7 +85,7 @@ cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run se
 		--add-volume-mount=volume=code,mount-path=/mnt/code \
 		--add-volume=name=models,type=cloud-storage,bucket=$(MODELS_BUCKET_NAME) \
 		--add-volume-mount=volume=models,mount-path=/mnt/models \
-		--update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),HF_HOME=/mnt/models,HF_HUB_OFFLINE=1 \
+		--update-env-vars=BERLUE_OLLAMA_HOST=$$LLM_URL,RAG_VECTOR_DB_PATH=/mnt/rag/faiss/$(RAG_CORPUS_VERSION),BERLUE_APP_MODULE=$(BERLUE_API_MODULE),BERLUE_CODE_DIR=/mnt/code/$(CODE_VERSION),HF_HOME=/mnt/models,HF_HUB_OFFLINE=1,GCP_PROJECT=$(GCP_PROJECT),BERLUE_EVAL_STORE_TARGET=gcp \
 		$(if $(filter true,$(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV))),--allow-unauthenticated,--no-allow-unauthenticated)
 
 # Accès par personne sur les services Cloud Run du projet. CLOUDRUN_ROLE =
