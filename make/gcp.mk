@@ -209,7 +209,7 @@ gcp_doctor: ## Vérifie brique par brique que l'infra GCP est réellement utilis
 # l'empêche de faire échouer la commande. Générée uniquement pour ces deux
 # cibles, jamais en attrape-tout (`%:`), qui masquerait les fautes de frappe
 # sur toutes les autres.
-SHARE_TARGETS = gcp_share_with gcp_unshare_with
+SHARE_TARGETS = gcp_share_with gcp_unshare_with gcp_share_with_sa gcp_unshare_with_sa
 SHARE_EMAIL = $(strip $(filter-out $(SHARE_TARGETS),$(MAKECMDGOALS)))
 ifneq ($(filter $(SHARE_TARGETS),$(MAKECMDGOALS)),)
 $(foreach goal,$(SHARE_EMAIL),$(eval $(goal):;@:))
@@ -286,6 +286,75 @@ console_revoke: gcp_check_cli_auth ## Retire les listings et les logs dans la Co
 			--quiet </dev/null >/dev/null || true; \
 	done
 	@echo "✅ Accès Console retirés pour $(USER)."
+
+# Accès pour un compte de service EXTERNE (un autre projet GCP). Un compte de
+# service est un membre IAM comme un autre : seul le préfixe change,
+# `serviceAccount:` au lieu de `user:`. Contrairement au partage humain, celui-ci
+# donne l'ÉCRITURE sur les données — c'est son objet : faire tourner l'éval d'un
+# autre projet contre ce Firestore et ce BigQuery.
+#
+#   make gcp_share_with_sa sa-berlue@autre-projet.iam.gserviceaccount.com
+gcp_share_with_sa: gcp_check_cli_auth ## Donne à un compte de service externe la lecture des images et l'écriture sur Firestore/BigQuery — `make gcp_share_with_sa sa@autre-projet.iam.gserviceaccount.com`
+	@if [ -z "$(SHARE_EMAIL)" ]; then \
+		echo "❌ ERREUR : adresse de compte de service manquante."; \
+		echo "👉 Essayez : make gcp_share_with_sa sa-berlue@autre-projet.iam.gserviceaccount.com"; \
+		exit 1; \
+	fi
+	@case "$(SHARE_EMAIL)" in *.iam.gserviceaccount.com) ;; *) \
+		echo "❌ '$(SHARE_EMAIL)' n'est pas une adresse de compte de service."; \
+		echo "   Pour une personne, utilisez : make gcp_share_with $(SHARE_EMAIL)"; \
+		exit 1;; \
+	esac
+	@echo "🤖 Ouverture des accès pour $(SHARE_EMAIL) sur $(GCP_PROJECT)..."
+	@echo "🔐 Artifact Registry — lecture des images ($(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT))..."
+	gcloud artifacts repositories add-iam-policy-binding $(ARTIFACTSREPO) \
+		--location=$(GCP_REGION) \
+		--project=$(ARTIFACT_PROJECT) \
+		--member="serviceAccount:$(SHARE_EMAIL)" \
+		--role="roles/artifactregistry.reader" \
+		--quiet </dev/null >/dev/null
+	@echo "🔐 Firestore — lecture/écriture, restreint à la base (default)..."
+	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
+		--member="serviceAccount:$(SHARE_EMAIL)" \
+		--role="roles/datastore.user" \
+		--condition="$(FIRESTORE_CONDITION)" \
+		--quiet </dev/null >/dev/null
+	@echo "🔐 BigQuery — écriture des données (dataEditor) et exécution des requêtes (jobUser)..."
+	@for ROLE in roles/bigquery.dataEditor roles/bigquery.jobUser; do \
+		gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
+			--member="serviceAccount:$(SHARE_EMAIL)" \
+			--role="$$ROLE" \
+			--condition=None \
+			--quiet </dev/null >/dev/null; \
+	done
+	@echo "✅ $(SHARE_EMAIL) peut tirer les images et écrire dans Firestore/BigQuery de $(GCP_PROJECT)."
+
+gcp_unshare_with_sa: gcp_check_cli_auth ## Retire à un compte de service externe les accès donnés par gcp_share_with_sa
+	@if [ -z "$(SHARE_EMAIL)" ]; then \
+		echo "❌ ERREUR : adresse de compte de service manquante."; \
+		echo "👉 Essayez : make gcp_unshare_with_sa sa-berlue@autre-projet.iam.gserviceaccount.com"; \
+		exit 1; \
+	fi
+	@echo "🤖 Fermeture des accès pour $(SHARE_EMAIL) sur $(GCP_PROJECT)..."
+	@for ROLE in roles/bigquery.dataEditor roles/bigquery.jobUser; do \
+		gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+			--member="serviceAccount:$(SHARE_EMAIL)" \
+			--role="$$ROLE" \
+			--condition=None \
+			--quiet </dev/null >/dev/null || true; \
+	done
+	gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
+		--member="serviceAccount:$(SHARE_EMAIL)" \
+		--role="roles/datastore.user" \
+		--condition="$(FIRESTORE_CONDITION)" \
+		--quiet </dev/null >/dev/null || true
+	gcloud artifacts repositories remove-iam-policy-binding $(ARTIFACTSREPO) \
+		--location=$(GCP_REGION) \
+		--project=$(ARTIFACT_PROJECT) \
+		--member="serviceAccount:$(SHARE_EMAIL)" \
+		--role="roles/artifactregistry.reader" \
+		--quiet </dev/null >/dev/null || true
+	@echo "✅ Accès retirés pour $(SHARE_EMAIL)."
 
 gcp_project_list: ## Liste tous les projets GCP disponibles pour votre compte
 	@echo "📋 Listing des projets GCP..."
