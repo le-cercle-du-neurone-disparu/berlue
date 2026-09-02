@@ -133,9 +133,7 @@ def predict_endpoint(payload: PredictInput):
     Évalue une question avec un LLM et détecte les hallucinations.
     """
     try:
-        return app.state.service.predict(
-            payload=payload, retriever=app.state.retriever, extractor=app.state.extractor
-        )
+        return app.state.service.predict(payload=payload, retriever=app.state.retriever, extractor=app.state.extractor)
     except Exception as e:
         logger.exception("❌ Erreur de prédiction")
         raise HTTPException(status_code=500, detail=f"Erreur de prédiction : {str(e)}") from e
