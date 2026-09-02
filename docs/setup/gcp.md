@@ -97,7 +97,7 @@ la VM (`iam_setup_service_account`, créé à la demande par `vm_create`).
 
 ```bash
 make gcp_setup                            # l'infra : gratuit, rejouable, une fois
-make gcp_deploy                           # les images + le code + les 3 services (CLOUDRUN_ENV=test)
+make gcp_deploy                           # les images + le code + les modèles + les 3 services (CLOUDRUN_ENV=test)
 
 # puis, selon l'usage — À PARTIR D'ICI ÇA COÛTE (GPU L4 dans les deux cas) :
 make gcp_up       WARM_MODELS="llama3.1:8b"   # produit    : berlue-api-<env> + berlue-llm
@@ -120,6 +120,10 @@ dans [`cloudrun.md`](../gcp/cloudrun.md).
 
 `gcp_deploy` n'est pas le geste quotidien : les images ne contiennent pas le
 code de l'application. Tant que `requirements.txt` et les `Dockerfile` ne
+Au premier `gcp_deploy`, les poids des modèles (~2,2 Go) sont publiés dans leur
+bucket — cf. [`../gcp/modeles-en-bucket.md`](../gcp/modeles-en-bucket.md). Les
+déploiements suivants les sautent : ils ne changent qu'au changement de modèle.
+
 bougent pas, une nouvelle version de code se déploie par `make code_deploy`
 (~1 min, aucun build ni push) — cf.
 [`code-en-bucket.md`](../gcp/code-en-bucket.md).

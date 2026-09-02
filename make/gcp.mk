@@ -183,10 +183,11 @@ gcp_setup: gcp_preflight ## Provisionne TOUTE l'infra GCP dont Berlue a besoin (
 # Le chemin complet, à ne reprendre que quand requirements.txt ou un
 # Dockerfile changent : un simple changement de Python passe par
 # `make code_deploy` (~1 min contre ~15, cf. make/code.mk).
-gcp_deploy: gcp_check_cli_auth ## Build + push les 2 images ET publie le code, PUIS déploie les 3 services (CLOUDRUN_ENV=test|staging|prod, défaut test) — le barreau entre gcp_setup (l'infra) et gcp_up (allumer)
-	@echo "📦 Build/push des images, publication du code, puis déploiement (CLOUDRUN_ENV=$(CLOUDRUN_ENV))..."
+gcp_deploy: gcp_check_cli_auth ## Build + push les 2 images, publie le code et les modèles, PUIS déploie les 3 services (CLOUDRUN_ENV=test|staging|prod, défaut test) — le barreau entre gcp_setup (l'infra) et gcp_up (allumer)
+	@echo "📦 Build/push des images, publication du code et des modèles, puis déploiement (CLOUDRUN_ENV=$(CLOUDRUN_ENV))..."
 	@$(MAKE) --no-print-directory docker_build_push_all
 	@$(MAKE) --no-print-directory code_push
+	@$(MAKE) --no-print-directory models_ensure
 	@$(MAKE) --no-print-directory cloudrun_deploy_all
 
 gcp_doctor: ## Vérifie brique par brique que l'infra GCP est réellement utilisable (n'échoue pas à la première erreur) et rappelle ce qui reste à faire à la main

@@ -56,6 +56,16 @@ _models_check:
 models_push: gcp_check_cli_auth ## Publie les poids des modèles du pipeline dans gs://MODELS_BUCKET_NAME (~2 Go, à refaire seulement si un modèle change)
 	@bash scripts/models_push.sh $(MODELS_BUCKET_NAME) $(RAG_EMBEDDING_MODEL)
 
+# Appelé par gcp_deploy : publier 2,2 Go à chaque déploiement serait absurde alors
+# que ces poids ne changent qu'au changement de modèle. On ne publie que si le
+# bucket est vide — `make models_push` force la republication.
+models_ensure: gcp_check_cli_auth ## Publie les modèles seulement s'ils sont absents du bucket (appelé par gcp_deploy)
+	@if gcloud storage ls gs://$(MODELS_BUCKET_NAME)/hub/ >/dev/null 2>&1 </dev/null; then \
+		echo "✅ Modèles déjà publiés dans gs://$(MODELS_BUCKET_NAME)/, publication sautée."; \
+	else \
+		$(MAKE) --no-print-directory models_push; \
+	fi
+
 models_content: ## Affiche ce que contient le bucket de modèles
 	@echo "🧠 Contenu de gs://$(MODELS_BUCKET_NAME)/hub/ :"
 	@gcloud storage ls gs://$(MODELS_BUCKET_NAME)/hub/ 2>/dev/null </dev/null \
