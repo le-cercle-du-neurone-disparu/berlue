@@ -159,3 +159,80 @@ déployé, bucket RAG présent (`full-145k`, `small-2000`), `sa-berlue` présent
    sans aucun build ni push d'image.
 7. `make gcp_down` puis `gcp_status` : plus rien de facturé. **Non
    négociable** — `berlue-llm` est un GPU L4 à ~0,67 $/h.
+
+---
+
+# Résultats — exécuté et vérifié le 02/09 sur `gen-lang-client-0242212765`
+
+Tout le plan est appliqué. Les 7 vérifications ci-dessus sont passées, contre
+le vrai projet GCP.
+
+## Ce qui a été mesuré
+
+| Étape | Durée |
+|---|---|
+| `make code_push` (les 59 fichiers) | **1,4 s** |
+| `make code_deploy` (push + nouvelle révision des 2 services) | **132 s** |
+| `make docker_build_prod` (deps depuis zéro, dont 87 s de `pip install` et 122 s d'export de couches) | ~4 min |
+| `make docker_push_prod` (couches déjà présentes dans Artifact Registry) | 32 s |
+| `make cloudrun_deploy_all` (les 3 services, images déjà poussées) | 227 s |
+| `make gcp_up WARM_MODELS="llama3.2:3b"` | 219-231 s |
+| copie du code depuis le montage GCS FUSE, au démarrage du conteneur | **3 s** |
+| démarrage à froid complet de l'API (copie + FAISS + sentence-transformers) | ~35 s |
+| `/predict` réel de bout en bout | 55 s |
+
+Le chiffre qui compte : **132 s pour mettre une ligne de Python en ligne**, et
+les images ne sont pas touchées. Auparavant il fallait, avant ces mêmes
+227 s de déploiement, rebuilder et repousser une image.
+
+## Ce qui a été vérifié
+
+1. `make test_fast` — **183 passés**, aucun test modifié.
+2. Image unique, trois chemins de démarrage exercés en local :
+   `berlue.api.fast:app` et `berlue.api.eval_service:app` depuis un montage
+   simulé, et le bind-mount de développement (l'entrypoint saute bien la copie).
+3. `make code_push` remplit le bucket : 59 fichiers (56 `.py`, le `.joblib`
+   de la baseline, HaluEval et TruthfulQA).
+4. `make cloudrun_deploy_all` : les 3 services montent depuis les 2 images.
+   Les logs des deux services applicatifs montrent la copie depuis
+   `/mnt/code/current` avant `uvicorn`.
+5. Travail réel des deux côtés, résultats identiques au local :
+   - `berlue-eval` `/invoke --baseline` sur HaluEval → matrice de confusion
+     identique au chiffre pour chiffre à celle obtenue en local (le `.joblib`
+     et le dataset viennent bien du bucket) ;
+   - `berlue-api-test` `/predict` (question anglaise) → 2 claims extraits,
+     l'un vérifié contre le corpus FEVER (index RAG chargé depuis son bucket,
+     109 810 vecteurs), l'autre par SelfCheckGPT, fusion et verdicts rendus.
+6. **La vérification centrale** : une ligne modifiée dans
+   `berlue/api/fast.py`, `make code_deploy`, et le changement en ligne
+   132 s plus tard. Aucun `docker build`, aucun `docker push`.
+7. `make gcp_down` puis `gcp_status` : les 3 services supprimés, plus rien de
+   facturé. La suppression était protégée par un `trap` pendant les tests
+   GPU, pour qu'un échec ne puisse pas laisser le L4 allumé.
+
+## Deux écarts au plan initial, assumés
+
+**`berlue-eval` reçoit maintenant `--memory`/`--cpu` explicites**
+(`GAR_MEMORY`/`GAR_CPU`, 8 Gi / 2 vCPU). Sur `feat-fix` ce service n'en
+déclarait aucun et repartait donc sur les défauts Cloud Run (512 Mio,
+1 vCPU) : depuis que `run_eval` construit un vrai `BerluePipeline`, il
+charge les mêmes modèles que l'API et n'y survit pas. Sans ça, impossible de
+tester quoi que ce soit côté éval. À noter : `feat-eval-berlue-gcp` corrige
+le même problème de son côté, avec ses propres variables `EVAL_MEMORY`
+/`EVAL_CPU` — c'est là que se posera la question au moment de fusionner, pas
+ici.
+
+**Les jeux de données partent dans le bucket de code.** Le plan ne parlait
+que du code et des poids ; `params.py` référence HaluEval et TruthfulQA par
+chemin relatif et `berlue.evaluation.data` les retéléchargerait à chaque
+démarrage à froid. 6 Mo pour supprimer ce téléchargement, au même endroit et
+par le même mécanisme.
+
+## Observation sans rapport avec ce chantier
+
+Un `/predict` sur une question **en français** ("Quelle est la capitale de la
+France ?") renvoie une réponse correcte mais `claims: []` — l'extraction ne
+sort aucun claim, et tout le pipeline en aval est court-circuité (2 s au lieu
+de 55). La même requête en anglais donne 2 claims correctement vérifiés.
+Aucun fichier de `berlue/**` n'est modifié sur cette branche : c'est un
+comportement préexistant, à regarder du côté du prompt d'extraction.
