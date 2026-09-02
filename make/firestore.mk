@@ -33,6 +33,14 @@ firestore_create_database: gcp_check_cli_auth ## Crée la base Firestore (mode N
 FIRESTORE_ROLE ?= reader
 FIRESTORE_CONDITION = expression=resource.name == \"projects/$(GCP_PROJECT)/databases/(default)\",title=berlue-eval-firestore-default
 
+# La condition ne s'applique qu'à l'écriture. `datastore.databases.list` porte
+# sur le projet, pas sur une base : une condition qui nomme une base précise ne
+# peut jamais y correspondre, et le listing des bases est alors refusé — même
+# à qui a le droit de les lire. La lecture est donc accordée sans condition,
+# ce qui reste étroit : le rôle est en lecture seule et le projet n'héberge
+# qu'une base.
+FIRESTORE_GRANT_CONDITION = $(if $(filter writer,$(FIRESTORE_ROLE)),$(FIRESTORE_CONDITION),None)
+
 firestore_grant: ## Donne l'accès à une personne sur la base Firestore de l'éval (USER=email requis, FIRESTORE_ROLE=reader|writer, défaut reader)
 	@if [ -z "$(USER)" ]; then \
 		echo "❌ ERREUR : USER manquant."; \
@@ -43,7 +51,7 @@ firestore_grant: ## Donne l'accès à une personne sur la base Firestore de l'é
 	gcloud projects add-iam-policy-binding $(GCP_PROJECT) \
 		--member="user:$(USER)" \
 		--role="roles/datastore.$(if $(filter writer,$(FIRESTORE_ROLE)),user,viewer)" \
-		--condition="$(FIRESTORE_CONDITION)"
+		--condition="$(FIRESTORE_GRANT_CONDITION)"
 
 firestore_revoke: ## Retire l'accès d'une personne sur la base Firestore de l'éval (USER=email requis, FIRESTORE_ROLE doit correspondre au rôle accordé, défaut reader)
 	@if [ -z "$(USER)" ]; then \
@@ -55,7 +63,7 @@ firestore_revoke: ## Retire l'accès d'une personne sur la base Firestore de l'�
 	gcloud projects remove-iam-policy-binding $(GCP_PROJECT) \
 		--member="user:$(USER)" \
 		--role="roles/datastore.$(if $(filter writer,$(FIRESTORE_ROLE)),user,viewer)" \
-		--condition="$(FIRESTORE_CONDITION)"
+		--condition="$(FIRESTORE_GRANT_CONDITION)"
 
 firestore_test_read: ## Teste l'accès en lecture à la base Firestore de l'éval
 	@echo "🔎 Test lecture sur Firestore..."
