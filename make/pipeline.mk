@@ -70,13 +70,6 @@ evaluate_model_coverage: ## Affiche le total d'éléments d'un scope (pour prép
 #                      RAG et SelfCheck sortant du cache — pour régler les FUSION_*).
 PURGE_SCOPE ?= all
 
-# Seules les matrices sont publiées vers GCP : quelques lignes qu'on relit et
-# qu'on partage, contre des milliers de prédictions et de réponses générées que
-# personne ne consulte directement et dont la republication coûterait autant
-# d'écritures Firestore.
-eval_matrices_push: gcp_check_cli_auth ## Publie les matrices de confusion locales (mode généré) vers Firestore
-	@BERLUE_EVAL_STORE_TARGET=gcp GCP_PROJECT=$(GCP_PROJECT) python -m berlue.evaluation.push_matrices
-
 evaluate_model_purge: ## Purge le cache filtré par DATASET/RATIO/MODEL_ID/PIPELINE_VERSION/GENERATION_VERSION/EVAL_VERSION/JUDGE_MODEL/PURGE_SCOPE — vide = joker (attention : défauts non vides ci-dessus, blanquer explicitement pour un joker, ex. `make evaluate_model_purge DATASET= RATIO= MODEL_ID= PIPELINE_VERSION= EVAL_VERSION=`)
 	python -m berlue.evaluation.run_eval --purge --purge-scope $(PURGE_SCOPE) \
 		$(if $(DATASET),--purge-dataset $(DATASET),) \
