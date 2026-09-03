@@ -5,7 +5,7 @@ rendrait Berlue meilleur pour celui qui s'en sert**. L'axe est l'usage, pas la m
 d'évaluation.
 
 Chaque piste part d'une mesure. Les chiffres viennent de
-`claude-doc/analyse-pipeline-2026-09-02.md` (30 exemples lus un par un),
+`claude-doc/analyses/v1/analyse-pipeline.md` (30 exemples lus un par un),
 `claude-doc/couverture-corpus-2026-09-02.md` (couverture du corpus de preuves) et
 `docs/evaluation/result-version-2026-09-01.md` (runs d'évaluation).
 
