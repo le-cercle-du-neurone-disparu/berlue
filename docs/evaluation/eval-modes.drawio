@@ -1,0 +1,266 @@
+<mxfile host="app.diagrams.net" modified="2026-09-01T00:00:00.000Z" agent="berlue" version="24.0.0" type="device">
+  <diagram id="berlue-eval-modes" name="Modes d'évaluation">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="900" math="0" shadow="1">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ============ TITRE GLOBAL ============ -->
+        <mxCell id="title" value="Berlue &#8212; les deux modes d&#39;&#233;valuation" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=22;fontStyle=1;fontColor=#12335A;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="700" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="M&#234;me squelette dans les deux cas. Seules deux cases changent : &lt;b&gt;d&#39;o&#249; vient la r&#233;ponse v&#233;rifi&#233;e&lt;/b&gt; et &lt;b&gt;d&#39;o&#249; vient la v&#233;rit&#233;-terrain&lt;/b&gt;." style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=12;fontColor=#4A5D75;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="36" width="900" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ============ PANNEAU MODE 1 ============ -->
+        <mxCell id="p1_panel" value="" style="rounded=0;html=1;fillColor=#FBFCFD;strokeColor=#B9C6D6;strokeWidth=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="60" width="660" height="675" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_title" value="MODE 1 &#8212; dataset" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=15;fontStyle=1;fontColor=#1F4E88;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="72" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_sub" value="On v&#233;rifie la r&#233;ponse &lt;b&gt;fournie par le dataset&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=11;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="70" y="94" width="400" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_dataset" value="&lt;b&gt;Dataset&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;HaluEval / TruthfulQA &#8212; split de test&lt;br&gt;question + r&#233;ponse + label&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAF0F7;strokeColor=#3E5F8A;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#1F3A5F;" vertex="1" parent="1">
+          <mxGeometry x="70" y="125" width="290" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_ghost" value="&lt;i&gt;aucune g&#233;n&#233;ration&lt;/i&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;la r&#233;ponse existe d&#233;j&#224;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#C2CDDB;strokeWidth=1;dashed=1;dashPattern=6 4;fontFamily=Georgia;fontSize=11;fontColor=#94A2B3;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="180" y="213" width="180" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_answer" value="&lt;b&gt;R&#233;ponse &#224; v&#233;rifier&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;right_answer / hallucinated_answer&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9E6F5;strokeColor=#2A4E7C;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#12335A;" vertex="1" parent="1">
+          <mxGeometry x="70" y="310" width="290" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_berlue" value="&lt;b&gt;BERLUE&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;extraction &#8594;&lt;br&gt;SelfCheck + RAG&lt;br&gt;&#8594; fusion&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#1F4E88;strokeColor=#12335A;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="70" y="400" width="135" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_baseline" value="baseline NLI&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;TF-IDF +&lt;br&gt;r&#233;gression log.&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;fontFamily=Georgia;fontSize=11;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="225" y="400" width="135" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_gt" value="&lt;b&gt;Label du dataset&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;v&#233;rit&#233;-terrain directe&lt;br&gt;fiable, d&#233;terministe&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E5E3F3;strokeColor=#4B4A8F;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#2E2D63;" vertex="1" parent="1">
+          <mxGeometry x="410" y="400" width="260" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_mat_b" value="matrice&lt;br&gt;&lt;b&gt;Berlue&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#C9DCF0;strokeColor=#1F4E88;strokeWidth=2;fontFamily=Georgia;fontSize=11;fontColor=#12335A;" vertex="1" parent="1">
+          <mxGeometry x="70" y="545" width="135" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_mat_bl" value="matrice&lt;br&gt;baseline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;fontFamily=Georgia;fontSize=11;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="225" y="545" width="135" height="66" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_band" value="&lt;b&gt;Ce que &#231;a mesure :&lt;/b&gt; Berlue &lt;b&gt;seul&lt;/b&gt;. Le LLM n&#39;intervient que comme outil interne (&#233;chantillonnage SelfCheck, extraction) &#8212; la variable mesur&#233;e reste Berlue.&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;&#10003; v&#233;rit&#233;-terrain fiable et d&#233;terministe &#183; &#10003; m&#233;thodologie standard de benchmark &#183; &#10007; ne dit rien de la qualit&#233; de g&#233;n&#233;ration du LLM&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEF3F9;strokeColor=#B9C6D6;strokeWidth=1;align=left;spacingLeft=10;spacingRight=10;fontFamily=Georgia;fontSize=11;fontColor=#1F3A5F;shadow=0;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="70" y="640" width="600" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- flèches mode 1 -->
+        <mxCell id="p1_e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.15;exitY=1;exitDx=0;exitDy=0;entryX=0.15;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_dataset" target="p1_answer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e1l" value="&#9312; on prend la r&#233;ponse&lt;br&gt;d&#233;j&#224; &#233;crite dans le dataset" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p1_e1">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="8" y="-8" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p1_e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_answer" target="p1_berlue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e2l" value="&#9313;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=11;fontStyle=1;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p1_e2">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="-10" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p1_e2b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_answer" target="p1_baseline">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_berlue" target="p1_mat_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1_e3l" value="&#9314; verdict 3 &#233;tats&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;supported / contradicted&lt;br&gt;/ not_enough_info&lt;/font&gt;" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p1_e3">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="8" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p1_e3b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_baseline" target="p1_mat_bl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p1_e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_dataset" target="p1_gt">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="540" y="155" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p1_e4l" value="&#9315; le label est d&#233;j&#224; l&#224;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#2E2D63;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p1_e4">
+          <mxGeometry x="-0.5" relative="1" as="geometry"><mxPoint x="10" y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p1_e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_gt" target="p1_mat_b">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="475" y="510" /><mxPoint x="392" y="510" /><mxPoint x="392" y="578" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p1_e5l" value="&#9316; v&#233;rit&#233;-terrain" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#2E2D63;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p1_e5">
+          <mxGeometry x="-0.4" relative="1" as="geometry"><mxPoint x="0" y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p1_e5b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=1;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p1_gt" target="p1_mat_bl">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="475" y="578" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ============ PANNEAU MODE 2 ============ -->
+        <mxCell id="p2_panel" value="" style="rounded=0;html=1;fillColor=#FBFCFD;strokeColor=#B9C6D6;strokeWidth=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="740" y="60" width="660" height="675" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_title" value="MODE 2 &#8212; g&#233;n&#233;r&#233; + juge" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=15;fontStyle=1;fontColor=#1F4E88;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="770" y="72" width="400" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_sub" value="On v&#233;rifie la r&#233;ponse que le &lt;b&gt;LLM sous test vient de g&#233;n&#233;rer&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=11;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="770" y="94" width="400" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_dataset" value="&lt;b&gt;Dataset&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;HaluEval / TruthfulQA &#8212; split de test&lt;br&gt;question + r&#233;ponses de r&#233;f&#233;rence&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EAF0F7;strokeColor=#3E5F8A;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#1F3A5F;" vertex="1" parent="1">
+          <mxGeometry x="770" y="125" width="290" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_llm" value="&lt;b&gt;LLM sous test&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;g&#233;n&#232;re sa propre r&#233;ponse&lt;br&gt;&#224; la question&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DDEEF0;strokeColor=#2E7C86;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#17454B;" vertex="1" parent="1">
+          <mxGeometry x="770" y="213" width="290" height="62" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_answer" value="&lt;b&gt;R&#233;ponse &#224; v&#233;rifier&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;texte g&#233;n&#233;r&#233; &#8212; aucun label direct&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D9E6F5;strokeColor=#2A4E7C;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#12335A;" vertex="1" parent="1">
+          <mxGeometry x="770" y="310" width="290" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_berlue" value="&lt;b&gt;BERLUE&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;extraction &#8594;&lt;br&gt;SelfCheck + RAG&lt;br&gt;&#8594; fusion&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#1F4E88;strokeColor=#12335A;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="770" y="400" width="135" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_baseline" value="baseline NLI&lt;br&gt;&lt;font style=&#39;font-size:9px&#39;&gt;TF-IDF +&lt;br&gt;r&#233;gression log.&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;fontFamily=Georgia;fontSize=11;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="925" y="400" width="135" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_gt" value="&lt;b&gt;LLM-juge&lt;/b&gt;&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;compare la r&#233;ponse g&#233;n&#233;r&#233;e aux&lt;br&gt;r&#233;f&#233;rences correcte / incorrecte&lt;br&gt;&#8594; v&#233;rit&#233;-terrain de &lt;i&gt;substitution&lt;/i&gt;&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E5E3F3;strokeColor=#4B4A8F;strokeWidth=2;fontFamily=Georgia;fontSize=12;fontColor=#2E2D63;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="400" width="260" height="72" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_mat_b" value="matrice&lt;br&gt;&lt;b&gt;Berlue&lt;/b&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#C9DCF0;strokeColor=#1F4E88;strokeWidth=2;fontFamily=Georgia;fontSize=11;fontColor=#12335A;" vertex="1" parent="1">
+          <mxGeometry x="770" y="545" width="135" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_mat_bl" value="matrice&lt;br&gt;baseline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;fontFamily=Georgia;fontSize=11;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="925" y="545" width="135" height="66" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_band" value="&lt;b&gt;Ce que &#231;a mesure :&lt;/b&gt; le syst&#232;me combin&#233; &lt;b&gt;g&#233;n&#233;ration + d&#233;tection&lt;/b&gt;, en conditions proches d&#39;un usage produit.&lt;br&gt;&lt;font style=&#39;font-size:10px&#39;&gt;&#10003; couvre l&#39;angle mort du mode 1 &#183; &#10003; donne une v&#233;rit&#233;-terrain &#224; une r&#233;ponse cr&#233;&#233;e &#224; la vol&#233;e &#183; &#10007; qualit&#233; de g&#233;n&#233;ration et de d&#233;tection m&#233;lang&#233;es dans un seul chiffre&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#EEF3F9;strokeColor=#B9C6D6;strokeWidth=1;align=left;spacingLeft=10;spacingRight=10;fontFamily=Georgia;fontSize=11;fontColor=#1F3A5F;shadow=0;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="770" y="640" width="600" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- flèches mode 2 -->
+        <mxCell id="p2_e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_dataset" target="p2_llm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e1l" value="&#9312; la question &lt;i&gt;seule&lt;/i&gt;" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e1">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="8" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_llm" target="p2_answer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e2l" value="&#9313; sa propre r&#233;ponse" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e2">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="8" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_answer" target="p2_berlue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e3l" value="&#9314;" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=11;fontStyle=1;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e3">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="-10" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e3b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1;exitX=0.65;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_answer" target="p2_baseline">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2A4E7C;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_berlue" target="p2_mat_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p2_e4l" value="&#9315; verdict 3 &#233;tats" style="edgeLabel;html=1;align=left;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#1F3A5F;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e4">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="8" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e4b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_baseline" target="p2_mat_bl">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p2_e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_dataset" target="p2_gt">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1240" y="155" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p2_e5l" value="&#9316; les r&#233;f&#233;rences&lt;br&gt;correcte + incorrecte" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#2E2D63;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e5">
+          <mxGeometry x="-0.5" relative="1" as="geometry"><mxPoint x="30" y="-12" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_answer" target="p2_gt">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1085" y="335" /><mxPoint x="1085" y="436" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p2_e6l" value="&#9317; la r&#233;ponse&lt;br&gt;g&#233;n&#233;r&#233;e" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#2E2D63;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e6">
+          <mxGeometry x="-0.3" relative="1" as="geometry"><mxPoint x="0" y="-16" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_gt" target="p2_mat_b">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1175" y="510" /><mxPoint x="1092" y="510" /><mxPoint x="1092" y="578" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="p2_e7l" value="&#9318; TRUE / FALSE" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontFamily=Georgia;fontSize=10;fontColor=#2E2D63;labelBackgroundColor=#FBFCFD;shadow=0;" vertex="1" connectable="0" parent="p2_e7">
+          <mxGeometry x="-0.4" relative="1" as="geometry"><mxPoint x="0" y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="p2_e7b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#4B4A8F;strokeWidth=1;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;shadow=0;" edge="1" parent="1" source="p2_gt" target="p2_mat_bl">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1175" y="578" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ============ LEGENDE ============ -->
+        <mxCell id="leg_box" value="" style="rounded=0;html=1;fillColor=#FFFFFF;strokeColor=#B9C6D6;strokeWidth=1;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="755" width="1360" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_title" value="L&#233;gende" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=11;fontStyle=1;fontColor=#12335A;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="55" y="762" width="200" height="18" as="geometry" />
+        </mxCell>
+
+        <mxCell id="leg_s1" value="" style="rounded=0;html=1;fillColor=#1F4E88;strokeColor=#12335A;strokeWidth=2;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="58" y="790" width="22" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_t1" value="&lt;b&gt;chemin Berlue&lt;/b&gt; &#8212; le pipeline &#233;valu&#233;" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=10;fontColor=#1F3A5F;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="88" y="789" width="260" height="16" as="geometry" />
+        </mxCell>
+
+        <mxCell id="leg_s2" value="" style="rounded=0;html=1;fillColor=#F5F7FA;strokeColor=#8A97A8;strokeWidth=1;dashed=1;dashPattern=6 4;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="58" y="815" width="22" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_t2" value="&lt;b&gt;baseline NLI&lt;/b&gt; &#8212; point de comparaison, chemin &lt;i&gt;totalement s&#233;par&#233;&lt;/i&gt; (jamais calcul&#233;e dans le m&#234;me appel), compar&#233;e &#224; la m&#234;me v&#233;rit&#233;-terrain" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=10;fontColor=#5A6878;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="88" y="814" width="620" height="16" as="geometry" />
+        </mxCell>
+
+        <mxCell id="leg_s3" value="" style="rounded=0;html=1;fillColor=#E5E3F3;strokeColor=#4B4A8F;strokeWidth=2;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="740" y="790" width="22" height="14" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_t3" value="&lt;b&gt;v&#233;rit&#233;-terrain&lt;/b&gt; &#8212; la r&#233;f&#233;rence contre laquelle chaque verdict est confront&#233; pour construire la matrice de confusion 2&#215;3" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=10;fontColor=#2E2D63;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="770" y="789" width="600" height="16" as="geometry" />
+        </mxCell>
+
+        <mxCell id="leg_t4" value="&lt;i&gt;Non repr&#233;sent&#233; :&lt;/i&gt; le cache des r&#233;sultats (chaque &#233;tape est stock&#233;e d&#232;s son calcul et jamais recalcul&#233;e) &#8212; c&#39;est une optimisation d&#39;ex&#233;cution, pas une propri&#233;t&#233; de la m&#233;thode." style="text;html=1;align=left;verticalAlign=middle;fontFamily=Georgia;fontSize=10;fontColor=#8A97A8;shadow=0;" vertex="1" parent="1">
+          <mxGeometry x="740" y="814" width="640" height="16" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
