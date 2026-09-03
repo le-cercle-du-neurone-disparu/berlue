@@ -309,8 +309,14 @@ class RagRetriever:
                 "│ erreur       : %s\n"
                 "│ génération   : %s · %ss · %s tokens · %s car. · fin=%s\n"
                 "│ réponse brute:\n%s\n└─",
-                claim.id, e, meta.get("modele"), meta.get("secondes"), meta.get("tokens"),
-                meta.get("caracteres"), meta.get("done_reason"), response_text,
+                claim.id,
+                e,
+                meta.get("modele"),
+                meta.get("secondes"),
+                meta.get("tokens"),
+                meta.get("caracteres"),
+                meta.get("done_reason"),
+                response_text,
             )
             raise RagPanne(f"réponse du RAG inexploitable sur l'affirmation {claim.id}") from e
         except RagPanne:
