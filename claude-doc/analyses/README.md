@@ -30,12 +30,16 @@ de contexte Ollama imposée, distinction entre panne et ignorance.
 - [`analyse-25-questions.md`](v2/analyse-25-questions.md) — synthèse des questions
   d'exemple passées à l'API
 - [`exemples/`](v2/exemples) — les 25 analyses individuelles, trace complète et
-  lecture, une par fichier
+  lecture, **classées en succès et échecs** : 15 contre 10
 
-Deux échecs y sont documentés en détail : [`ex-07`](v2/exemples/ex-07.md), où un
-verdict vrai est contredit faute de traiter la double négation, et
-[`ex-08`](v2/exemples/ex-08.md), où un présupposé réfuté est ignoré au profit
-d'un attribut confirmé.
+Le classement suit le comportement de Berlue, pas celui du modèle évalué : une
+réponse fausse correctement contredite est un succès, une réponse juste validée
+sans rien pour l'étayer est un échec.
+
+Les deux échecs francs : [`ex-07`](v2/exemples/echecs/ex-07.md), où une
+affirmation vraie est contredite faute de traiter la double négation, et
+[`ex-08`](v2/exemples/echecs/ex-08.md), où un présupposé réfuté est ignoré au
+profit d'un attribut confirmé.
 
 ### Résultats v2 en un coup d'œil
 
