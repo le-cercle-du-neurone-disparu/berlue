@@ -1,7 +1,5 @@
 # IAM à appliquer
 
-Projet : `gen-lang-client-0242212765`.
-
 **Section 1 appliquée et vérifiée** le 2 septembre 2026. Les sections 2 et 3
 attendent une information des collègues, pas une décision.
 
@@ -16,7 +14,7 @@ quoi **voir les logs et lister les ressources** : sans ça, on ne peut ouvrir un
 bucket, un dataset ou une base qu'en connaissant son URL exacte.
 
 ```bash
-for U in lionelbos@gmail.com maximedrs1@gmail.com mouhamadtop@gmail.com; do
+for U in <email1> <email2> <email3>; do
   make console_grant USER=$U
   make firestore_grant USER=$U FIRESTORE_ROLE=reader
 done
@@ -85,7 +83,7 @@ make image_reader_grant CONSUMER_PROJECT=<id ou numéro de son projet>
 
 **Le numéro n'est lisible que depuis SON projet.** Résoudre un identifiant en
 numéro exige `resourcemanager.projects.get` sur le projet visé, que nous n'avons
-pas. Et les chiffres présents dans un identifiant — `robotic-sanctum-501611-i9`
+pas. Et les chiffres présents dans un identifiant — `<projet-du-collegue>`
 — **ne sont pas** le numéro de projet : Google y ajoute un suffixe aléatoire
 pour garantir l'unicité. Les utiliser autoriserait un projet inexistant, ou
 celui de quelqu'un d'autre.
@@ -111,7 +109,7 @@ make gcp_share_with_sa sa-berlue@<son-projet>.iam.gserviceaccount.com
 Une ligne dans son `.env`, et plus aucun build :
 
 ```
-IMAGE_SOURCE_PROJECT=gen-lang-client-0242212765
+IMAGE_SOURCE_PROJECT=<PROJET>
 ```
 
 Puis `make image_source_check` pour vérifier que les images sont lisibles avant

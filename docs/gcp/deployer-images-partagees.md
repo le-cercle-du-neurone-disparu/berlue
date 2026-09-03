@@ -14,8 +14,8 @@ Ce que ça vous épargne :
 Ce qui reste à vous : votre infrastructure (buckets, base Firestore, compte de
 service) et votre code. Tout tourne chez vous, sur votre facturation.
 
-Dans la suite, `PROJET_SOURCE` désigne le projet qui héberge les données —
-pour l'équipe, `gen-lang-client-0242212765`.
+Dans la suite, `PROJET_SOURCE` désigne le projet qui héberge les images, l'index
+et les modèles. Son propriétaire vous en donnera l'identifiant.
 
 ## 1. Ce que le propriétaire doit vous accorder
 

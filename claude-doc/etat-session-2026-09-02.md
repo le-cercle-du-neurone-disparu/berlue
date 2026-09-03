@@ -111,7 +111,7 @@ inutile ?
 
 Leurs **numéros de projet**, pour `make image_reader_grant CONSUMER_PROJECT=…`.
 Ils les obtiennent par `make image_reader_request` chez eux. Les identifiants
-connus : `robotic-sanctum-501611-i9` (Lionel), `wagon-bootcamp-data-501610`
+connus : `<projet-du-collegue>` (Lionel), `<projet-du-collegue>`
 (Mouhamad) — **les chiffres qu'ils contiennent ne sont PAS les numéros de
 projet**, Google y ajoute un suffixe aléatoire.
 

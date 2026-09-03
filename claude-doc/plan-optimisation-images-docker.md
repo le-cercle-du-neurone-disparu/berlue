@@ -2,7 +2,7 @@
 
 > **Statut : plan, rien d'implémenté.** Mesures faites le 01/09 sur
 > `berlue-api:prod` (image réellement poussée, projet
-> `gen-lang-client-0242212765`). Chantier distinct de la PR « cycle de vie
+> `<PROJET>`). Chantier distinct de la PR « cycle de vie
 > GCP » (`feat-reorganize-gcp-setup-deploy-run-down-destroy`).
 
 Les trois images du projet pèsent ~10 Go chacune. Ce n'est pas une fatalité :
