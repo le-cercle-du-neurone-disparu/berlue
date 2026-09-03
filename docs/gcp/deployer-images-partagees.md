@@ -43,8 +43,7 @@ make data_buckets_grant USER=<votre email>
 ## 2. Votre configuration
 
 ```bash
-make local_setup   # environnement Python et génération du .env (une fois)
-make gcp_auth      # authentifie la session gcloud
+make gcp_auth
 ```
 
 Puis, dans votre `.env`, en plus de `GCP_PROJECT` qui doit désigner **votre**
