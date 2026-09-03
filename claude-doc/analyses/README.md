@@ -27,8 +27,15 @@ de contexte Ollama imposée, distinction entre panne et ignorance.
 
 - [`eval-truthfulqa.md`](v2/eval-truthfulqa.md) — 158 questions, mode généré
 - [`eval-halueval.md`](v2/eval-halueval.md) — 1000 questions, mode généré
-- [`analyse-25-questions.md`](v2/analyse-25-questions.md) — les questions
-  d'exemple passées à l'API, traces analysées une par une
+- [`analyse-25-questions.md`](v2/analyse-25-questions.md) — synthèse des questions
+  d'exemple passées à l'API
+- [`exemples/`](v2/exemples) — les 25 analyses individuelles, trace complète et
+  lecture, une par fichier
+
+Deux échecs y sont documentés en détail : [`ex-07`](v2/exemples/ex-07.md), où un
+verdict vrai est contredit faute de traiter la double négation, et
+[`ex-08`](v2/exemples/ex-08.md), où un présupposé réfuté est ignoré au profit
+d'un attribut confirmé.
 
 ### Résultats v2 en un coup d'œil
 
