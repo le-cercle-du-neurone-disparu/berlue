@@ -190,6 +190,26 @@ gcp_deploy: gcp_check_cli_auth ## Build + push les 2 images, publie le code et l
 	@$(MAKE) --no-print-directory models_ensure
 	@$(MAKE) --no-print-directory cloudrun_deploy_all
 
+# Même chose que gcp_deploy, sans le build des images : elles viennent du dépôt
+# d'un autre projet (IMAGE_SOURCE_PROJECT dans le .env). Économise le build et le
+# push, soit une quinzaine de minutes ; tout le reste — code, modèles, index RAG
+# — appartient au projet qui déploie.
+#
+# L'ordre n'est pas indifférent : les conteneurs lisent leur code depuis le
+# bucket au démarrage, et un bucket vide donne un conteneur qui ne boote pas.
+# code_push vient donc avant le déploiement, comme dans gcp_deploy.
+gcp_deploy_shared: gcp_check_cli_auth ## Déploie SANS builder d'image, en tirant celles de IMAGE_SOURCE_PROJECT (cf. docs/gcp/deployer-images-partagees.md)
+	@if [ "$(IMAGE_SOURCE_PROJECT)" = "$(GCP_PROJECT)" ]; then \
+		echo "❌ IMAGE_SOURCE_PROJECT vaut $(GCP_PROJECT) : aucune image partagée n'est configurée."; \
+		echo "   👉 Ajoutez dans votre .env : IMAGE_SOURCE_PROJECT=<projet qui héberge les images>"; \
+		exit 1; \
+	fi
+	@$(MAKE) --no-print-directory image_source_check
+	@echo "📦 Publication du code et des modèles, puis déploiement sur les images de $(IMAGE_SOURCE_PROJECT)..."
+	@$(MAKE) --no-print-directory code_push
+	@$(MAKE) --no-print-directory models_ensure
+	@$(MAKE) --no-print-directory cloudrun_deploy_all
+
 gcp_doctor: ## Vérifie brique par brique que l'infra GCP est réellement utilisable (n'échoue pas à la première erreur) et rappelle ce qui reste à faire à la main
 	@bash scripts/gcp_doctor.sh
 

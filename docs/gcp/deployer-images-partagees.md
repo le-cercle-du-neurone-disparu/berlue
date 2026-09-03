@@ -43,11 +43,12 @@ make data_buckets_grant USER=<votre email>
 ## 2. Votre configuration
 
 ```bash
-make gcp_auth
-make gcp_config
+make local_setup   # environnement Python et génération du .env (une fois)
+make gcp_auth      # authentifie la session gcloud
 ```
 
-Puis, dans votre `.env` :
+Puis, dans votre `.env`, en plus de `GCP_PROJECT` qui doit désigner **votre**
+projet :
 
 ```
 IMAGE_SOURCE_PROJECT=<PROJET_SOURCE>
@@ -80,20 +81,32 @@ une petite machine suffit. C'est le remplaçant de
 `download_fever_data_full && build_fever_index && rag_index_upload`, qui exige
 de calculer 109 810 embeddings en local.
 
-## 5. Publier votre code et déployer
+## 5. Publier votre code, puis déployer
+
+**Les images ne contiennent pas le code de Berlue.** Elles n'embarquent que les
+dépendances : au démarrage, chaque conteneur copie le code Python depuis *votre*
+bucket, monté en volume. C'est ce qui permet de changer une ligne de Python sans
+reconstruire d'image — et ça veut dire qu'un bucket de code vide donne un
+conteneur qui ne démarre pas.
+
+Le code doit donc être publié **avant** tout déploiement :
 
 ```bash
-make gcp_deploy_shared
+make code_push          # publie votre code dans gs://<votre-projet>-berlue-code
+make gcp_deploy_shared  # vérifie les images, publie code et modèles, déploie
 ```
 
-Enchaîne la vérification des images, la publication du code, celle des modèles,
-puis le déploiement des trois services. C'est `gcp_deploy` sans le build.
+`gcp_deploy_shared` refait `code_push` de lui-même, donc l'appeler seul suffit —
+la première commande est là pour que l'ordre soit clair, et parce qu'on la
+relancera seule à chaque changement de Python (cf. `code_deploy`).
 
-**Le code doit être publié avant le déploiement** : les conteneurs le lisent
-depuis votre bucket au démarrage, et un bucket vide donne un conteneur qui ne
-boote pas. La cible s'en charge dans le bon ordre, et refuse de déployer si
-l'index RAG, le code ou les modèles manquent — l'erreur arrive tout de suite, au
-lieu d'être enfouie dans les logs Cloud Run quelques minutes plus tard.
+La cible enchaîne : vérification des images, publication du code, publication
+des modèles, déploiement des trois services. C'est `gcp_deploy` sans le build.
+
+Elle refuse de partir si `IMAGE_SOURCE_PROJECT` n'est pas configuré, et le
+déploiement lui-même refuse si l'index RAG, le code ou les modèles manquent —
+l'erreur arrive tout de suite, au lieu d'être enfouie dans les logs Cloud Run
+quelques minutes plus tard.
 
 ## 6. Allumer, et éteindre
 
