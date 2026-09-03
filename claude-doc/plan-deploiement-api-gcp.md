@@ -1,5 +1,5 @@
 > **Statut : validé de bout en bout contre GCP** (31/08, branche
-> `feat-berlu-sur-gcp`, projet `gen-lang-client-0242212765`) — `gcp_setup`
+> `feat-berlu-sur-gcp`, projet `<PROJET>`) — `gcp_setup`
 > exécuté (bucket RAG créé, IAM `sa-berlue`), index `small-2000` uploadé,
 > `berlue-api-test` déployé et câblé sur `berlue-llm` déjà en place,
 > `/predict` répond 200 avec des verdicts cohérents après le passage à

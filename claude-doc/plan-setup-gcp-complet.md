@@ -2,8 +2,8 @@
 
 > **Statut : plan, rien d'implémenté.** Étude faite sur la branche
 > `fixup-pipeline-make-targets` (01/09). Les points marqués **[vérifié]**
-> l'ont été contre GCP le 01/09 (projets `gen-lang-client-0242212765` et
-> `wagon-bootcamp-2327-xm`, compte `xav@tekio.org`) ; le reste est déduit
+> l'ont été contre GCP le 01/09 (projets `<PROJET>` et
+> `<PROJET>`, compte `<votre-compte>`) ; le reste est déduit
 > du code. La validation complète sur un projet neuf reste à faire, cf.
 > [Recette](#6-recette--valider-sur-un-projet-vierge).
 
@@ -86,13 +86,13 @@ _gcp_check_cli_auth:
 
 Sur un projet où `run.googleapis.com` n'est pas activée, cette commande
 échoue — pas parce que l'auth est mauvaise. Reproduit le 01/09 sur
-`wagon-bootcamp-2327-xm`, session parfaitement valide :
+`<PROJET>`, session parfaitement valide :
 
 ```
-API [run.googleapis.com] not enabled on project [wagon-bootcamp-2327-xm]. Would
+API [run.googleapis.com] not enabled on project [<PROJET>]. Would
 you like to enable and retry (this will take a few minutes)? (y/N)?
 ERROR: (gcloud.run.services.list) … Cloud Run Admin API has not been used in
-project wagon-bootcamp-2327-xm before or it is disabled.
+project <PROJET> before or it is disabled.
                                                     → code de sortie 1
 ```
 
@@ -157,7 +157,7 @@ de facturation. L'erreur gcloud est explicite mais arrive au milieu de
 
 Hypothèse de départ : l'impersonation, dont tout le runtime GCP dépend,
 casserait faute d'`iamcredentials.googleapis.com`.
-**Mesuré, c'est faux** — sur `gen-lang-client-0242212765`, les deux API
+**Mesuré, c'est faux** — sur `<PROJET>`, les deux API
 sont rapportées `DISABLED` par `gcloud services list`, et pourtant
 l'impersonation de `sa-berlue` réussit, et `sa-berlue` a bien pu être créé
 sans `iam.googleapis.com`. GCP les traite comme disponibles sans activation
@@ -455,8 +455,8 @@ Le seul test qui compte : **un projet GCP neuf**, pas celui de Xavier.
 Un projet jetable créé pour l'occasion, détruit après.
 
 Raccourci pour le point le plus important (2.1), sans rien créer :
-`wagon-bootcamp-2327-xm` existe déjà sur le compte de Xavier et
-`run.googleapis.com` y est désactivée — `GCP_PROJECT=wagon-bootcamp-2327-xm
+`<PROJET>` existe déjà sur le compte de Xavier et
+`run.googleapis.com` y est désactivée — `GCP_PROJECT=<PROJET>
 make gcp_check_cli_auth` reproduit le gel aujourd'hui et doit passer après
 la Phase 1. Il ne remplace pas le test complet (facturation, quotas,
 ressources à créer) mais valide le correctif clé en quelques secondes.

@@ -145,7 +145,7 @@ qu'on ne rebuild presque plus.
 
 ## Vérifications sur GCP réel
 
-Projet `gen-lang-client-0242212765`. À l'état initial : aucun service Cloud Run
+Projet `<PROJET>`. À l'état initial : aucun service Cloud Run
 déployé, bucket RAG présent (`full-145k`, `small-2000`), `sa-berlue` présente.
 
 1. `make test_fast` passe (aucune régression sur l'existant).
@@ -162,7 +162,7 @@ déployé, bucket RAG présent (`full-145k`, `small-2000`), `sa-berlue` présent
 
 ---
 
-# Résultats — exécuté et vérifié le 02/09 sur `gen-lang-client-0242212765`
+# Résultats — exécuté et vérifié le 02/09 sur `<PROJET>`
 
 Tout le plan est appliqué. Les 7 vérifications ci-dessus sont passées, contre
 le vrai projet GCP.
