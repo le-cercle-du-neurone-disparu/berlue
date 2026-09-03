@@ -402,6 +402,7 @@ cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollam
 		--image $(LLM_IMAGE_URI) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
+		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
 		--gpu=1 \
 		--gpu-type=nvidia-l4 \
 		--no-gpu-zonal-redundancy \
