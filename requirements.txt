@@ -5,16 +5,17 @@ numpy==2.5.2
 # downgrade nécessaire : mlflow==3.15.1 exige pandas<3 (dernière 2.x compatible)
 pandas==2.3.3
 python-dateutil==2.9.0.post0
-pygeohash==3.3.2
 requests==2.34.2
 google-cloud-bigquery==3.44.0
-google-cloud-storage==3.13.1
 mlflow==3.15.1
 prefect==3.8.3
 ollama==0.6.2
 scikit-learn==1.9.0
 joblib==1.5.3
 selfcheckgpt==0.1.7
+# sentencepiece : transformers ne le déclare qu'en extra, mais le tokenizer
+# DeBERTa-v3 de SelfCheckNLI n'a pas de tokenizer.json et se construit depuis
+# spm.model — sans ce paquet, /predict casse au chargement du modèle.
 sentencepiece==0.2.2
 transformers==4.57.6
 # ## Index vectoriel + embeddings du RAG inversé (berlue/rag/) — tqdm en direct car
