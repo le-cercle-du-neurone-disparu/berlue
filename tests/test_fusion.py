@@ -220,12 +220,17 @@ def test_la_confiance_reste_bornee(judgment, confidence, divergence):
 # --- Idempotence --------------------------------------------------------------
 
 
-def test_do_fusion_est_idempotente():
-    """Un double appel ne doit pas dupliquer les verdicts."""
+def test_do_fusion_est_pure():
+    """`do_fusion` rend un nouveau résultat sans toucher à son entrée, et refuser
+    la fusion d'une fusion ne duplique aucun verdict."""
     result = _result(_rag(RagJudgment.LIKELY_TRUE, 1.0), 0.05)
-    do_fusion(result)
-    do_fusion(result)
-    assert len(result.fused_verdicts) == 1
+
+    fusionne = do_fusion(result)
+    refusionne = do_fusion(fusionne)
+
+    assert result.fused_verdicts == [], "l'entrée doit rester intacte"
+    assert len(fusionne.fused_verdicts) == 1
+    assert refusionne.fused_verdicts == fusionne.fused_verdicts
 
 
 # --- Tableau de référence de la spécification ---------------------------------

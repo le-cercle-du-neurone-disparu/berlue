@@ -1,13 +1,29 @@
-import logging
+"""Pipeline principal de vérification : génère, extrait, puis fait juger la réponse
+par deux branches indépendantes avant de les fusionner.
 
-from berlue.core.schemas import PipelineResult, RagJudgment, Verdict
+    generate_answer ─> extract_claims ─┬─> branche RAG (fidélité documentaire) ──┐
+                                       └─> branche SelfCheck (cohérence interne) ┴─> fusion
+
+Les deux branches ne partagent rien une fois les affirmations extraites : elles
+lisent la même liste d'affirmations, en lecture seule, et rendent chacune son
+propre résultat. Elles tournent donc dans deux threads, et chacune répartit ses
+propres appels sur son pool (cf. `berlue.params.RAG_WORKERS` et
+`SELFCHECK_*_WORKERS`).
+
+Aucune étape ne remplit un objet commun : `PipelineResult` est figé et assemblé
+en une seule fois, quand les deux branches ont fini.
+"""
+
+import logging
+from concurrent.futures import ThreadPoolExecutor
+
+from berlue.core.schemas import Claim, PipelineResult, RagJudgment, Verdict
 from berlue.llm.client import OllamaClient
 from berlue.params import NUM_PREDICT_ANSWER, OLLAMA_MODEL, OLLAMA_SYSTEM_PROMPT, RAG_MODEL
 from berlue.pipeline.extraction import do_extraction
 from berlue.pipeline.fusion import do_fusion
-from berlue.rag.retriever import RagPanne, RagRetriever
-from berlue.selfcheck.sampler import sample_responses
-from berlue.selfcheck.scorer import compute_divergence
+from berlue.rag.retriever import RagRetriever
+from berlue.selfcheck.branch import run_selfcheck
 
 logger = logging.getLogger(__name__)
 
@@ -30,90 +46,60 @@ class HurluBerlu:
         self.retriever = retriever
 
     # ÉTAPE 1
-    def generate_response(
-        self,
-        question: str,
-    ) -> PipelineResult:
+    def generate_answer(self, question: str) -> str:
         """Génère la réponse de base à partir de la question de l'utilisateur."""
-
-        # Formatage du prompt avec la question
         prompt = OLLAMA_SYSTEM_PROMPT.format(question=question)
-
-        # Appel au LLM
-        answer = self.llm_client.generate(prompt=prompt, num_predict=NUM_PREDICT_ANSWER)
-
-        return PipelineResult(question=question, raw_answer=answer)
+        return self.llm_client.generate(prompt=prompt, num_predict=NUM_PREDICT_ANSWER)
 
     # ÉTAPE 2
-    def extract_claims(self, result: PipelineResult) -> PipelineResult:
+    def extract_claims(self, question: str, answer: str) -> list[Claim]:
+        """Découpe la réponse en affirmations atomiques."""
+        return do_extraction(self.llm_extract, question=question, answer_text=answer)
 
-        # On passe la question et la réponse brute
-        result.claims = do_extraction(self.llm_extract, question=result.question, answer_text=result.raw_answer)
+    # ÉTAPE 3 — les deux branches, en parallèle
+    def compute_signals(self, question: str, answer: str | None = None) -> PipelineResult:
+        """Tout le pipeline **sauf** la fusion : génération (si `answer` est absent),
+        extraction, puis les deux branches de vérification en parallèle.
 
-        return result
+        C'est la partie coûteuse — un appel LLM par affirmation côté RAG, K
+        échantillons plus un passage NLI par affirmation côté SelfCheck — et c'est
+        elle qu'on met en cache : la fusion qui la consomme est une fonction pure,
+        instantanée, qu'on veut pouvoir rejouer avec d'autres `FUSION_*` sans
+        repayer ces appels.
+        """
+        raw_answer = answer if answer is not None else self.generate_answer(question)
+        claims = self.extract_claims(question, raw_answer)
 
-    # ÉTAPE 3
-    def generate_samples(self, result: PipelineResult) -> PipelineResult:
+        # Deux threads, un par branche. Les deux futurs sont lus avant de sortir du
+        # bloc : une exception dans l'une n'abandonne pas l'autre en arrière-plan,
+        # le `with` l'attend de toute façon.
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="branche") as executor:
+            futur_rag = executor.submit(self.retriever.verify_claims, claims)
+            futur_selfcheck = executor.submit(run_selfcheck, question, claims, self.llm_client)
+            rag = futur_rag.result()
+            selfcheck = futur_selfcheck.result()
 
-        result.samples = sample_responses(question=result.question, client=self.llm_client)
-        return result
+        return PipelineResult(
+            question=question,
+            raw_answer=raw_answer,
+            claims=claims,
+            samples=selfcheck.samples,
+            selfcheck_scores=selfcheck.scores,
+            rag_scores=rag.verdicts,
+            rag_traces=rag.traces,
+            panne=rag.panne,
+        )
 
     # ÉTAPE 4
-    def evaluate_selfcheck(self, result: PipelineResult) -> PipelineResult:
-
-        logger.debug("🧠 Calcul des scores de divergence SelfCheckNLI...")
-
-        # Réécrit la liste au lieu d'y ajouter : un double appel dupliquait tout.
-        result.selfcheck_scores = [compute_divergence(claim=claim, samples=result.samples) for claim in result.claims]
-        if result.selfcheck_scores:
-            avg_divergence = sum(s.divergence_score for s in result.selfcheck_scores) / len(result.selfcheck_scores)
-            avg_confidence = 1.0 - avg_divergence
-            alert = "🔴" if avg_divergence > 0.5 else "🟢"
-            logger.debug(
-                "%s [SelfCheck GLOBAL] Divergence moyenne : %.2f | Confiance : %.2f",
-                alert,
-                avg_divergence,
-                avg_confidence,
-            )
-
-        return result
-
-    # ÉTAPE 5
-    def evaluate_rag(self, result: PipelineResult) -> PipelineResult:
-        """Fait juger chaque affirmation par le RAG.
-
-        Une panne du RAG — réponse illisible, appel en échec — est signalée par
-        `result.panne`, et non déguisée en « je ne sais pas ». La distinction
-        compte : ne pas savoir est un jugement recevable, que la fusion combine
-        avec SelfCheck ; ne pas comprendre la réponse du RAG est une défaillance,
-        et la fusion doit alors annoncer une erreur plutôt qu'un verdict incertain.
-
-        Une seule affirmation en panne suffit à invalider la question entière : les
-        verdicts restants porteraient sur une analyse partielle sans que rien ne le
-        signale à la lecture.
-        """
-        logger.debug("🧠 Calcul des verdicts du RAG...")
-
-        # Réécrit la liste au lieu d'y ajouter : un double appel dupliquait tout.
-        result.rag_traces = []
-        try:
-            result.rag_scores = [
-                self.retriever.verify_claim(claim=claim, traces=result.rag_traces) for claim in result.claims
-            ]
-        except RagPanne as e:
-            logger.warning("⚠️ RAG en panne : %s", e)
-            result.rag_scores = []
-            result.panne = f"RAG en panne ({e})"
-
-        return result
-
-    # ÉTAPE 6
-    def fuse_results(self, result: PipelineResult) -> PipelineResult:
-        """Dernière étape : combine le jugement RAG et le score SelfCheck pour statuer
-        sur chaque affirmation. Les poids et seuils viennent de `params.py`
-        (`FUSION_*`), pas de la signature : ils doivent être réglables sans éditer
-        chaque appelant."""
+    def fuse(self, result: PipelineResult) -> PipelineResult:
+        """Combine le jugement RAG et le score SelfCheck pour statuer sur chaque
+        affirmation. Les poids et seuils viennent de `params.py` (`FUSION_*`), pas
+        de la signature : ils doivent être réglables sans éditer chaque appelant."""
         return do_fusion(result)
+
+    def run(self, question: str, answer: str | None = None) -> PipelineResult:
+        """Le pipeline complet, de la question aux verdicts fusionnés."""
+        return self.fuse(self.compute_signals(question, answer))
 
 
 if __name__ == "__main__":
@@ -122,7 +108,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Démo du pipeline HurluBerlu, étape par étape.")
     parser.add_argument(
         "--until",
-        choices=["generate", "extract", "samples", "selfcheck", "rag", "fusion"],
+        choices=["generate", "extract", "selfcheck", "rag", "fusion"],
         default="fusion",  # Le défaut va jusqu'au bout, c'est à dire la fusion !
         help="S'arrête après cette étape (défaut : fusion).",
     )
@@ -151,37 +137,40 @@ if __name__ == "__main__":
     print(f"\n❓ Question posée : {args.question}")
 
     # --- Étape 1 ---
-    result = pipeline.generate_response(args.question)
+    raw_answer = pipeline.generate_answer(args.question)
     if args.until == "generate":
-        print(f"\n🔹 RÉPONSE BRUTE :\n{result.raw_answer}")
+        print(f"\n🔹 RÉPONSE BRUTE :\n{raw_answer}")
         raise SystemExit
 
     # --- Étape 2 ---
-    result = pipeline.extract_claims(result)
+    claims = pipeline.extract_claims(args.question, raw_answer)
     if args.until == "extract":
-        print(f"\n🔹 {len(result.claims)} AFFIRMATION(S) EXTRAITE(S) :")
-        for i, claim in enumerate(result.claims, 1):
+        print(f"\n🔹 {len(claims)} AFFIRMATION(S) EXTRAITE(S) :")
+        for i, claim in enumerate(claims, 1):
             print(f"   {i}. {claim.text}")
         raise SystemExit
 
-    # --- Étape 3 ---
-    result = pipeline.generate_samples(result)
-    if args.until == "samples":
-        print(f"\n🔹 {len(result.samples)} ÉCHANTILLON(S) GÉNÉRÉ(S) :")
-        for i, sample in enumerate(result.samples, 1):
+    # --- Étape 3 : une seule branche, ou les deux en parallèle ---
+    if args.until == "selfcheck":
+        selfcheck = run_selfcheck(args.question, claims, pipeline.llm_client)
+        print(f"\n🔹 {len(selfcheck.samples)} ÉCHANTILLON(S) GÉNÉRÉ(S) :")
+        for i, sample in enumerate(selfcheck.samples, 1):
             print(f"   {i}. {sample.strip()}")
+        print(f"\n🔹 {len(selfcheck.scores)} SCORE(S) SELFCHECK :")
+        for score in selfcheck.scores:
+            print(f"   {score.claim_id} · divergence {score.divergence_score:.2f}")
         raise SystemExit
 
-    # --- Étape 4 ---
-    final_result = pipeline.evaluate_selfcheck(result)
+    if args.until == "rag":
+        rag = pipeline.retriever.verify_claims(claims)
+        print(f"\n🔹 {len(rag.verdicts)} VERDICT(S) RAG :")
+        for verdict in rag.verdicts:
+            print(f"   {verdict.claim_id} · {verdict.verdict} · confiance {verdict.confidence:.2f}")
+        if rag.panne:
+            print(f"\n⚠️ PANNE : {rag.panne}")
+        raise SystemExit
 
-    # --- Étape 5 ---
-    if args.until not in ["selfcheck"]:
-        final_result = pipeline.evaluate_rag(final_result)
-
-    # --- Étape 6 : La Fusion ---
-    if args.until == "fusion":
-        final_result = pipeline.fuse_results(final_result)
+    final_result = pipeline.run(args.question, answer=raw_answer)
 
     # ==========================================
     # AFFICHAGE DU BILAN FINAL

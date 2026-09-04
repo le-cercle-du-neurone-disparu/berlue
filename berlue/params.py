@@ -120,6 +120,32 @@ SELFCHECK_K = int(os.environ.get("BERLUE_SELFCHECK_K", "5"))
 SELFCHECK_TEMPERATURE_MIN = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MIN", "0.3"))
 SELFCHECK_TEMPERATURE_MAX = float(os.environ.get("BERLUE_SELFCHECK_TEMPERATURE_MAX", "1.0"))
 
+# --- Parallélisme du pipeline ---
+# Une fois les affirmations extraites, les branches RAG et SelfCheck ne partagent
+# plus rien : elles tournent dans deux threads, et chacune répartit ses propres
+# appels sur son pool. Les appels sont bloqués sur le réseau (Ollama) ou dans
+# torch, qui relâchent tous deux le GIL — d'où un gain réel malgré les threads.
+#
+# Trois plafonds séparés plutôt qu'un pool commun : les trois étages ne saturent
+# pas la même ressource, et un pool partagé ferait dépendre le débit de l'un du
+# nombre de tâches de l'autre.
+#
+#   RAG_WORKERS              : un appel Ollama par affirmation.
+#   SELFCHECK_SAMPLE_WORKERS : les K générations d'échantillons, simultanées sur
+#                              le même modèle — au-delà de ce que le serveur
+#                              Ollama traite en parallèle (OLLAMA_NUM_PARALLEL),
+#                              les requêtes font la queue côté serveur sans rien
+#                              apporter.
+#   SELFCHECK_SCORE_WORKERS  : les passages NLI (DeBERTa), un par affirmation.
+#                              Bas par défaut : contrairement aux appels Ollama,
+#                              ils tiennent une place mémoire sur l'appareil de
+#                              torch, GPU compris.
+#
+# 1 = séquentiel, sans création de pool (cf. `pipeline.parallel.map_parallele`).
+RAG_WORKERS = int(os.environ.get("BERLUE_RAG_WORKERS", "4"))
+SELFCHECK_SAMPLE_WORKERS = int(os.environ.get("BERLUE_SELFCHECK_SAMPLE_WORKERS", "4"))
+SELFCHECK_SCORE_WORKERS = int(os.environ.get("BERLUE_SELFCHECK_SCORE_WORKERS", "2"))
+
 # --- JUGE (évaluation d'une réponse générée contre les réponses de référence
 # du dataset) : modèle dédié, indépendant de OLLAMA_MODEL, pour comparer
 # plusieurs modèles sous test à juge constant. 7B minimum — en dessous, le

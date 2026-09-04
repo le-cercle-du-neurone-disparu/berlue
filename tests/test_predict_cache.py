@@ -215,7 +215,7 @@ def _service_avec_pipeline_compte(monkeypatch):
         def __init__(self, **kwargs):
             pass
 
-        def generate_response(self, question):
+        def run(self, question, answer=None):
             appels["n"] += 1
             resultat = MagicMock()
             resultat.question = question
@@ -227,22 +227,6 @@ def _service_avec_pipeline_compte(monkeypatch):
             resultat.fused_verdicts = []
             resultat.panne = None
             return resultat
-
-        def extract_claims(self, r):
-            return r
-
-        def generate_samples(self, r):
-            return r
-
-        def evaluate_selfcheck(self, r):
-            return r
-
-        def evaluate_rag(self, r):
-            return r
-
-        def fuse_results(self, r):
-            r.fused_verdicts = []
-            return r
 
     monkeypatch.setattr(svc, "HurluBerlu", FauxPipeline)
     monkeypatch.setattr(svc, "OllamaClient", lambda **kwargs: MagicMock())
