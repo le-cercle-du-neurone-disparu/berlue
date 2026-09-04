@@ -23,8 +23,8 @@ def load_requirements(filename: str) -> list:
 setup(
     name='berlue',
     version="0.0.1",
-    description="Projet template MLOps",
-    author="Your Name", # TODO: Mettre à jour le nom de l'auteur
+    description="Détecteur d'hallucinations LLM : RAG inversé sur FEVER + SelfCheckGPT",
+    author="Le cercle du neurone disparu",
 
     # Trouve automatiquement les packages mais exclut le dossier tests de la production
     packages=find_packages(exclude=["tests", "tests.*"]),
