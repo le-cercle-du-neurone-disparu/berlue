@@ -13,7 +13,7 @@ voies indépendantes avant de fusionner leur verdict.
    - **RAG inversé** (`berlue/rag/`) — cherche des preuves dans le corpus
      FEVER (embeddings + FAISS) et vote sur les labels des plus proches
      voisins.
-4. **Fusion** (`HurluBerlu.fuse_results`) combine les deux en un verdict
+4. **Fusion** (`HurluBerlu.fuse`) combine les deux en un verdict
    (`supported` / `contradicted` / `not_enough_info`) par affirmation.
 
 L'orchestrateur de ce pipeline est `berlue/pipeline/hurlu_berlu.py` — voir
