@@ -3,13 +3,13 @@
 Combine le verdict RAG ([`rag.md`](rag.md), `RagVerdict`) et le score
 SelfCheckGPT ([`selfcheck.md`](selfcheck.md), `SelfCheckScore`) d'une même
 affirmation en un seul verdict final (`FusedVerdict`) — voir
-`berlue/pipeline/hurlu_berlu.py::HurluBerlu.fuse_results`, dernière étape de
+`berlue/pipeline/hurlu_berlu.py::HurluBerlu.fuse`, dernière étape de
 l'orchestrateur ([`hurlu_berlu.md`](hurlu_berlu.md)).
 
 ## Logique
 
 ```python
-fuse_results(result, weight_rag=0.7, weight_selfcheck=0.3) -> PipelineResult
+fuse(result) -> PipelineResult
 ```
 
 Pour chaque affirmation, la cohérence interne (`coherence`) est déduite du

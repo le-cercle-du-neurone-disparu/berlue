@@ -21,7 +21,7 @@ schémas côte à côte, éditable :
 
 `HurluBerlu` vérifie une réponse via SelfCheckGPT : il rééchantillonne le
 LLM sur la **question** et compare les affirmations de la réponse à ces
-échantillons indépendants — l'échantillonnage (`generate_samples`) ne
+échantillons indépendants — l'échantillonnage (`sample_responses`) ne
 dépend que de la question, jamais de la réponse fournie. Berlue peut donc
 mécaniquement vérifier n'importe quelle réponse à une question, y compris
 une réponse qu'il n'a pas lui-même générée — ce qui rend le mode dataset
