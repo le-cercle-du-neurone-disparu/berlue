@@ -37,6 +37,34 @@ class RagJudgment(StrEnum):
     I_DONT_KNOWN = "unknown"
 
 
+@dataclass(frozen=True)
+class Generation:
+    """Ce qu'un appel au LLM a produit : le texte ET les métadonnées de l'appel. (llm/)
+
+    Rendues ensemble parce qu'elles n'ont de sens qu'ensemble. Portées par
+    l'appelant plutôt que par le client, elles restent celles de SON appel même
+    quand plusieurs threads partagent le même client.
+    """
+
+    text: str
+    modele: str
+    secondes: float
+    done_reason: str | None = None
+    tokens: int | None = None
+
+    @property
+    def meta(self) -> dict:
+        """Forme dictionnaire attendue par les traces RAG (`rag.retriever._trace`),
+        qui sont sérialisées telles quelles dans le champ `debug` de l'API."""
+        return {
+            "modele": self.modele,
+            "secondes": self.secondes,
+            "done_reason": self.done_reason,
+            "tokens": self.tokens,
+            "caracteres": len(self.text),
+        }
+
+
 @dataclass
 class Claim:
     """Une affirmation atomique extraite de la réponse du LLM. (llm/)"""
@@ -87,9 +115,51 @@ class FusedVerdict:
     fondement: Fondement = Fondement.AUCUN
 
 
-@dataclass
+@dataclass(frozen=True)
+class RagCheck:
+    """Vérification RAG d'UNE affirmation : le verdict et sa trace. (rag/)
+
+    La trace est rendue avec le verdict au lieu d'être poussée dans une liste
+    fournie par l'appelant : deux affirmations vérifiées en parallèle écriraient
+    dans la même liste, et l'ordre des traces ne correspondrait plus à celui des
+    affirmations.
+    """
+
+    verdict: RagVerdict
+    trace: dict
+
+
+@dataclass(frozen=True)
+class RagOutcome:
+    """Tout ce que produit la branche RAG pour une question. (rag/)"""
+
+    verdicts: list[RagVerdict] = field(default_factory=list)
+    traces: list[dict] = field(default_factory=list)
+    panne: str | None = None
+
+
+@dataclass(frozen=True)
+class SelfCheckOutcome:
+    """Tout ce que produit la branche SelfCheckGPT pour une question. (selfcheck/)"""
+
+    samples: list[str] = field(default_factory=list)
+    scores: list[SelfCheckScore] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class PipelineResult:
-    """Résultat complet pour une question posée par l'utilisateur."""
+    """Résultat complet pour une question posée par l'utilisateur.
+
+    Figé : les deux branches de vérification tournent dans des threads distincts
+    et n'ont donc plus d'objet commun à remplir au fil des étapes. Chacune rend
+    son propre `RagOutcome` / `SelfCheckOutcome`, et l'assemblage se fait ici, en
+    une seule construction, une fois les deux branches terminées. Ajouter un
+    résultat à un objet partagé — ce que faisaient les étapes successives — est
+    précisément ce qui interdisait de les paralléliser.
+
+    Dériver une variante (la fusion, qui ajoute ses verdicts) se fait par
+    `dataclasses.replace`, pas par affectation.
+    """
 
     # --- 1. L'entrée et la base ---
     question: str
