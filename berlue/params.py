@@ -5,8 +5,6 @@ from berlue.prompts import OLLAMA_SYSTEM_PROMPT as _OLLAMA_SYSTEM_PROMPT
 from berlue.prompts import RAG_SYSTEM_PROMPT as _RAG_SYSTEM_PROMPT
 
 ##################  VARIABLES (paramétrables via .env : diffèrent par personne/environnement)  ##################
-DATA_SIZE = os.environ.get("DATA_SIZE")
-
 # GCP : identité du projet de chacun + secrets/emplacements propres à la machine
 GCP_PROJECT = os.environ.get("GCP_PROJECT")
 
@@ -128,7 +126,6 @@ JUDGE_MODEL = os.environ.get("BERLUE_JUDGE_MODEL", "llama3.1:8b")
 
 # --- Embeddings + RAG inversé ---
 RAG_EMBEDDING_MODEL = "all-mpnet-base-v2"
-RAG_INDEX_DIR = "data/fever/faiss"
 # Surchargeable pour pointer vers un volume monté (ex. GCS FUSE sur Cloud
 # Run, cf. docs/gcp/cloudrun.md) plutôt que le chemin local par défaut.
 RAG_VECTOR_DB_PATH = os.environ.get("RAG_VECTOR_DB_PATH", "data/fever/faiss")
@@ -271,7 +268,6 @@ FUSION_SEUIL_VRAI = float(os.environ.get("BERLUE_FUSION_SEUIL_VRAI", "0.6"))
 ##################  CONFIGURATION FIXE (décisions de mainteneur, pas des paramètres .env)  ##################
 # Mêmes valeurs pour tout le monde — cf. make/config.mk pour l'équivalent côté Make
 # (GCP_REGION, ZONE, BQ_REGION, INSTANCE, SA_NAME, ARTIFACTSREPO, GAR_IMAGE...).
-CHUNK_SIZE = 100_000
 BQ_DATASET = "berlue"
 
 MLFLOW_EXPERIMENT = "berlue_experiment"
@@ -303,20 +299,4 @@ EVAL_VERSION = "v1"  # méthodologie d'éval (split train/test, sélection du je
 # (__file__ = params.py -> dirname = ton package -> dirname = racine du projet)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
 
-# 💡 On pointe désormais vers les dossiers que nous avons créés dans ton architecture !
-LOCAL_DATA_PATH = os.path.join(PROJECT_ROOT, "data")
 LOCAL_REGISTRY_PATH = os.path.join(PROJECT_ROOT, "models")
-
-##################  SCHEMA DES DONNEES (TODO)  #################
-# TODO: Définir les noms exacts des colonnes du dataset brut (requis pour le schéma BigQuery ou le parsing CSV).
-# COLUMN_NAMES_RAW = ['feature_1', 'feature_2', 'target_variable']
-
-# TODO: Imposer les dtypes des données brutes pour optimiser l'usage mémoire (ex. float32 au lieu de float64).
-# DTYPES_RAW = {
-#     "feature_1": "float32",
-#     "feature_2": "int8",
-#     "target_variable": "int8"
-# }
-
-# TODO: Définir le type de données final pour les matrices après prétraitement.
-# DTYPES_PROCESSED = np.float32

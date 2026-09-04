@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from berlue.core.schemas import Verdict
-from berlue.params import BASE_TEMPERATURE, EVAL_DATASETS, OLLAMA_MODEL
+from berlue.params import BASE_TEMPERATURE, OLLAMA_MODEL
 
 # ==============================================================================
 # ENTITES DE BASE
@@ -131,18 +131,8 @@ class PredictOutput(BaseModel):
 
 
 # ==============================================================================
-# SCHEMAS DE L'ENDPOINT EVALUATE
+# MATRICES DE CONFUSION (partagées par les routes de lecture d'évaluation)
 # ==============================================================================
-
-
-class EvaluateInput(BaseModel):
-    """
-    Payload de requête pour déclencher un pipeline d'évaluation sur un dataset donné.
-    """
-
-    dataset_name: str = EVAL_DATASETS[0]
-    sample_size: int = 100
-    llm_to_test: LLMConfig = LLMConfig()
 
 
 class ConfusionRow(BaseModel):
@@ -166,27 +156,6 @@ class ConfusionMatrix(BaseModel):
 
     ground_truth_true: ConfusionRow
     ground_truth_false: ConfusionRow
-
-
-class Metrics(BaseModel):
-    """
-    Matrices de confusion comparant le système Berlue à la baseline (NLI seul),
-    pour évaluer l'apport de la fusion Berlue par rapport à la baseline.
-    """
-
-    baseline: ConfusionMatrix
-    berlue: ConfusionMatrix
-
-
-class EvaluateOutput(BaseModel):
-    """
-    Payload de réponse retournant les résultats finaux du pipeline d'évaluation.
-    """
-
-    dataset: str
-    samples_evaluated: int
-    metrics: Metrics
-    status: str
 
 
 # ==============================================================================
