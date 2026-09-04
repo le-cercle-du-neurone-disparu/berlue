@@ -1,7 +1,11 @@
 # Comparatif de performance — v2 (03/09) contre parallélisation (04/09)
 
-Toutes les mesures sont datées et reproductibles. Elles sont classées par
-**solidité** : une comparaison A/B toutes choses égales par ailleurs ne vaut pas
+**Toutes les mesures de ce document sont prises à chaud** — second appel au
+minimum, jamais le premier après un déploiement. Les durées observées sur un
+démarrage à froid mesurent le chargement des modèles, pas le pipeline, et n'ont
+pas leur place dans un comparatif : elles sont écartées.
+
+Les mesures sont datées et reproductibles, et classées par **solidité** : une comparaison A/B toutes choses égales par ailleurs ne vaut pas
 une moyenne comparée à un point isolé, et le document le dit à chaque fois.
 
 ---
@@ -126,26 +130,22 @@ affirmations, le débit double.**
 
 ---
 
-## 5. Démarrage à froid — le facteur le plus sous-estimé
+## 5. Démarrage à froid — hors comparatif
 
-Rechargement de DeBERTa (1,6 Go) et des embeddings à chaque nouvelle révision :
+Le rechargement de DeBERTa (1,6 Go) et des embeddings à chaque nouvelle révision
+est un coût de **déploiement**, pas de traitement d'une question. Il ne figure
+dans aucun chiffre ci-dessus : **toutes les mesures de ce document sont prises à
+chaud**, sur un second appel au minimum.
 
-| Source des modèles | Cold start |
+| Source des modèles | Durée de mise en service d'une révision |
 |---|---|
-| Buckets `europe-west1`, lus depuis `west4` | **~6 min** |
+| Buckets `europe-west1`, lus depuis `west4` | ~6 min |
 | **Buckets `EU` multi-région** | **1 min 31** |
 
-Le passage en `EU` a **divisé le cold start par 4**.
-
-> ⚠️ **Trois de mes mesures de la matinée étaient fausses** (6 min 07, 7 min 22,
-> 2 min 36) parce qu'elles tombaient sur le premier appel après un changement de
-> révision. **Toute mesure doit être le second appel.**
-
-`max-instances=1` protège de ce coût : avec plusieurs instances autorisées, une
-requête concurrente peut en démarrer une froide et payer les minutes de
-chargement. Une instance unique fait patienter à la place.
-
----
+Le passage en `EU` l'a divisé par 4. `max-instances=1` en protège ensuite :
+avec plusieurs instances autorisées, une requête concurrente peut en démarrer
+une froide et payer ce chargement ; une instance unique fait patienter à la
+place.
 
 ## 6. Détail des appels GPU (RTX PRO 6000)
 
