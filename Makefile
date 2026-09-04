@@ -36,15 +36,6 @@ reinstall_package: ## Force la désinstallation et réinstallation du package av
 	@pip install -e ".[dev]"
 	@echo "✅ Package réinstallé avec succès."
 
-init_data_folders: ## Crée les dossiers locaux pour les données et les sorties de modèle
-	@echo "📁 Création des dossiers de données locaux..."
-	@mkdir -p data/raw
-	@mkdir -p data/processed
-	@mkdir -p training_outputs/metrics
-	@mkdir -p training_outputs/models
-	@mkdir -p training_outputs/params
-	@echo "✅ Dossiers créés. (Assurez-vous qu'ils sont dans votre .gitignore !)"
-
 clean: ## Nettoie le cache Python, les fichiers de build et les fichiers cachés de l'OS
 	@echo "🧹 Nettoyage du projet..."
 	@find . -type d -name "__pycache__" -exec rm -rf {} +
