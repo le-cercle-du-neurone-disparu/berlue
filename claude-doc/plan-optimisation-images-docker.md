@@ -1,9 +1,14 @@
 # Plan — alléger les images Docker et les démarrages à froid
 
-> **Statut : plan, rien d'implémenté.** Mesures faites le 01/09 sur
-> `berlue-api:prod` (image réellement poussée, projet
-> `<PROJET>`). Chantier distinct de la PR « cycle de vie
-> GCP » (`feat-reorganize-gcp-setup-deploy-run-down-destroy`).
+> **Statut : à moitié fait.** La §3 (poids de modèles en bucket) est en place —
+> `make/models.mk`, `scripts/models_push.sh`,
+> [`docs/gcp/modeles-en-bucket.md`](../docs/gcp/modeles-en-bucket.md). La §2
+> (roue CPU de torch, le gros du poids) **n'est pas faite** : rien dans le
+> `Dockerfile` ni dans `requirements.txt` ne force un index CPU.
+>
+> Mesures faites le 01/09 sur `berlue-api:prod` (image réellement poussée,
+> projet `<PROJET>`). Chantier distinct de la PR « cycle de vie GCP »
+> (`feat-reorganize-gcp-setup-deploy-run-down-destroy`).
 
 Les trois images du projet pèsent ~10 Go chacune. Ce n'est pas une fatalité :
 **la moitié est du runtime GPU embarqué dans des images qui tournent sur des

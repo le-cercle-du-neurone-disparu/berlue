@@ -3,9 +3,13 @@
 Mettre en cache le résultat de `/predict`, pour que la même question posée
 depuis Aletheia ne repaie pas six minutes de pipeline.
 
-Document de conception : il fixe le fonctionnel avant d'écrire du code. Les
-questions ouvertes sont regroupées en fin de document et demandent un
-arbitrage.
+> **Statut : implémenté.** `berlue/api/predict_cache.py`,
+> `berlue/api/predict_cache_cli.py` et `make/predict_cache.mk` (`predict_cache_list`,
+> `_purge`, `_push`) en sont la mise en œuvre.
+
+Document de conception : il fixait le fonctionnel avant d'écrire le code, et
+garde le pourquoi de chaque choix — ce qui entre dans la clé de cache, ce qui
+en est volontairement exclu, et ce qui invalide une entrée.
 
 ## 1. Ce qu'on met en cache
 

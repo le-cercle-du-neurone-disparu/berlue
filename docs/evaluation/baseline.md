@@ -55,10 +55,10 @@ pytest tests/test_evaluation_data.py tests/test_evaluation_metrics.py -v
 ```
 
 Tests unitaires purs (pas de réseau, pas de modèle entraîné requis).
-`tests/temp_test_nli_baseline.py` (préfixe `temp_` — non collecté par
-pytest, donc pas lancé par défaut) couvre `NliBaseline.predict`, marqué
-`@pytest.mark.functional`, nécessite d'avoir lancé `make train_baseline`
-avant (charge le `.joblib` local, pas de mock).
+`tests/test_nli_baseline.py` couvre `NliBaseline.predict`. Marqué
+`@pytest.mark.functional` : il sort de la lane rapide et part avec
+`make test_functional`, qui exige d'avoir lancé `make train_baseline` avant
+(il charge le `.joblib` local, pas de mock).
 
 ## Limiter à un seul dataset
 
