@@ -44,7 +44,6 @@ ask GOOGLE_APPLICATION_CREDENTIALS "" "GOOGLE_APPLICATION_CREDENTIALS (chemin cl
 ask BUCKET_SUFFIX "1" "BUCKET_SUFFIX"
 ask RUN_ENV "local" "RUN_ENV (local|docker|gcp)"
 ask PORT "8000" "PORT (port exposé par l'API)"
-ask DATA_SIZE "1k" "DATA_SIZE"
 ask NOTIFY_BASE_URL "" "NOTIFY_BASE_URL (webhook notifications, optionnel)"
 ask BERLUE_LOG_LEVEL "INFO" "BERLUE_LOG_LEVEL (ERROR|WARNING|INFO|DEBUG)"
 ask EXTRACT_MODEL "llama3.1:8b" "EXTRACT_MODEL (modèle Ollama pour l'extraction)"
@@ -59,7 +58,6 @@ ask EXTRACT_MODEL "llama3.1:8b" "EXTRACT_MODEL (modèle Ollama pour l'extraction
     echo "BUCKET_SUFFIX=$BUCKET_SUFFIX"
     echo "RUN_ENV=$RUN_ENV"
     echo "PORT=$PORT"
-    echo "DATA_SIZE=$DATA_SIZE"
     if [ -n "$NOTIFY_BASE_URL" ]; then
         echo "NOTIFY_BASE_URL=$NOTIFY_BASE_URL"
     else

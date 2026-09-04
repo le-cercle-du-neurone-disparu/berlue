@@ -1,5 +1,5 @@
 """Construction des matrices de confusion de l'évaluation offline (baseline NLI vs
-pipeline Berlue complet) — alimente `berlue.api.schemas.Metrics`.
+pipeline Berlue complet) — alimente `berlue.api.schemas.ConfusionMatrix`.
 """
 
 import logging
