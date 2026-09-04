@@ -38,13 +38,8 @@ class BerlueService:
         # 2. Initialisation du pipeline avec nos outils
         pipeline = HurluBerlu(llm_client=target_llm, llm_extract=extractor, retriever=retriever)
 
-        # 3. Exécution du pipeline
-        res = pipeline.generate_response(payload.question)
-        res = pipeline.extract_claims(res)
-        res = pipeline.generate_samples(res)
-        res = pipeline.evaluate_selfcheck(res)
-        res = pipeline.evaluate_rag(res)
-        res = pipeline.fuse_results(res)
+        # 3. Exécution du pipeline (branches RAG et SelfCheck en parallèle)
+        res = pipeline.run(payload.question)
 
         # 4. Formatage strict avec Pydantic
         claims_output = []

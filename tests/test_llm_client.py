@@ -3,6 +3,7 @@ interne mocké, pas de réseau) et fonctionnels (`@pytest.mark.functional`, vrai
 serveur Ollama requis, cf. docs/setup/ollama-setup.md)."""
 
 import logging
+import time
 
 import pytest
 from httpx import TimeoutException
@@ -128,8 +129,38 @@ def test_generate_many_distributes_temperatures_evenly():
 
     client.generate_many("...", k=3, temperature_min=0.2, temperature_max=0.8)
 
-    temperatures = [call["options"]["temperature"] for call in client.client.calls]
+    # Trié : les K appels partent en parallèle, l'ordre dans lequel le serveur les
+    # reçoit n'est pas garanti. C'est l'ensemble des températures demandées qui
+    # est le contrat ici — l'ordre des RÉPONSES est vérifié par le test suivant.
+    temperatures = sorted(call["options"]["temperature"] for call in client.client.calls)
     assert temperatures == pytest.approx([0.2, 0.5, 0.8])
+
+
+def test_generate_many_rend_les_reponses_ordonnees_par_temperature():
+    """Les K appels sont concurrents, mais la liste rendue suit les températures
+    croissantes : SelfCheck compare des échantillons, et un run doit rester
+    rejouable à l'identique quel que soit l'ordre d'achèvement."""
+
+    class ClientQuiEchoLaTemperature:
+        """Répond la température demandée, après une pause d'autant plus longue
+        que celle-ci est BASSE — l'ordre d'achèvement est donc l'inverse de
+        l'ordre attendu, ce qu'un simple `append` au fil de l'eau raterait."""
+
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate(self, model: str, prompt: str, options: dict) -> dict:
+            temperature = options["temperature"]
+            self.calls.append({"model": model, "prompt": prompt, "options": options})
+            time.sleep(0.05 * (1.0 - temperature))
+            return {"response": f"temp={temperature:.2f}"}
+
+    client = OllamaClient(host="http://fake", model="fake-model")
+    client.client = ClientQuiEchoLaTemperature()
+
+    resultats = client.generate_many("...", k=3, temperature_min=0.2, temperature_max=0.8)
+
+    assert resultats == ["temp=0.20", "temp=0.50", "temp=0.80"]
 
 
 def test_generate_many_returns_one_response_per_call():

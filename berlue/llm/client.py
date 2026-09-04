@@ -2,12 +2,21 @@
 
 import logging
 import os
+import threading
 import time
 
 from httpx import TimeoutException
 from ollama import Client, ResponseError
 
-from berlue.params import BASE_TEMPERATURE, OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_NUM_CTX
+from berlue.core.schemas import Generation
+from berlue.params import (
+    BASE_TEMPERATURE,
+    OLLAMA_HOST,
+    OLLAMA_MODEL,
+    OLLAMA_NUM_CTX,
+    SELFCHECK_SAMPLE_WORKERS,
+)
+from berlue.pipeline.parallel import map_parallele
 
 logger = logging.getLogger(__name__)
 
@@ -63,12 +72,11 @@ class OllamaClient:
         self._timeout = timeout
         self._credentials = _cloud_run_credentials(self.host)
         self._client = None
-        # Métadonnées du dernier appel — durée, raison d'arrêt, nombre de tokens.
-        # Conservées ici plutôt que rendues par `generate()`, dont la signature est
-        # un contrat utilisé partout : les appelants qui veulent tracer un appel
-        # les lisent, les autres les ignorent. Le pipeline étant séquentiel, il n'y
-        # a pas d'entrelacement à craindre.
-        self.derniere_generation: dict = {}
+        # Un même client est partagé par plusieurs threads (les branches du
+        # pipeline, les K échantillons SelfCheck). Seule la fabrication paresseuse
+        # du client HTTP a besoin d'être protégée : une fois construit, il est en
+        # lecture seule, et `generate()` ne garde rien entre deux appels.
+        self._client_lock = threading.Lock()
 
     @property
     def client(self) -> Client:
@@ -80,24 +88,25 @@ class OllamaClient:
         service, tombaient en `Unauthorized` après une heure — alors que /llms,
         qui fabrique un client neuf à chaque appel, continuait de répondre.
         """
-        if self._credentials is None:
+        with self._client_lock:
+            if self._credentials is None:
+                if self._client is None:
+                    self._client = Client(host=self.host, timeout=self._timeout)
+                return self._client
+
+            import google.auth.transport.requests
+
+            if not self._credentials.valid:
+                self._credentials.refresh(google.auth.transport.requests.Request())
+                if not self._credentials.token:
+                    raise RuntimeError(
+                        f"❌ Jeton OIDC vide pour {self.host} après refresh() — IDTokenCredentials en échec."
+                    )
+                self._client = None
             if self._client is None:
-                self._client = Client(host=self.host, timeout=self._timeout)
+                entetes = {"Authorization": f"Bearer {self._credentials.token}"}
+                self._client = Client(host=self.host, timeout=self._timeout, headers=entetes)
             return self._client
-
-        import google.auth.transport.requests
-
-        if not self._credentials.valid:
-            self._credentials.refresh(google.auth.transport.requests.Request())
-            if not self._credentials.token:
-                raise RuntimeError(
-                    f"❌ Jeton OIDC vide pour {self.host} après refresh() — IDTokenCredentials en échec."
-                )
-            self._client = None
-        if self._client is None:
-            entetes = {"Authorization": f"Bearer {self._credentials.token}"}
-            self._client = Client(host=self.host, timeout=self._timeout, headers=entetes)
-        return self._client
 
     @client.setter
     def client(self, valeur: Client) -> None:
@@ -119,10 +128,21 @@ class OllamaClient:
         return names
 
     def generate(self, prompt: str, temperature: float | None = None, num_predict: int | None = None) -> str:
-        """Génère une réponse pour `prompt` à la température donnée. Chaque
-        appel est indépendant (endpoint `/api/generate`, stateless) — pas
-        d'historique de conversation entre deux appels, même consécutifs sur
-        le même client.
+        """Texte généré pour `prompt`. Raccourci sur `generate_detail` pour les
+        appelants qui n'ont que faire des métadonnées de l'appel."""
+        return self.generate_detail(prompt, temperature=temperature, num_predict=num_predict).text
+
+    def generate_detail(
+        self, prompt: str, temperature: float | None = None, num_predict: int | None = None
+    ) -> Generation:
+        """Génère une réponse pour `prompt` à la température donnée, et rend le
+        texte AVEC les métadonnées de l'appel (durée, raison d'arrêt, tokens).
+
+        Chaque appel est indépendant (endpoint `/api/generate`, stateless) — pas
+        d'historique de conversation entre deux appels, même consécutifs sur le
+        même client. Rien n'est conservé sur le client entre deux appels non
+        plus : les métadonnées voyagent dans la valeur de retour, ce qui rend la
+        méthode appelable depuis plusieurs threads sur une même instance.
 
         `num_predict` : borne dure sur le nombre de tokens générés (défaut
         Ollama = pas de limite). Sans elle, un modèle qui ne suit pas une
@@ -182,18 +202,16 @@ class OllamaClient:
                 self.model,
             )
 
-        self.derniere_generation = {
-            "modele": self.model,
-            "secondes": round(elapsed, 2),
-            "done_reason": response.get("done_reason"),
-            "tokens": response.get("eval_count"),
-            "caracteres": len(resp_text),
-        }
-
         if self.verbose:
             logger.debug("📥 [Ollama:%s, %.2fs] Réponse :\n%s", self.model, elapsed, resp_text)
 
-        return resp_text
+        return Generation(
+            text=resp_text,
+            modele=self.model,
+            secondes=round(elapsed, 2),
+            done_reason=response.get("done_reason"),
+            tokens=response.get("eval_count"),
+        )
 
     def warmup(self, prompt: str = "Bonjour", temperature: float = 0.0) -> float:
         """Force le chargement du modèle en mémoire (VRAM) via un appel jetable —
@@ -209,11 +227,22 @@ class OllamaClient:
         return time.monotonic() - start
 
     def generate_many(
-        self, prompt: str, k: int, temperature_min: float, temperature_max: float, num_predict: int | None = None
+        self,
+        prompt: str,
+        k: int,
+        temperature_min: float,
+        temperature_max: float,
+        num_predict: int | None = None,
+        max_workers: int = SELFCHECK_SAMPLE_WORKERS,
     ) -> list[str]:
-        """
-        Génère `k` réponses indépendantes au même prompt, chacune à une température
-        choisie dans `[temperature_min, temperature_max]`.
+        """Génère `k` réponses indépendantes au même prompt, chacune à une
+        température choisie dans `[temperature_min, temperature_max]`.
+
+        Les `k` appels partent en parallèle : ils ne dépendent pas les uns des
+        autres et passent leur temps à attendre le serveur. La liste rendue reste
+        ordonnée par température croissante, indépendamment de l'ordre
+        d'achèvement — SelfCheck compare des échantillons, mais un run doit
+        rester rejouable à l'identique.
         """
 
         if k <= 0:
@@ -226,15 +255,11 @@ class OllamaClient:
             step = (temperature_max - temperature_min) / (k - 1)
             temperatures = [temperature_min + (i * step) for i in range(k)]
 
-        responses = []
-        for temp in temperatures:
+        def _un_echantillon(temp: float) -> str:
             logger.debug("🔄 Génération en cours (Température: %.2f)...", temp)
-            # On réutilise notre méthode unitaire
-            resp = self.generate(prompt, temperature=temp, num_predict=num_predict)
-            responses.append(resp)
-            logger.debug("   → %s", resp)
-            logger.debug("-" * 60)
-        return responses
+            return self.generate(prompt, temperature=temp, num_predict=num_predict)
+
+        return map_parallele(_un_echantillon, temperatures, max_workers, "selfcheck-sample")
 
 
 # ==============================================================================
