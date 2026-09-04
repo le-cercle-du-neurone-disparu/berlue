@@ -1,9 +1,13 @@
 # Plan — une seule image, et le code dans un bucket
 
-> Branche `refacto-berlu-images`, clone dédié `/opt/wagon/src/refacto-berlu-images`
-> (fork de `feat-fix`). Chantier parallèle au refacto/bugfix en cours sur
-> `berlue` — aucun fichier applicatif (`berlue/**`) n'est modifié ici, pour que
-> les deux branches ne se marchent pas dessus.
+> **Statut : implémenté.** Une seule image (`Dockerfile`, sans le code), le code
+> servi depuis le bucket via `docker/entrypoint.sh` et `make/code.mk`
+> (`code_push`, `code_reload`, `code_deploy`) — décrit dans
+> [`docs/gcp/code-en-bucket.md`](../docs/gcp/code-en-bucket.md).
+>
+> Mené sur la branche `refacto-berlu-images`, clone dédié
+> `/opt/wagon/src/refacto-berlu-images` (fork de `feat-fix`), en parallèle du
+> refacto/bugfix qui tournait alors sur `berlue`.
 
 ## Le problème
 

@@ -1,8 +1,11 @@
 # Plan — migration des `print()` vers `logging` (LOG_LEVEL configurable)
 
-> **Statut : plan seulement, aucun code touché.** Prépare la bascule de
-> `print()` vers le module `logging` standard, avec un niveau configurable
-> (ERROR/WARNING/INFO/DEBUG). Ce plan précède
+> **Statut : appliqué.** `berlue/logging_config.py` existe, chaque module a son
+> `logger = logging.getLogger(__name__)`, `BERLUE_LOG_LEVEL` pilote le niveau et
+> la convention retenue est documentée dans [`docs/dev/logging.md`](../docs/dev/logging.md)
+> — c'est elle qui fait foi désormais. Ce document garde le *pourquoi* : ce qui
+> reste en `print()` (la sortie CLI) et ce qui est passé en `logging` (le
+> diagnostic). Il précède
 > [`plan-parallelisation-pipeline.md`](plan-parallelisation-pipeline.md), qui
 > reste repoussé à plus tard.
 

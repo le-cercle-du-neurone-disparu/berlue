@@ -269,9 +269,9 @@ Test: 19998
 
 | Split | Exemples | Source |
 |----------------|--------|----------|
-| Train	| 145,449 | [Train](fever.ai/download/fever/train.jsonl) |
-| Validation | 19,998| [Validation](fever.ai/download/fever/shared_task_dev.jsonl) |
-| Test | 19,998 | [Test](fever.ai/download/fever/shared_task_test.jsonl)|
+| Train	| 145,449 | [Train](https://fever.ai/download/fever/train.jsonl) |
+| Validation | 19,998| [Validation](https://fever.ai/download/fever/shared_task_dev.jsonl) |
+| Test | 19,998 | [Test](https://fever.ai/download/fever/shared_task_test.jsonl)|
 
 ### Longueur des Claims
 ```

@@ -7,7 +7,9 @@
 # de code monté en volume (cf. docker/entrypoint.sh, make/code.mk). Le code
 # pèse 1 Mo, les dépendances ~6,5 Go — les enfermer dans la même image
 # imposait un build + push complet à chaque ligne de Python changée.
-ARG DOCKER_BASE_IMAGE=python:3.10.6-slim
+# Défaut aligné sur PYTHON_VERSION de make/config.mk, qui le passe en
+# --build-arg : ce défaut ne sert qu'à un `docker build` lancé à la main.
+ARG DOCKER_BASE_IMAGE=python:3.14.6-slim
 FROM ${DOCKER_BASE_IMAGE}
 
 WORKDIR /app

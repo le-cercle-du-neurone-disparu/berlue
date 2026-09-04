@@ -1,11 +1,14 @@
 # Plan — `make gcp_setup` complet et rejouable sur un projet vierge
 
-> **Statut : plan, rien d'implémenté.** Étude faite sur la branche
-> `fixup-pipeline-make-targets` (01/09). Les points marqués **[vérifié]**
-> l'ont été contre GCP le 01/09 (projets `<PROJET>` et
-> `<PROJET>`, compte `<votre-compte>`) ; le reste est déduit
-> du code. La validation complète sur un projet neuf reste à faire, cf.
-> [Recette](#6-recette--valider-sur-un-projet-vierge).
+> **Statut : implémenté.** Les trois cibles annoncées « (nouveau) » en §3
+> existent : `gcp_preflight` (prérequis de `gcp_setup`), `gcp_enable_apis` et
+> `gcp_doctor` (`scripts/gcp_doctor.sh`), avec les reprises de
+> `scripts/gcp_retry.sh`. **Ce qui reste** : la validation de bout en bout sur
+> un projet vierge, cf. [Recette](#6-recette--valider-sur-un-projet-vierge).
+>
+> Étude faite sur la branche `fixup-pipeline-make-targets` (01/09). Les points
+> marqués **[vérifié]** l'ont été contre GCP le 01/09 (projets `<PROJET>` et
+> `<PROJET>`, compte `<votre-compte>`) ; le reste était déduit du code.
 
 Objectif : `make gcp_setup` met en place **toute** l'infra GCP dont Berlue a
 besoin, sur un projet vierge, pour une personne qui n'a jamais rien lancé —

@@ -19,5 +19,8 @@ sont stockés/calculés, et comment les consulter.
   table du cache local.
 - [`execution-benchmark.md`](execution-benchmark.md) — temps et coût
   mesurés, local vs GCP.
+- [`result-version-2026-09-01.md`](result-version-2026-09-01.md) — la
+  première série de mesures du vrai pipeline (et non du mock), en local
+  et sur GCP.
 - [`model-comparison-notes.md`](model-comparison-notes.md) — comparaison
   de modèles Ollama comme générateur et comme juge (mode généré).

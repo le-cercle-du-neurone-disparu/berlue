@@ -89,7 +89,7 @@ BUCKET_PROJECT ?= $(GCP_PROJECT)
 
 # Tag de l'image locale (docker_build_local/docker_run_local) — surchargeable en
 # ligne de commande (ex. `make docker_build_local DOCKER_TAG=test`) pour ne pas
-# écraser l'image :dev en cours d'utilisation (cf. tests/api/test_server_lifecycle.py).
+# écraser l'image :dev en cours d'utilisation (cf. tests/api/temp_test_server_lifecycle.py).
 DOCKER_TAG = dev
 
 # --- VM (Compute Engine) ---

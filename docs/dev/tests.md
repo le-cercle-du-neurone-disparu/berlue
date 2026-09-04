@@ -48,8 +48,14 @@ def test_env_file_exists():
 
 ## Tests Docker : image dédiée
 
-Les tests fonctionnels qui buildent/lancent un conteneur (`tests/api/test_server_lifecycle.py`)
+Les tests qui buildent/lancent un conteneur (`tests/api/temp_test_server_lifecycle.py`)
 utilisent un tag Docker dédié (`DOCKER_TAG=test-lifecycle`), pas le tag `dev`
 par défaut de `make docker_build_local`/`docker_run_local` — pour ne pas
 écraser une image `:dev` que vous utilisez peut-être en parallèle (un
 `docker-compose up` ou un `make docker_run_local` lancé à côté).
+
+⚠️ Son préfixe `temp_` le rend **invisible à pytest** : il n'est lancé par
+aucune cible, `make test_functional` comprise. C'est aujourd'hui le seul test
+qui vérifie qu'un conteneur démarre pour de bon, là où `test_endpoints.py`
+n'exerce que l'app en mémoire. Le renommer le remettrait dans la lane
+fonctionnelle — au prix d'un build d'image à chaque exécution.

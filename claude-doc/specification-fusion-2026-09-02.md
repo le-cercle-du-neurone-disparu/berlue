@@ -1,8 +1,12 @@
 # Fusion RAG + SelfCheck — spécification fonctionnelle
 
-**Statut : à relire et valider. Aucune modification de code n'a été faite.**
+**Statut : appliquée.** `berlue/pipeline/fusion.py` implémente les règles R1 à R5
+et cite ce document comme fonctionnel de référence ; les poids et seuils vivent
+dans les `FUSION_*` de `berlue/params.py`, et `tests/test_fusion.py` garde les
+deux limites décrites ici.
 
-Décrit ce que la fusion *doit* faire. Le code devra s'y conformer, pas l'inverse.
+Décrit ce que la fusion doit faire. Le code s'y conforme, pas l'inverse : c'est
+ce document qu'on corrige d'abord si le comportement doit changer.
 
 Le constat qui motive cette spécification — comportement actuel mesuré et intention
 des développeurs reconstituée depuis git — fait l'objet d'un document distinct :
