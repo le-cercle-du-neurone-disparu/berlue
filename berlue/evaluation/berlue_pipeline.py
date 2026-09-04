@@ -41,25 +41,16 @@ class BerluePipeline:
         )
 
     def compute_signals(self, question: str, answer: str | None = None) -> PipelineResult:
-        """Tout le pipeline **sauf** la fusion : extraction, échantillons, SelfCheck,
-        RAG. C'est la partie coûteuse (un appel LLM par affirmation côté RAG, K
-        échantillons côté SelfCheck), et c'est elle qu'on met en cache — la fusion
-        qui la consomme est une fonction pure, instantanée, qu'on veut pouvoir
-        rejouer avec d'autres `FUSION_*` sans repayer ces appels.
+        """Tout le pipeline **sauf** la fusion : extraction, puis les deux branches de
+        vérification en parallèle. C'est la partie coûteuse, et c'est elle qu'on met
+        en cache — la fusion qui la consomme est une fonction pure, instantanée,
+        qu'on veut pouvoir rejouer avec d'autres `FUSION_*` sans repayer ces appels.
         """
-        result = (
-            PipelineResult(question=question, raw_answer=answer)
-            if answer is not None
-            else self._pipeline.generate_response(question)
-        )
-        result = self._pipeline.extract_claims(result)
-        result = self._pipeline.generate_samples(result)
-        result = self._pipeline.evaluate_selfcheck(result)
-        return self._pipeline.evaluate_rag(result)
+        return self._pipeline.compute_signals(question, answer)
 
     def fuse(self, result: PipelineResult, llm: LLMConfig | None = None) -> PredictOutput:
         """Fusion seule, depuis des signaux fraîchement calculés ou relus du cache."""
-        result = self._pipeline.fuse_results(result)
+        result = self._pipeline.fuse(result)
 
         claims = [
             ClaimResult(

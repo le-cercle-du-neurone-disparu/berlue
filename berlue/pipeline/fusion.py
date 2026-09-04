@@ -16,6 +16,7 @@ Deux idées portent le reste :
 """
 
 import logging
+from dataclasses import replace
 
 from berlue.core.schemas import Fondement, FusedVerdict, PipelineResult, RagJudgment, RagVerdict, Verdict
 from berlue.params import (
@@ -155,8 +156,9 @@ def do_fusion(result: PipelineResult) -> PipelineResult:
     """Dernière étape du pipeline : statue sur chaque affirmation à partir du jugement
     RAG et du score SelfCheck.
 
-    Idempotente : réécrit `result.fused_verdicts` au lieu d'y ajouter, pour qu'un
-    double appel ne duplique pas les verdicts.
+    Rend un nouveau `PipelineResult` plutôt que d'affecter celui reçu, qui est figé.
+    Fonction pure : deux appels sur la même entrée rendent la même chose, et l'entrée
+    reste rejouable avec d'autres `FUSION_*`.
     """
     logger.debug("🧬 [Fusion] Synthèse de %d affirmation(s)...", len(result.claims))
 
@@ -164,18 +166,20 @@ def do_fusion(result: PipelineResult) -> PipelineResult:
     # pour aucune affirmation, et la question devra être rejouée entièrement.
     if result.panne:
         logger.warning("⚠️ [Fusion] Aucun verdict rendu, panne en amont : %s", result.panne)
-        result.fused_verdicts = [
-            FusedVerdict(
-                claim_id=claim.id,
-                claim_text=claim.text,
-                verdict=Verdict.PANNE,
-                confidence=0.0,
-                explanation=f"Aucun verdict : {result.panne}.",
-                fondement=Fondement.AUCUN,
-            )
-            for claim in result.claims
-        ]
-        return result
+        return replace(
+            result,
+            fused_verdicts=[
+                FusedVerdict(
+                    claim_id=claim.id,
+                    claim_text=claim.text,
+                    verdict=Verdict.PANNE,
+                    confidence=0.0,
+                    explanation=f"Aucun verdict : {result.panne}.",
+                    fondement=Fondement.AUCUN,
+                )
+                for claim in result.claims
+            ],
+        )
 
     rag_by_claim = {v.claim_id: v for v in result.rag_scores}
     sc_by_claim = {s.claim_id: s for s in result.selfcheck_scores}
@@ -203,5 +207,4 @@ def do_fusion(result: PipelineResult) -> PipelineResult:
             )
         )
 
-    result.fused_verdicts = fused_verdicts
-    return result
+    return replace(result, fused_verdicts=fused_verdicts)
