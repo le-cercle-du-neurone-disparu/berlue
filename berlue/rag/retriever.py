@@ -8,8 +8,15 @@ from pathlib import Path
 import faiss
 from sentence_transformers import SentenceTransformer
 
-from berlue.core.schemas import Claim, Evidence, RagJudgment, RagVerdict
-from berlue.params import NUM_PREDICT_RAG, RAG_EMBEDDING_MODEL, RAG_SYSTEM_PROMPT, RAG_VECTOR_DB_PATH
+from berlue.core.schemas import Claim, Evidence, RagCheck, RagJudgment, RagOutcome, RagVerdict
+from berlue.params import (
+    NUM_PREDICT_RAG,
+    RAG_EMBEDDING_MODEL,
+    RAG_SYSTEM_PROMPT,
+    RAG_VECTOR_DB_PATH,
+    RAG_WORKERS,
+)
+from berlue.pipeline.parallel import map_parallele
 
 logger = logging.getLogger(__name__)
 
@@ -217,14 +224,28 @@ class RagRetriever:
                 )
         return evidences
 
-    def verify_claim(self, claim: Claim, traces: list[dict] | None = None) -> RagVerdict:
+    def verify_claim(self, claim: Claim) -> RagVerdict:
+        """Verdict du RAG sur une affirmation. Raccourci sur `verify_claim_detail`
+        pour les appelants qui n'ont pas besoin de la trace."""
+        return self.verify_claim_detail(claim).verdict
+
+    def verify_claim_detail(self, claim: Claim) -> RagCheck:
+        """Vérifie une affirmation et rend le verdict AVEC sa trace.
+
+        La trace est rendue plutôt qu'ajoutée à une liste fournie par l'appelant :
+        plusieurs affirmations sont vérifiées en parallèle, et c'est à
+        `verify_claims` de réordonner les traces sur les affirmations.
+        """
         # 1. Récupération des preuves (le contexte)
         evidences = self.retrieve(claim, top_k=3)  # Top 3 est souvent suffisant pour un LLM
 
         if not evidences:
             # Ce n'est pas une panne : la recherche a fonctionné et n'a rien trouvé.
             # Le RAG dit qu'il ne sait pas, ce qui est un jugement recevable.
-            return RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None)
+            return RagCheck(
+                verdict=RagVerdict(claim_id=claim.id, verdict=RagJudgment.I_DONT_KNOWN, confidence=0.0, evidence=None),
+                trace=_trace(claim, [], {}, {"confidence": 0.0}, "I_DONT_KNOW"),
+            )
 
         # 2. Préparation du contexte (liste de dictionnaires convertie en chaîne formatée)
         # On inclut l'index pour la traçabilité, le texte, et surtout le statut de vérité (label)
@@ -237,9 +258,13 @@ class RagRetriever:
         # 3. Construction du prompt blindé anti-hallucination
         prompt = RAG_SYSTEM_PROMPT.format(claim_text=claim.text, context_texts=context_texts)
 
-        # 4. Appel au LLM (via Ollama)
+        # 4. Appel au LLM (via Ollama). Les métadonnées viennent de la valeur de
+        # retour, donc de CET appel — un attribut du client serait celui du dernier
+        # appel terminé, qui n'est plus le nôtre dès que deux threads l'utilisent.
+        generation = None
         try:
-            response_text = self.llm_client.generate(prompt, num_predict=NUM_PREDICT_RAG)
+            generation = self.llm_client.generate_detail(prompt, num_predict=NUM_PREDICT_RAG)
+            response_text = generation.text
             llm_result = _premier_objet_json(response_text)
 
             verdict_str = llm_result.get("verdict", "NOT ENOUGH INFO")
@@ -289,21 +314,21 @@ class RagRetriever:
                     verdict_str = "I_DONT_KNOW"
                     confidence = 0.0
 
-            meta = getattr(self.llm_client, "derniere_generation", {})
-            detail = _trace(claim, evidences, meta, {**llm_result, "confidence": confidence}, verdict_str)
-            if traces is not None:
-                traces.append(detail)
+            detail = _trace(claim, evidences, generation.meta, {**llm_result, "confidence": confidence}, verdict_str)
             logger.info("%s", bloc_trace(detail))
 
-            return RagVerdict(
-                claim_id=claim.id,
-                verdict=RAG_VERDICT_TO_JUDGMENT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
-                confidence=confidence,
-                evidence=final_evidence,
+            return RagCheck(
+                verdict=RagVerdict(
+                    claim_id=claim.id,
+                    verdict=RAG_VERDICT_TO_JUDGMENT.get(verdict_str, RagJudgment.I_DONT_KNOWN),
+                    confidence=confidence,
+                    evidence=final_evidence,
+                ),
+                trace=detail,
             )
 
         except json.JSONDecodeError as e:
-            meta = getattr(self.llm_client, "derniere_generation", {})
+            meta = generation.meta if generation else {}
             logger.warning(
                 "┌─ RAG · affirmation %s — RÉPONSE ILLISIBLE\n"
                 "│ erreur       : %s\n"
@@ -316,7 +341,7 @@ class RagRetriever:
                 meta.get("tokens"),
                 meta.get("caracteres"),
                 meta.get("done_reason"),
-                response_text,
+                generation.text if generation else "",
             )
             raise RagPanne(f"réponse du RAG inexploitable sur l'affirmation {claim.id}") from e
         except RagPanne:
@@ -325,10 +350,23 @@ class RagRetriever:
             logger.warning("⚠️ Erreur inattendue sur l'affirmation %s : %s", claim.id, e)
             raise RagPanne(f"échec du RAG sur l'affirmation {claim.id} : {e}") from e
 
-    def verify_claims(self, claims: list[Claim]) -> list[RagVerdict]:
-        """Vérifie une liste d'affirmations, une par une."""
-        verdicts = []
-        for i, claim in enumerate(claims, 1):
-            logger.debug("   - Vérification RAG de l'affirmation %d/%d...", i, len(claims))
-            verdicts.append(self.verify_claim(claim))
-        return verdicts
+    def verify_claims(self, claims: list[Claim], max_workers: int = RAG_WORKERS) -> RagOutcome:
+        """Vérifie toutes les affirmations d'une réponse, en parallèle.
+
+        Une seule affirmation en panne suffit à invalider la question entière : les
+        verdicts restants porteraient sur une analyse partielle sans que rien ne le
+        signale à la lecture. La panne est donc rendue dans le `RagOutcome`, verdicts
+        et traces vidés, plutôt que levée — la branche SelfCheck tourne en parallèle
+        et doit pouvoir finir, c'est la fusion qui statuera (règle R1).
+        """
+        if not claims:
+            return RagOutcome()
+
+        logger.debug("🧠 Calcul des verdicts du RAG sur %d affirmation(s)...", len(claims))
+        try:
+            checks = map_parallele(self.verify_claim_detail, claims, max_workers, "rag")
+        except RagPanne as e:
+            logger.warning("⚠️ RAG en panne : %s", e)
+            return RagOutcome(panne=f"RAG en panne ({e})")
+
+        return RagOutcome(verdicts=[c.verdict for c in checks], traces=[c.trace for c in checks])
