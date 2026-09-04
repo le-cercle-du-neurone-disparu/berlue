@@ -17,13 +17,45 @@ Seul le code change (séquentiel → parallèle).
 
 Question : *« Where were The Beatles formed, and in what year? »* — 5 affirmations.
 
-| Version | Durée | Gain |
+| Version | Durée | Gain cumulé |
 |---|---|---|
-| Séquentiel (code du 02/09) | **28,5 s** | référence |
-| **Parallèle** (`feat-parallelisation`) | **10,0 s** | **2,85×** |
+| Séquentiel, SelfCheck sur CPU (code du 02/09) | **28,5 s** | référence |
+| Parallèle, SelfCheck sur CPU | **7,9 – 10,0 s** | **2,85 – 3,6×** |
+| **Parallèle, SelfCheck sur GPU (L4)** | **2,6 – 3,5 s** | **~9×** |
 
-C'est la seule mesure dont tous les facteurs sont contrôlés. **Le gain de la
-parallélisation est de 2,85×.**
+Tous les facteurs sont contrôlés : même image, même code, même service Ollama en
+face, mêmes buckets. Seuls changent le code (séquentiel → parallèle) puis le
+matériel de SelfCheck (CPU → L4).
+
+### Le second bond : SelfCheck sur GPU
+
+Après parallélisation, SelfCheck restait **76 % du chemin critique** — mesuré
+dans les logs d'une requête à 7,9 s :
+
+```
+06:49:46/47   départ
+06:49:48      les 5 affirmations RAG traitées, toutes à la même seconde (parallèle)
+   ←────────── 6 secondes : SelfCheck termine ──────────→
+06:49:54      POST /predict 200 OK
+```
+
+La branche RAG finit en 1-2 s **puis attend**. Attacher un L4 au service d'API
+fait tomber les 25 passages DeBERTa sous la seconde.
+
+**Aucun code ni image n'a été nécessaire.** `torch` arrive transitivement via
+`sentence-transformers`/`selfcheckgpt`, et la roue PyPI par défaut est compilée
+pour CUDA — ce que confirmait déjà la taille des dépendances (~6,5 Go ; un torch
+CPU-only pèse ~200 Mo). `scorer.py` bascule seul :
+
+```python
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+```
+
+Log de confirmation au démarrage : `SelfCheck-NLI initialized to device cuda`.
+
+⚠️ Chaque conteneur ne voit **que son propre GPU**. Le Blackwell de `berlue-llm`
+est inaccessible depuis le process de l'API — il n'est joignable qu'en HTTP via
+Ollama. D'où le L4 dédié à DeBERTa.
 
 ### Décomposition du séquentiel, relevée dans les logs
 
@@ -169,13 +201,34 @@ provoquait les évictions mutuelles observées en local.
 Le poste dominant est **SelfCheck sur CPU (67 % du temps séquentiel)**. Trois
 leviers, par ordre de coût :
 
-| Levier | Effet attendu | Coût |
+| Levier | Effet | État |
 |---|---|---|
-| ✅ **Parallélisation** — fait | 2,85× | nul |
-| ❌ **Plus de cœurs** — impossible | — | Cloud Run plafonne à **8 vCPU** hors GPU |
-| **Baisser `SELFCHECK_K`** (5 → 3) | −40 % du travail NLI | change le signal mesuré, incomparable avec la v2 |
-| **Un GPU sur le service API** | 19 s → moins d'1 s | une seconde carte facturée (un L4 suffirait) |
+| ✅ **Parallélisation** | 2,85× | fait, déployé |
+| ✅ **SelfCheck sur GPU (L4)** | ~2,5× de plus | fait, déployé |
+| ❌ Plus de cœurs | — | impossible, Cloud Run plafonne à **8 vCPU** hors GPU |
+| Baisser `SELFCHECK_K` (5 → 3) | −40 % du travail NLI | change le signal mesuré, incomparable avec la v2 |
+| **Service `berlue-selfcheck` séparé** | pas de gain de latence | **gain d'architecture, à faire** |
 
-`scorer.py` bascule automatiquement sur CUDA s'il détecte un GPU
-(`torch.device("cuda" if torch.cuda.is_available() else "cpu")`) — aucun code à
-changer pour le dernier levier, seulement du matériel.
+### Pourquoi le service séparé reste à faire
+
+Le GPU est aujourd'hui attaché à **l'API entière**. Conséquences :
+
+- chaque instance d'API embarque sa propre carte — 3 instances = 3 GPU ;
+- les requêtes servies par le cache (~0,3 s) paient un GPU inutilisé, tout
+  comme `/`, `/llms` et `/evaluated-models`.
+
+L'architecture cible sépare les deux, comme `berlue-llm` l'est déjà :
+
+```
+berlue-api          CPU seul, léger, scalable horizontalement
+   ├── HTTP ──> berlue-llm         RTX PRO 6000   génération, extraction, RAG
+   └── HTTP ──> berlue-selfcheck   L4             DeBERTa
+```
+
+**Ni nouvelle image ni nouvelle branche** : `BERLUE_APP_MODULE` bascule déjà
+entre `berlue.api.fast:app` et `berlue.api.eval_service:app` sur la même image ;
+un `berlue.api.selfcheck_service:app` s'y insère naturellement.
+
+⚠️ Prévoir **un seul appel HTTP par question**, pas un par passage NLI :
+`SelfCheckNLI.predict(sentences, sampled_passages)` accepte déjà des listes.
+Sinon les allers-retours réseau mangeraient le gain.
