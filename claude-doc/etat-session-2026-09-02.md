@@ -141,7 +141,7 @@ attend ce correctif — il doit redevenir vert sans qu'on affaiblisse l'assertio
 
 ## Ne PAS toucher
 
-**Le dépôt Aletheia** (`/opt/wagon/src/aletheia`) : une autre session de Xavier y
+**Le dépôt Aletheia** (`/data/src/lecercleduneuronedisparu/aletheia`) : une autre session de Xavier y
 travaille activement, branche `feat-bouton-debug`. Deux demandes d'interface m'y
 ont été adressées par erreur aujourd'hui ; les deux fois, il a confirmé que
 c'était pour l'autre session.
