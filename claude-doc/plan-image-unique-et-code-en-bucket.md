@@ -6,7 +6,7 @@
 > [`docs/gcp/code-en-bucket.md`](../docs/gcp/code-en-bucket.md).
 >
 > Mené sur la branche `refacto-berlu-images`, clone dédié
-> `/opt/wagon/src/refacto-berlu-images` (fork de `feat-fix`), en parallèle du
+> `/data/src/lecercleduneuronedisparu/refacto-berlu-images` (fork de `feat-fix`), en parallèle du
 > refacto/bugfix qui tournait alors sur `berlue`.
 
 ## Le problème

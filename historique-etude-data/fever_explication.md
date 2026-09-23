@@ -198,7 +198,7 @@ plt.xlabel('Labels', fontsize=12)
 plt.ylabel("Nombre d'exemples", fontsize=12)
 plt.show()
 ```
-<img src="/opt/wagon/src/berlue/labels.png" alt="Description" width="300" height="200">
+<img src="/data/src/lecercleduneuronedisparu/berlue/labels.png" alt="Description" width="300" height="200">
 
 ### Chargement de tous les splits
 
