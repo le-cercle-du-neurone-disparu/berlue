@@ -202,7 +202,7 @@ Accepte les mêmes variables que `evaluate_model`/`evaluate_model_generated`
 mesurés).
 
 **Mode `generated`** appelle Ollama (génération + juge) — servi par un
-service Cloud Run séparé, `berlue-llm` (GPU L4, privé, appelé via jeton
+service Cloud Run séparé, `berlue-llm` (GPU, privé, appelé via jeton
 OIDC), pas bundlé dans l'image d'éval — détail, IAM, contraintes
 (scale-to-zero) : [`cloudrun.md`](../gcp/cloudrun.md).
 

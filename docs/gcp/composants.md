@@ -6,10 +6,25 @@ fois par `make gcp_setup` ([`setup/gcp.md`](../setup/gcp.md)) et vérifié par
 `make gcp_doctor` ; les commandes unitaires ci-dessous servent à réparer un
 point précis. Gestion des accès : [`share.md`](share.md).
 
+## Emplacements
+
+Trois réglages de `make/config.mk`, chacun fixé par une contrainte différente :
+
+| Ressource | Emplacement | Variable | Pourquoi |
+|---|---|---|---|
+| Services Cloud Run, Firestore | `europe-west4` | `GCP_REGION` | seule région européenne où Cloud Run propose le RTX PRO 6000 de `berlue-llm` ; Firestore à côté de l'API pour que le cache de `/predict` ne traverse pas de région |
+| Artifact Registry | `europe-west1` | `ARTIFACT_REGION` | ~26 Go d'images ; Cloud Run les tire depuis une autre région, seul le premier pull d'une révision paie l'egress |
+| Buckets code, index RAG, modèles (`*-eu`) | multi-région `EU` | `DATA_BUCKET_LOCATION` | lus à chaque démarrage de révision : ~1 min 30 depuis `EU`, contre ~6 min depuis `europe-west1` pour des services en `europe-west4` |
+| BigQuery | multi-région `EU` | `BQ_REGION` | |
+
+L'emplacement d'un bucket ou d'une base Firestore est **immuable** : changer
+ces valeurs ne déplace rien, il faut créer, copier et réimporter.
+
 ## Firestore
 
-Store des résultats de l'éval quand `EVAL_STORE_TARGET=gcp`. Une seule
-base par projet, mode Native. Provisionné par `make gcp_setup` (cf.
+Store des résultats de l'éval quand `EVAL_STORE_TARGET=gcp`, et cache des
+réponses de `/predict` (collection `predict_cache`). Une seule base par
+projet, mode Native. Provisionné par `make gcp_setup` (cf.
 [`setup/gcp.md`](../setup/gcp.md)).
 
 ## BigQuery
@@ -71,7 +86,7 @@ Activées en un seul appel par `make gcp_setup` (cible `gcp_enable_apis`) :
 | `firestore.googleapis.com` | cache des résultats d'éval |
 | `bigquery.googleapis.com` | matrices d'éval |
 | `artifactregistry.googleapis.com` | dépôt d'images (dans `ARTIFACT_PROJECT`) |
-| `compute.googleapis.com` | GPU L4 de `berlue-llm`, VM |
+| `compute.googleapis.com` | GPU de `berlue-llm` et de l'API, VM |
 | `appoptimize.googleapis.com` | onglet « Cost » par service Cloud Run |
 | `iam`, `iamcredentials`, `cloudresourcemanager`, `storage` | création du compte de service, impersonation, bindings IAM, buckets |
 

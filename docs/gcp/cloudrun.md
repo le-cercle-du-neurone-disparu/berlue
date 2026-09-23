@@ -134,11 +134,9 @@ déjà absent est signalé sans interrompre la série. Cf.
 [`aletheia-local.md`](aletheia-local.md) pour le workflow complet avec
 Aletheia en local.
 
-⚠️ Coûte tant que c'est monté (GPU L4 si `WARM_MODELS` non vide, cf.
-section suivante) — `gcp_down` en fin de session, mais **ne garantit pas
-l'arrêt immédiat d'une instance `berlue-llm` déjà active** (cf. section
-suivante) : `cloudrun_llm_delete` reste le seul levier garanti pour
-vraiment couper la facturation GPU.
+⚠️ Coûte tant que c'est monté — `berlue-llm` porte un GPU dès que le
+service existe, `WARM_MODELS` vide ou non. `gcp_down` en fin de session : il
+supprime les services, seul arrêt garanti de la facturation.
 
 **Vérifier qu'un modèle tourne vraiment** (pas juste servi depuis un cache
 Firestore déjà rempli par une session précédente) :
@@ -155,21 +153,22 @@ force 1 appel généré+jugé sur une seule question : garanti cache-miss.
 
 ## Service Ollama (`berlue-llm`)
 
-Service séparé (pas bundlé dans l'image d'éval), GPU L4, appelé par le
-service d'éval en mode `generated` via jeton d'identité OIDC
-(`roles/run.invoker` pour `sa-berlue`, accordé automatiquement au
-déploiement). **Coûte dès la
-première requête** (~0,67 $/h GPU + CPU/mémoire du service) — jamais de
-`min-instances` fixé sans décision explicite. Choix du type de GPU,
-parallélisme (`OLLAMA_NUM_PARALLEL`/`--concurrency`) et pourquoi un seul
-service partagé plutôt qu'un par rôle : [`infra-gpu.md`](infra-gpu.md).
+Service séparé (pas bundlé dans l'image applicative), GPU RTX PRO 6000
+(`LLM_GPU_TYPE`, 20 vCPU / 80 Gio), appelé par l'API et par le service d'éval
+via jeton d'identité OIDC (`roles/run.invoker` pour `sa-berlue`, accordé
+automatiquement au déploiement). **Coûte dès la première requête** (~5,7 à
+7,1 $/h, estimation) — jamais de `min-instances` fixé sans décision
+explicite. Choix du type de GPU, parallélisme
+(`OLLAMA_NUM_PARALLEL`/`--concurrency`) et pourquoi un seul service partagé
+plutôt qu'un par rôle : [`infra-gpu.md`](infra-gpu.md).
 
-⚠️ **Prérequis manuel, à demander tôt** : un projet neuf a **0** en « Total
-Nvidia L4 GPU allocation, per project per region » (europe-west1).
-`cloudrun_llm_deploy` échoue tant que la demande d'augmentation n'est pas
-accordée (console GCP → IAM & Admin → Quotas), avec un délai qui peut
-atteindre plusieurs heures. L'API Compute Engine, elle, est déjà activée
-par `make gcp_setup`.
+⚠️ **Prérequis manuel, à demander tôt** : un projet neuf peut avoir **0** en
+quota GPU Cloud Run par région — `NvidiaRtxPro6000GpuAllocNoZonalRedundancyPerProjectRegion`
+pour `berlue-llm`, `NvidiaL4GpuAllocNoZonalRedundancyPerProjectRegion` pour
+l'API, dans `europe-west4`. Le déploiement échoue tant que la demande
+d'augmentation n'est pas accordée (console GCP → IAM & Admin → Quotas), avec
+un délai qui peut atteindre plusieurs heures. L'API Compute Engine, elle, est
+déjà activée par `make gcp_setup`.
 
 ```bash
 make docker_build_llm docker_push_llm     # build + push l'image (Dockerfile.llm)
@@ -177,28 +176,28 @@ make cloudrun_llm_deploy                  # crée/met à jour le service (+ IAM 
 make cloudrun_llm_url                     # récupère l'URL du service
 make cloudrun_llm_logs
 make cloudrun_llm_scale_to_zero           # retire la garantie de capacité chaude, idempotent
-make cloudrun_llm_delete                  # seul levier garanti pour arrêter la facturation liée
+make cloudrun_llm_delete                  # supprime le service seul (gcp_down le fait pour les trois)
 ```
 
 `cloudrun_llm_scale_to_zero`/`min-instances=0` **ne garantit pas l'arrêt
 immédiat d'une instance déjà active** — Cloud Run peut la garder tant qu'il
-la classe *active* plutôt qu'*idle*, indépendamment de `min-instances` (cas
-réel et détail du diagnostic : [`aletheia-local.md`](aletheia-local.md#terminer-une-session--toujours-forcer-larrêt-réel)).
-`cloudrun_llm_delete` reste le seul levier garanti après une session — à
-utiliser systématiquement, pas seulement en dernier recours.
+la classe *active* plutôt qu'*idle*, indépendamment de `min-instances`. Seule
+la suppression du service arrête la facturation : c'est ce que fait
+`gcp_down`.
 
 `cloudrun_llm_deploy` accepte `LLM_NUM_PARALLEL`/`LLM_CONCURRENCY`/
 `LLM_CONTEXT_LENGTH`/`LLM_CPU`/`LLM_MEMORY` (défauts = config de prod
 ci-dessus) pour caler le service sur un run précis — `LLM_NUM_PARALLEL`
 doit égaler le `CONCURRENCY` prévu côté éval (jamais un maximum "au cas
 où", ça coûte du débit réel, cf.
-[`ollama-gpu-parallelism.md`](ollama-gpu-parallelism.md)), `LLM_CPU=8
-LLM_MEMORY=32Gi` recommandé dès qu'on vise une vraie concurrence (cf.
-[`infra-gpu.md`](infra-gpu.md)) :
+[`ollama-gpu-parallelism.md`](ollama-gpu-parallelism.md)) :
 
 ```bash
-make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42 LLM_CPU=8 LLM_MEMORY=32Gi
+make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42
 ```
+
+`LLM_GPU_TYPE=nvidia-l4 LLM_CPU=8 LLM_MEMORY=32Gi` pour un repli sur L4 (cf.
+[`infra-gpu.md`](infra-gpu.md#types-de-gpu)).
 
 Une nouvelle révision perd le modèle tiré (disque éphémère, cf. plus bas) :
 relancer `gcp_up`/`gcp_eval_up` avec `WARM_MODELS="..."` après. Toujours redéployer sans
@@ -230,7 +229,9 @@ accepter le re-pull. Temps mesurés local vs GCP :
 
 3 environnements, 3 services Cloud Run (`berlue-api-test`/`-staging`/
 `-prod`), une seule image `:prod` construite et poussée une fois, puis
-promue progressivement sur les 3 :
+promue progressivement sur les 3. Chacun porte un GPU L4 (`API_GPU_TYPE`,
+8 vCPU / 32 Gio) pour le NLI de SelfCheck — `API_GPU_TYPE=` vide le déploie
+sur CPU seul. Latence mesurée : [`latence-predict.md`](latence-predict.md).
 
 ```bash
 make docker_build_prod

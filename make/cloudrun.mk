@@ -375,7 +375,7 @@ gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournen
 #
 # GPU : RTX PRO 6000 (96 Go de VRAM). Les deux modèles du pipeline
 # (llama3.1:8b + llama3.2:3b, ~14 Go) y tiennent avec les slots parallèles,
-# là où ils saturaient les 24 Go d'un L4 et s'évinçaient mutuellement. Cloud
+# là où ils saturent les 24 Go d'un L4 et s'y évincent mutuellement. Cloud
 # Run impose à ce GPU au moins 20 vCPU / 80 Gi. Repli L4 (~0,67 $/h, 8 vCPU /
 # 32 Gi au plus) :
 #   make cloudrun_llm_deploy LLM_GPU_TYPE=nvidia-l4 LLM_CPU=8 LLM_MEMORY=32Gi

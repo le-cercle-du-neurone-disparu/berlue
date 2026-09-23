@@ -77,10 +77,11 @@ répare.
 Volontairement : ce sont les étapes coûteuses ou lentes, à déclencher en
 connaissance de cause. `gcp_doctor` les rappelle à chaque exécution.
 
-1. **Demander le quota GPU.** Un projet neuf a **0** en « Total Nvidia L4 GPU
-   allocation, per project per region » (europe-west1) :
-   `cloudrun_llm_deploy` échouera tant que la demande n'est pas accordée
-   (console GCP, délai possible de plusieurs heures). À demander tôt.
+1. **Demander le quota GPU.** Un projet neuf peut avoir **0** en quota GPU
+   Cloud Run dans `europe-west4` — RTX PRO 6000 pour `berlue-llm`, L4 pour
+   l'API (noms exacts : [`cloudrun.md`](../gcp/cloudrun.md#service-ollama-berlue-llm)).
+   Le déploiement échouera tant que la demande n'est pas accordée (console
+   GCP, délai possible de plusieurs heures). À demander tôt.
 2. **Build/push des images et création des services Cloud Run** —
    `make gcp_deploy` (cf. ci-dessous). Les services créés sont à
    `min-instances=0` : c'est `gcp_up`/`gcp_eval_up` qui déclenchent le coût, cf.
@@ -99,8 +100,8 @@ la VM (`iam_setup_service_account`, créé à la demande par `vm_create`).
 make gcp_setup                            # l'infra : gratuit, rejouable, une fois
 make gcp_deploy                           # les images + le code + les modèles + les 3 services (CLOUDRUN_ENV=test)
 
-# puis, selon l'usage — À PARTIR D'ICI ÇA COÛTE (GPU L4 dans les deux cas) :
-make gcp_up       WARM_MODELS="llama3.1:8b"   # produit    : berlue-api-<env> + berlue-llm
+# puis, selon l'usage — À PARTIR D'ICI ÇA COÛTE (~7 à 8 $/h avec les deux GPU) :
+make gcp_up       WARM_MODELS="llama3.2:3b llama3.1:8b"   # produit    : berlue-api-<env> + berlue-llm
 make gcp_eval_up  WARM_MODELS="llama3.1:8b"   # évaluation : berlue-eval      + berlue-llm
 
 make gcp_down                             # éteint tout, en fin de session

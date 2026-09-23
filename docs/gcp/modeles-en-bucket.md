@@ -28,7 +28,7 @@ lourd et rarement modifié n'a pas sa place dans l'image**.
 ## Comment ça marche
 
 ```
-gs://<projet>-berlue-models/hub/…      le cache HuggingFace, publié une fois
+gs://<projet>-berlue-models-eu/hub/…   le cache HuggingFace, publié une fois
         ↓ volume GCS FUSE
 /mnt/models                            monté en lecture seule dans le conteneur
         ↓ HF_HOME=/mnt/models

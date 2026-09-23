@@ -46,8 +46,8 @@ DOCKER_BASE_IMAGE = python:$(PYTHON_VERSION)-slim
 #     (~26 Go). Cloud Run tire une image depuis une autre région, seul le
 #     premier pull de chaque révision paie l'egress.
 #   - DATA_BUCKET_LOCATION : buckets d'équipe (code, index RAG, poids HF),
-#     multi-région EU. Ils sont lus au démarrage de chaque révision : les
-#     garder dans la région des services a divisé ce démarrage par ~4.
+#     multi-région EU. Ils sont lus au démarrage de chaque révision : ~1 min 30
+#     depuis EU, contre ~6 min depuis europe-west1 pour des services en west4.
 # L'emplacement d'un bucket ou d'une base Firestore est immuable : changer ces
 # valeurs ne déplace rien, il faut créer, copier et réimporter.
 GCP_REGION = europe-west4
@@ -146,7 +146,8 @@ GAR_TIMEOUT = 600
 # le conteneur API. Dans BUCKET_PROJECT (projet partagé, défaut GCP_PROJECT),
 # comme les autres buckets d'équipe.
 # Suffixe -eu : les noms de bucket sont globaux et l'emplacement immuable ;
-# les buckets sans suffixe, en europe-west1, sont l'ancien emplacement.
+# les buckets sans suffixe, en europe-west1, ne sont montés par aucun service
+# (celui du code porte une sauvegarde Firestore).
 RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag-eu
 
 # Bucket GCS dédié au CODE de l'application, monté en volume GCS FUSE sur

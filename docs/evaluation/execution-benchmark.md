@@ -3,7 +3,9 @@
 Mesure du temps et du coût de chaque étape d'un scope d'éval minimal, en
 local et sur GCP (service Cloud Run `berlue-eval` + service
 Ollama `berlue-llm`) — sert de référence pour estimer le coût d'un run à
-plus grande échelle. Scope utilisé partout : `dataset=halueval`,
+plus grande échelle. Mesures de fin août 2026, `berlue-llm` sur **L4**
+(`europe-west1`), Berlue **mocké** — pour la latence du vrai pipeline
+derrière l'API, cf. [`latence-predict.md`](../gcp/latence-predict.md). Scope utilisé partout : `dataset=halueval`,
 `ratio=0.995` (50 questions de test, 100 lignes mode 1 — cf.
 [`storage.md`](storage.md) pour comment `ratio` détermine la taille du
 split), `model_id`/`judge_model` = `llama3.1:8b`. En mode 2, Berlue et
@@ -119,11 +121,12 @@ gain à monter plus haut.
 
 ### GCP
 
-`berlue-llm` (L4), `OLLAMA_CONTEXT_LENGTH=1024`, redéployé à chaque palier
-avec `LLM_NUM_PARALLEL` = `CONCURRENCY` testé :
+`berlue-llm` sur L4 (`LLM_GPU_TYPE=nvidia-l4`, le défaut étant le RTX PRO
+6000), `OLLAMA_CONTEXT_LENGTH=1024`, redéployé à chaque palier avec
+`LLM_NUM_PARALLEL` = `CONCURRENCY` testé :
 
 ```bash
-make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42 LLM_CONTEXT_LENGTH=1024 LLM_CPU=8 LLM_MEMORY=32Gi
+make cloudrun_llm_deploy LLM_NUM_PARALLEL=32 LLM_CONCURRENCY=42 LLM_CONTEXT_LENGTH=1024 LLM_GPU_TYPE=nvidia-l4 LLM_CPU=8 LLM_MEMORY=32Gi
 make gcp_eval_up DATASET=halueval RATIO=0.8 WARM_MODELS="llama3.1:8b"
 make cloudrun_eval_service_invoke DATASET=halueval RATIO=0.8 \
   MODEL_ID=llama3.1:8b JUDGE_MODEL=llama3.1:8b MODE=generated START=0 END=500 CONCURRENCY=32
@@ -239,9 +242,10 @@ résiste au scale-to-zero), ou un volume persistant (GCS FUSE) pour
 
 - **Service d'éval** (CPU/mémoire seuls) : négligeable, couvert par le free
   tier Cloud Run.
-- **Service Ollama** (GPU L4 + 4 CPU/16 Gi) : ~0,67 $/h tant que
-  `min-instances=1` — de l'ordre de 0,20-0,30 $ pour une session de 20-30
-  min (`gcp_eval_up` → série de runs → `gcp_down` immédiat). Chiffre approximatif
+- **Service Ollama** : ~0,67 $/h sur L4 (config de ces mesures), ~5,7 à
+  7,1 $/h sur RTX PRO 6000 (défaut actuel), tant que le service existe — sur
+  L4, de l'ordre de 0,20-0,30 $ pour une session de 20-30 min (`gcp_eval_up`
+  → série de runs → `gcp_down` immédiat). Chiffre approximatif
   (pas de lecture de facturation réelle — `make
   gcp_enable_cost_observability` pour activer l'onglet "Cost" par service
   dans la Console).
