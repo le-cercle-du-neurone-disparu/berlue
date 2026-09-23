@@ -37,14 +37,14 @@ artifact_registry_enable_api: gcp_check_cli_auth ## Active l'API Artifact Regist
 	gcloud services enable artifactregistry.googleapis.com --project=$(ARTIFACT_PROJECT) </dev/null
 
 artifact_registry_create: artifact_registry_enable_api ## Crée le dépôt Docker dans Artifact Registry (dans ARTIFACT_PROJECT) — appelé par gcp_setup, doit rester rejouable sans erreur
-	@if gcloud artifacts repositories describe $(ARTIFACTSREPO) --location=$(GCP_REGION) --project=$(ARTIFACT_PROJECT) >/dev/null 2>&1 </dev/null; then \
+	@if gcloud artifacts repositories describe $(ARTIFACTSREPO) --location=$(ARTIFACT_REGION) --project=$(ARTIFACT_PROJECT) >/dev/null 2>&1 </dev/null; then \
 		echo "✅ Dépôt Artifact Registry $(ARTIFACTSREPO) déjà présent dans $(ARTIFACT_PROJECT), création sautée."; \
 	else \
 		echo "📦 Création du dépôt Artifact Registry $(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT)..."; \
 		$(RETRY) "création du dépôt $(ARTIFACTSREPO)" \
 			gcloud artifacts repositories create $(ARTIFACTSREPO) \
 				--repository-format=docker \
-				--location=$(GCP_REGION) \
+				--location=$(ARTIFACT_REGION) \
 				--description="Dépôt Docker $(ARTIFACTSREPO) pour le projet $(ARTIFACT_PROJECT)" \
 				--project=$(ARTIFACT_PROJECT); \
 	fi
@@ -52,7 +52,7 @@ artifact_registry_create: artifact_registry_enable_api ## Crée le dépôt Docke
 artifact_registry_delete: ## Supprime le dépôt Docker dans Artifact Registry (et toutes les images qu'il contient)
 	@echo "💣 Suppression du dépôt Artifact Registry $(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT)..."
 	gcloud artifacts repositories delete $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--quiet
 
@@ -95,7 +95,7 @@ artifact_registry_grant: ## Donne l'accès à une personne sur Artifact Registry
 	fi
 	@echo "🔐 Ajout de l'accès '$(ROLE)' pour $(USER) sur $(ARTIFACTSREPO) ($(ARTIFACT_PROJECT))..."
 	gcloud artifacts repositories add-iam-policy-binding $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--member="user:$(USER)" \
 		--role="roles/artifactregistry.$(ROLE)"
@@ -108,14 +108,14 @@ artifact_registry_revoke: ## Retire l'accès d'une personne sur Artifact Registr
 	fi
 	@echo "🔓 Retrait de l'accès '$(ROLE)' pour $(USER) sur $(ARTIFACTSREPO) ($(ARTIFACT_PROJECT))..."
 	gcloud artifacts repositories remove-iam-policy-binding $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--member="user:$(USER)" \
 		--role="roles/artifactregistry.$(ROLE)"
 
 docker_auth: ## Configure Docker pour s'authentifier auprès de Google Cloud
 	@echo "🔑 Configuration de l'authentification Docker pour GCP..."
-	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev --quiet </dev/null
+	gcloud auth configure-docker $(ARTIFACT_REGION)-docker.pkg.dev --quiet </dev/null
 
 # Variante utilisée par gcp_setup : un poste qui ne fait que lancer l'éval
 # n'a pas forcément Docker installé, et ça ne doit pas faire échouer tout le
@@ -149,24 +149,24 @@ docker_build_prod: ## Build l'image runtime applicatif pour la production (linux
 	docker build \
 		--platform linux/amd64 \
 		--build-arg DOCKER_BASE_IMAGE=$(DOCKER_BASE_IMAGE) \
-		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
+		-t $(ARTIFACT_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod \
 		.
 
 docker_push_prod: ## Push l'image runtime applicatif vers Artifact Registry
 	@echo "🚀 Push de l'image vers Artifact Registry ($(ARTIFACT_PROJECT))..."
-	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod
+	docker push $(ARTIFACT_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_RUNTIME_IMAGE):prod
 
 docker_build_llm: ## Build l'image du service Cloud Run Ollama (Dockerfile.llm, linux/amd64)
 	@echo "🏗️ Build de l'image LLM $(GAR_LLM_IMAGE)..."
 	docker build \
 		--platform linux/amd64 \
 		-f Dockerfile.llm \
-		-t $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest \
+		-t $(ARTIFACT_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest \
 		.
 
 docker_push_llm: ## Push l'image LLM vers Artifact Registry
 	@echo "🚀 Push de l'image LLM vers Artifact Registry ($(ARTIFACT_PROJECT))..."
-	docker push $(GCP_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest
+	docker push $(ARTIFACT_REGION)-docker.pkg.dev/$(ARTIFACT_PROJECT)/$(ARTIFACTSREPO)/$(GAR_LLM_IMAGE):latest
 
 # ==============================================================================
 # IMAGE VENUE D'UN AUTRE PROJET
@@ -254,7 +254,7 @@ image_reader_grant: gcp_check_cli_auth ## Autorise le Cloud Run d'un AUTRE proje
 	AGENT="service-$$NUM@serverless-robot-prod.iam.gserviceaccount.com"; \
 	echo "🔐 Lecture de $(ARTIFACTSREPO) pour l'agent Cloud Run de $(CONSUMER_PROJECT) ($$AGENT)..."; \
 	gcloud artifacts repositories add-iam-policy-binding $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--member="serviceAccount:$$AGENT" \
 		--role="roles/artifactregistry.reader" \
@@ -270,7 +270,7 @@ image_reader_revoke: gcp_check_cli_auth ## Retire à un autre projet le droit de
 	@NUM=$$(echo "$(CONSUMER_PROJECT)" | grep -qE '^[0-9]+$$' && echo "$(CONSUMER_PROJECT)" \
 		|| gcloud projects describe "$(CONSUMER_PROJECT)" --format="value(projectNumber)" 2>/dev/null </dev/null); \
 	gcloud artifacts repositories remove-iam-policy-binding $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--member="serviceAccount:service-$$NUM@serverless-robot-prod.iam.gserviceaccount.com" \
 		--role="roles/artifactregistry.reader" \

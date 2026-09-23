@@ -21,7 +21,7 @@ code_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS du code s'il n'exi
 		echo "🪣 Création du bucket gs://$(CODE_BUCKET_NAME)..."; \
 		$(RETRY) "création du bucket gs://$(CODE_BUCKET_NAME)" \
 			gcloud storage buckets create gs://$(CODE_BUCKET_NAME) \
-				--location=$(GCP_REGION) \
+				--location=$(DATA_BUCKET_LOCATION) \
 				--project=$(BUCKET_PROJECT); \
 	fi
 

@@ -15,6 +15,7 @@ set -uo pipefail
 : "${GCP_PROJECT:?GCP_PROJECT manquant (lancez via make gcp_doctor)}"
 : "${GCP_REGION:?GCP_REGION manquant (lancez via make gcp_doctor)}"
 ARTIFACT_PROJECT="${ARTIFACT_PROJECT:-$GCP_PROJECT}"
+ARTIFACT_REGION="${ARTIFACT_REGION:-$GCP_REGION}"
 BUCKET_PROJECT="${BUCKET_PROJECT:-$GCP_PROJECT}"
 
 FAILURES=0
@@ -152,15 +153,15 @@ fi
 echo ""
 echo "Artifact Registry (images Docker)"
 if gcloud artifacts repositories describe "${ARTIFACTSREPO:-berlue-repo}" \
-    --location="$GCP_REGION" --project="$ARTIFACT_PROJECT" >/dev/null 2>&1 </dev/null; then
+    --location="$ARTIFACT_REGION" --project="$ARTIFACT_PROJECT" >/dev/null 2>&1 </dev/null; then
     ok "dépôt ${ARTIFACTSREPO:-berlue-repo} présent dans $ARTIFACT_PROJECT"
 else
     ko "dépôt ${ARTIFACTSREPO:-berlue-repo} absent — make artifact_registry_create"
 fi
 if ! command -v docker >/dev/null 2>&1; then
     warn "docker non installé — build/push impossibles (sans effet sur l'éval)"
-elif grep -q "$GCP_REGION-docker.pkg.dev" "${HOME}/.docker/config.json" 2>/dev/null; then
-    ok "authentification Docker configurée pour $GCP_REGION-docker.pkg.dev"
+elif grep -q "$ARTIFACT_REGION-docker.pkg.dev" "${HOME}/.docker/config.json" 2>/dev/null; then
+    ok "authentification Docker configurée pour $ARTIFACT_REGION-docker.pkg.dev"
 else
     ko "docker non authentifié auprès d'Artifact Registry — make docker_auth"
 fi
