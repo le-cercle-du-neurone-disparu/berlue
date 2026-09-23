@@ -328,7 +328,7 @@ gcp_share_with_sa: gcp_check_cli_auth ## Donne à un compte de service externe l
 	@echo "🤖 Ouverture des accès pour $(SHARE_EMAIL) sur $(GCP_PROJECT)..."
 	@echo "🔐 Artifact Registry — lecture des images ($(ARTIFACTSREPO) dans $(ARTIFACT_PROJECT))..."
 	gcloud artifacts repositories add-iam-policy-binding $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--member="serviceAccount:$(SHARE_EMAIL)" \
 		--role="roles/artifactregistry.reader" \
@@ -369,7 +369,7 @@ gcp_unshare_with_sa: gcp_check_cli_auth ## Retire à un compte de service extern
 		--condition="$(FIRESTORE_CONDITION)" \
 		--quiet </dev/null >/dev/null || true
 	gcloud artifacts repositories remove-iam-policy-binding $(ARTIFACTSREPO) \
-		--location=$(GCP_REGION) \
+		--location=$(ARTIFACT_REGION) \
 		--project=$(ARTIFACT_PROJECT) \
 		--member="serviceAccount:$(SHARE_EMAIL)" \
 		--role="roles/artifactregistry.reader" \

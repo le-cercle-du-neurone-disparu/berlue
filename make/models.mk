@@ -28,7 +28,7 @@ models_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS des modèles s'i
 		echo "🪣 Création du bucket gs://$(MODELS_BUCKET_NAME)..."; \
 		$(RETRY) "création du bucket gs://$(MODELS_BUCKET_NAME)" \
 			gcloud storage buckets create gs://$(MODELS_BUCKET_NAME) \
-				--location=$(GCP_REGION) \
+				--location=$(DATA_BUCKET_LOCATION) \
 				--project=$(BUCKET_PROJECT); \
 	fi
 

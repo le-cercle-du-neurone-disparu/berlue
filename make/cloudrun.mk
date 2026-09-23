@@ -64,7 +64,7 @@ rag_index_check:
 cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run selon CLOUDRUN_ENV=test|staging|prod (défaut test) — câble berlue-llm (BERLUE_OLLAMA_HOST) et l'index RAG (volume GCS FUSE, RAG_CORPUS_VERSION)
 	@$(MAKE) --no-print-directory _code_version_check
 	@$(MAKE) --no-print-directory _models_check
-	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run (accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
+	@echo "🚀 Déploiement de $(GAR_IMAGE)-$(CLOUDRUN_ENV) sur Cloud Run ($(if $(API_GPU_TYPE),GPU $(API_GPU_TYPE),CPU seul), accès public : $(CLOUDRUN_PUBLIC_$(CLOUDRUN_ENV)))..."
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	if [ -z "$$LLM_URL" ]; then \
 		echo "❌ $(CLOUDRUN_LLM_SERVICE) introuvable — l'API partirait avec BERLUE_OLLAMA_HOST vide."; \
@@ -75,6 +75,7 @@ cloudrun_deploy: gcp_check_cli_auth rag_index_check ## Déploie sur Cloud Run se
 		--image $(RUNTIME_IMAGE_URI) \
 		--memory $(GAR_MEMORY) \
 		--cpu $(GAR_CPU) \
+		$(if $(API_GPU_TYPE),--gpu=1 --gpu-type=$(API_GPU_TYPE) --no-gpu-zonal-redundancy,--gpu=0) \
 		--timeout=$(GAR_TIMEOUT) \
 		--max-instances=1 \
 		--max=1 \
@@ -170,7 +171,7 @@ rag_bucket_create: gcp_check_cli_auth ## Crée le bucket GCS dédié à l'index 
 		echo "🪣 Création du bucket gs://$(RAG_BUCKET_NAME)..."; \
 		$(RETRY) "création du bucket gs://$(RAG_BUCKET_NAME)" \
 			gcloud storage buckets create gs://$(RAG_BUCKET_NAME) \
-				--location=$(GCP_REGION) \
+				--location=$(DATA_BUCKET_LOCATION) \
 				--project=$(BUCKET_PROJECT); \
 	fi
 
@@ -268,7 +269,7 @@ COVERAGE ?= false
 # paramètres, K passages par affirmation), l'embedding des affirmations et la
 # recherche FAISS exhaustive tournent tous sur ces vCPU. Le GPU de berlue-llm
 # étant facturé pendant tout ce temps, un vCPU d'éval supplémentaire (~0,024
-# $/h) est très vite rentable face au L4 (~0,67 $/h) qui attend.
+# $/h) est très vite rentable face au GPU qui attend.
 EVAL_MEMORY ?= 8Gi
 EVAL_CPU ?= 8
 # Le mode dataset est séquentiel (pas de --concurrency côté éval) : une tranche
@@ -368,43 +369,45 @@ gcp_verify_warm: gcp_check_cli_auth ## Preuve qu'un MODEL_ID/JUDGE_MODEL tournen
 # ==============================================================================
 # SERVICE CLOUD RUN — OLLAMA (GPU, cf. Dockerfile.llm)
 # ==============================================================================
-# ⚠️ Coûte dès le premier appel (~0,67 $/h, GPU L4 en europe-west1) — pas de
-# min-instances par défaut (scale-to-zero), à ne changer qu'en connaissance
-# de cause. Toujours redescendre à 0 instance (cloudrun_llm_scale_to_zero)
-# ou supprimer (cloudrun_llm_delete) après un test.
-
-# Défauts = config de prod actuelle (alignés, cf. infra-gpu.md) — surchargeables
-# pour un test de parallélisme ponctuel, ex. `make cloudrun_llm_deploy
-# LLM_NUM_PARALLEL=32 LLM_CONTEXT_LENGTH=1024`. Toujours revenir aux défauts
-# après un test (redéployer sans les surcharger) pour ne pas laisser la prod
-# sur une config expérimentale. LLM_CPU/LLM_MEMORY : 8 vCPU / 32 Gi est le
-# **plafond dur** pour 1 GPU sur Cloud Run (`.08-1, 1, 2, 4, 6, 8` seules
-# valeurs de CPU acceptées avec `--gpu=1` — vérifié, `gcloud` refuse tout
-# le reste avec une erreur de validation explicite), pas juste une
-# recommandation — inutile de tenter plus haut.
+# ⚠️ Coûte dès le premier appel — pas de min-instances par défaut
+# (scale-to-zero), à ne changer qu'en connaissance de cause. Toujours
+# supprimer (gcp_down ou cloudrun_llm_delete) après usage.
+#
+# GPU : RTX PRO 6000 (96 Go de VRAM). Les deux modèles du pipeline
+# (llama3.1:8b + llama3.2:3b, ~14 Go) y tiennent avec les slots parallèles,
+# là où ils saturaient les 24 Go d'un L4 et s'évinçaient mutuellement. Cloud
+# Run impose à ce GPU au moins 20 vCPU / 80 Gi. Repli L4 (~0,67 $/h, 8 vCPU /
+# 32 Gi au plus) :
+#   make cloudrun_llm_deploy LLM_GPU_TYPE=nvidia-l4 LLM_CPU=8 LLM_MEMORY=32Gi
+#
+# Les autres défauts sont surchargeables pour un test de parallélisme
+# ponctuel, ex. `make cloudrun_llm_deploy LLM_NUM_PARALLEL=32` — toujours
+# redéployer ensuite sans surcharge pour ne pas laisser une config
+# expérimentale en place.
+LLM_GPU_TYPE ?= nvidia-rtx-pro-6000
 LLM_NUM_PARALLEL ?= 4
 LLM_CONCURRENCY ?= 4
-LLM_CONTEXT_LENGTH ?=
-# 8, le plafond : le chargement d'un modèle de 14 B en profite, et c'est la config
-# de référence documentée (8 vCPU / 32 Gi).
-LLM_CPU ?= 8
-# 32 Gi et non 16 : un modèle de 14 B occupe ~12 Go une fois chargé (constaté le
-# 01/09 avec qwen2.5:14b, « model runner has unexpectedly stopped » à 16 Gi), et on
-# en charge un second à côté. scripts/ollama_memory_check.sh vérifie après coup.
-LLM_MEMORY ?= 32Gi
+# 8192 : le prompt RAG pèse ~2000 tokens et sa réponse est bornée à 600
+# (num_predict) — 1024 le tronquerait en silence.
+LLM_CONTEXT_LENGTH ?= 8192
+# Minimum imposé par Cloud Run avec un RTX PRO 6000 (20 vCPU / 80 Gi). Sur L4,
+# 8 vCPU / 32 Gi est au contraire le plafond. scripts/ollama_memory_check.sh
+# vérifie après chaque préchauffage que la mémoire suffit aux modèles chargés.
+LLM_CPU ?= 20
+LLM_MEMORY ?= 80Gi
 # Une virgule littérale dans un argument de $(if ...) serait lue comme le
 # séparateur then/else de $(if) lui-même — passer par une variable l'évite.
 comma := ,
 
-cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU L4, privé — IAM requis pour l'appeler) ; LLM_NUM_PARALLEL/LLM_CONCURRENCY/LLM_CONTEXT_LENGTH/LLM_CPU/LLM_MEMORY pour un test de parallélisme
-	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU L4, NUM_PARALLEL=$(LLM_NUM_PARALLEL), $(LLM_CPU) vCPU/$(LLM_MEMORY))..."
+cloudrun_llm_deploy: gcp_check_cli_auth ## Crée ou met à jour le service Ollama (GPU LLM_GPU_TYPE, privé — IAM requis pour l'appeler) ; LLM_NUM_PARALLEL/LLM_CONCURRENCY/LLM_CONTEXT_LENGTH/LLM_CPU/LLM_MEMORY pour un test de parallélisme
+	@echo "🚀 Déploiement de $(CLOUDRUN_LLM_SERVICE) (GPU $(LLM_GPU_TYPE), NUM_PARALLEL=$(LLM_NUM_PARALLEL), $(LLM_CPU) vCPU/$(LLM_MEMORY))..."
 	gcloud run deploy $(CLOUDRUN_LLM_SERVICE) \
 		--image $(LLM_IMAGE_URI) \
 		--region $(GCP_REGION) \
 		--project $(GCP_PROJECT) \
 		$(if $(CLOUDRUN_SERVICE_ACCOUNT),--service-account=$(CLOUDRUN_SERVICE_ACCOUNT),) \
 		--gpu=1 \
-		--gpu-type=nvidia-l4 \
+		--gpu-type=$(LLM_GPU_TYPE) \
 		--no-gpu-zonal-redundancy \
 		--cpu=$(LLM_CPU) \
 		--memory=$(LLM_MEMORY) \
@@ -431,7 +434,7 @@ cloudrun_llm_url: ## Affiche l'URL du service Ollama
 
 # Gestion explicite de ce qui occupe la VRAM de berlue-llm. `Dockerfile.llm`
 # fixe OLLAMA_KEEP_ALIVE=-1 (un modèle chargé ne se décharge jamais tout seul)
-# et OLLAMA_MAX_LOADED_MODELS vaut 3 sur un L4 unique : au-delà de 3 modèles,
+# et OLLAMA_MAX_LOADED_MODELS vaut 3 : au-delà de 3 modèles,
 # Ollama évince tout seul et paie un rechargement (11-35s mesuré) en pleine
 # exécution — le déclencheur décrit dans docs/gcp/infra-gpu.md. Enchaîner
 # plusieurs runs sur des tailles de modèle différentes demande donc de
@@ -516,8 +519,8 @@ cloudrun_deploy_all: gcp_check_cli_auth ## Déploie les 3 services (Ollama, éva
 #   gcp_down     les 3 à min-instances=0
 #
 # berlue-llm est commun aux deux (les deux chemins appellent le LLM) et il est
-# monté dans les deux cas : c'est le GPU L4, ~0,67 $/h dès la première
-# seconde. WARM_MODELS ne décide donc pas SI le GPU s'allume, seulement quels
+# monté dans les deux cas : c'est le GPU LLM_GPU_TYPE, facturé dès la
+# première seconde. WARM_MODELS ne décide donc pas SI le GPU s'allume, seulement quels
 # modèles y sont tirés et chargés en VRAM d'avance.
 #
 # Les trois cibles passent par scripts/cloudrun_set_min.sh : un service pas
@@ -528,14 +531,14 @@ cloudrun_deploy_all: gcp_check_cli_auth ## Déploie les 3 services (Ollama, éva
 
 WARM_MODELS ?=
 
-cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU L4, coûteux) et charge WARM_MODELS en VRAM — brique commune à gcp_up et gcp_eval_up
+cloudrun_llm_up: gcp_check_cli_auth ## Monte berlue-llm (GPU LLM_GPU_TYPE, coûteux) et charge WARM_MODELS en VRAM — brique commune à gcp_up et gcp_eval_up
 	@# Vérifier l'existence AVANT d'annoncer la facturation : sinon la commande
 	@# alarme sur un coût qu'elle n'a pas déclenché.
 	@gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" >/dev/null 2>&1 </dev/null || { \
 		echo "❌ $(CLOUDRUN_LLM_SERVICE) n'est pas déployé. Lancez : make gcp_deploy"; \
 		exit 1; \
 	}
-	@echo "🔥 $(CLOUDRUN_LLM_SERVICE) (GPU L4 — facturé dès maintenant)..."
+	@echo "🔥 $(CLOUDRUN_LLM_SERVICE) (GPU $(LLM_GPU_TYPE) — facturé dès maintenant)..."
 	@$(CLOUDRUN_SET_MIN) $(CLOUDRUN_LLM_SERVICE) 1
 	@LLM_URL=$$(gcloud run services describe $(CLOUDRUN_LLM_SERVICE) --region $(GCP_REGION) --project $(GCP_PROJECT) --format="value(status.url)" 2>/dev/null </dev/null); \
 	LLM_TOKEN=$$(gcloud auth print-identity-token --impersonate-service-account=$(CLOUDRUN_SA_EMAIL) --audiences=$$LLM_URL); \

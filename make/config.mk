@@ -37,9 +37,23 @@ VENV_NAME = berlue-env
 # --- Docker ---
 DOCKER_BASE_IMAGE = python:$(PYTHON_VERSION)-slim
 
-# --- Localisation GCP (une seule région/zone pour toute l'équipe) ---
-GCP_REGION = europe-west1
-ZONE = europe-west1-b
+# --- Localisation GCP ---
+# Trois emplacements distincts, chacun contraint par autre chose :
+#   - GCP_REGION : services Cloud Run et Firestore. europe-west4 parce que
+#     Cloud Run y propose le RTX PRO 6000 de berlue-llm ; Firestore y est pour
+#     que le cache de /predict ne traverse pas de région.
+#   - ARTIFACT_REGION : dépôt Artifact Registry où l'on pousse les images
+#     (~26 Go). Cloud Run tire une image depuis une autre région, seul le
+#     premier pull de chaque révision paie l'egress.
+#   - DATA_BUCKET_LOCATION : buckets d'équipe (code, index RAG, poids HF),
+#     multi-région EU. Ils sont lus au démarrage de chaque révision : les
+#     garder dans la région des services a divisé ce démarrage par ~4.
+# L'emplacement d'un bucket ou d'une base Firestore est immuable : changer ces
+# valeurs ne déplace rien, il faut créer, copier et réimporter.
+GCP_REGION = europe-west4
+ZONE = $(GCP_REGION)-b
+ARTIFACT_REGION = europe-west1
+DATA_BUCKET_LOCATION = EU
 BQ_REGION = EU
 
 # --- Noms de ressources GCP (fixes, scope = à l'intérieur du projet de chacun,
@@ -73,7 +87,7 @@ ARTIFACT_PROJECT ?= $(GCP_PROJECT)
 # `make image_source_grant` le lui donne (à lancer par qui a les droits sur le
 # projet source), et `make image_source_check` vérifie que l'image est lisible.
 IMAGE_SOURCE_PROJECT ?= $(ARTIFACT_PROJECT)
-IMAGE_SOURCE_REGION ?= $(GCP_REGION)
+IMAGE_SOURCE_REGION ?= $(ARTIFACT_REGION)
 IMAGE_SOURCE_REPO ?= $(ARTIFACTSREPO)
 
 # Les URI complètes, construites une fois : c'est ce que les déploiements Cloud
@@ -106,11 +120,19 @@ IMAGE_PROJECT = ubuntu-os-cloud
 # télécharger, 4Gi a fini tué par le kernel (Container terminated on
 # signal 9 dans les logs Cloud Run — OOM, pas une erreur applicative).
 # 8Gi = marge réelle pour les deux modèles + le runtime torch en pic.
-GAR_MEMORY = 8Gi
-# Cloud Run plafonne la mémoire selon le CPU alloué (1 vCPU -> 4Gi max,
-# confirmé par erreur gcloud le 31/08) — 2 vCPU nécessaire pour débloquer
-# GAR_MEMORY=8Gi, pas juste un choix de performance.
-GAR_CPU = 2
+# Avec un GPU (API_GPU_TYPE), 8 vCPU / 32Gi : 8 vCPU est le plafond Cloud Run
+# hors RTX PRO 6000, et les passages NLI qui restent sur CPU se répartissent
+# sur les cœurs. Sans GPU, 8Gi suffit. Cloud Run plafonne la mémoire selon le
+# CPU alloué (1 vCPU -> 4Gi max) : GAR_CPU et GAR_MEMORY vont ensemble.
+GAR_MEMORY = 32Gi
+GAR_CPU = 8
+# GPU attaché au service applicatif, pour SelfCheckNLI (DeBERTa-large) :
+# `scorer.py` bascule seul sur cuda quand torch en voit un. Sur CPU, SelfCheck
+# fait les deux tiers du temps d'un /predict hors cache ; sur L4, il passe sous
+# la seconde. Le GPU de berlue-llm n'est pas accessible depuis ce conteneur
+# (joignable seulement en HTTP via Ollama), d'où une carte dédiée. Vide = API
+# sur CPU seul (make cloudrun_deploy API_GPU_TYPE= GAR_CPU=2 GAR_MEMORY=8Gi).
+API_GPU_TYPE ?= nvidia-l4
 # /predict enchaîne ~6 appels LLM séquentiels (génération, extraction, K
 # échantillons SelfCheck, RAG, fusion) — 600s plutôt que le défaut Cloud Run
 # (300s), à ajuster une fois mesuré en conditions réelles contre berlue-llm.
@@ -123,7 +145,9 @@ GAR_TIMEOUT = 600
 # pas un sous-dossier — mélanger d'autres données les rendrait visibles dans
 # le conteneur API. Dans BUCKET_PROJECT (projet partagé, défaut GCP_PROJECT),
 # comme les autres buckets d'équipe.
-RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag
+# Suffixe -eu : les noms de bucket sont globaux et l'emplacement immuable ;
+# les buckets sans suffixe, en europe-west1, sont l'ancien emplacement.
+RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag-eu
 
 # Bucket GCS dédié au CODE de l'application, monté en volume GCS FUSE sur
 # /mnt/code par les deux services applicatifs. L'image `berlue-runtime` ne
@@ -132,11 +156,11 @@ RAG_BUCKET_NAME = $(GCP_PROJECT)-berlue-rag
 # de ~10 Go (~15 min). Cf. make/code.mk, docs/gcp/code-en-bucket.md.
 # Dédié plutôt que partagé avec RAG_BUCKET_NAME pour la même raison qu'au
 # paragraphe précédent : un volume GCS FUSE monte tout le bucket.
-CODE_BUCKET_NAME = $(GCP_PROJECT)-berlue-code
+CODE_BUCKET_NAME = $(GCP_PROJECT)-berlue-code-eu
 # Poids HuggingFace du pipeline (embedding + NLI, ~2 Go), montés en cache
 # HF_HOME plutôt que cuits dans l'image : ils ne changent qu'au changement de
 # modèle, alors que l'image est rebuildée à chaque dépendance.
-MODELS_BUCKET_NAME = $(GCP_PROJECT)-berlue-models
+MODELS_BUCKET_NAME = $(GCP_PROJECT)-berlue-models-eu
 
 # Version de code active = premier niveau de dossier dans le bucket
 # (gs://$(CODE_BUCKET_NAME)/<version>/berlue/...), et donc sous-dossier du
@@ -179,9 +203,9 @@ BERLUE_APP_MODULE ?= $(BERLUE_API_MODULE)
 
 # Service Cloud Run Ollama, appelé par le service d'éval en mode
 # généré, API) — cf. Dockerfile.llm, docs/gcp/infra-gpu.md.
-# GPU L4, coûte dès le premier appel (~0,67 $/h) : jamais de min-instances
-# permanent sans confirmation explicite, toujours redescendre à 0 ou
-# supprimer après un test.
+# GPU LLM_GPU_TYPE (cf. make/cloudrun.mk), coûte dès le premier appel : jamais
+# de min-instances permanent sans confirmation explicite, toujours supprimer
+# après usage (gcp_down).
 GAR_LLM_IMAGE = berlue-llm
 CLOUDRUN_LLM_SERVICE = berlue-llm
 
