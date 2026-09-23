@@ -1,48 +1,65 @@
 # GPU sur Cloud Run — choix de machine et parallélisme
 
-Seul le **mode 2** de l'évaluation (réponse générée + juge,
-`evaluate_model_generated`) appelle un LLM réel — le mode 1 (mock,
-`RandomBerluePipeline`) n'a besoin d'aucun GPU. Le service Ollama
-(`berlue-llm`) est donc dimensionné pour ce seul usage : batch,
-prévisible, pas de trafic interactif continu. Commandes de déploiement :
-[`cloudrun.md`](cloudrun.md#service-ollama-berlue-llm).
+Deux services portent un GPU :
 
-## Type de GPU retenu
+- **`berlue-llm`** (Ollama) sert tous les appels LLM : ceux de `/predict`
+  (génération, extraction, échantillons SelfCheck, jugement RAG) et ceux de
+  l'évaluation (le même pipeline, plus génération et juge en mode 2). Commandes :
+  [`cloudrun.md`](cloudrun.md#service-ollama-berlue-llm).
+- **`berlue-api-<env>`** fait tourner en process le NLI de SelfCheck
+  (DeBERTa-large) et les embeddings du RAG. Sur CPU, SelfCheck fait les deux
+  tiers du temps d'une requête ; sur GPU, il passe sous la seconde (mesures :
+  [`latence-predict.md`](latence-predict.md)). Le GPU de `berlue-llm` n'est
+  joignable qu'en HTTP via Ollama : l'API a besoin de sa propre carte.
 
-Deux types de GPU seulement existent sur Cloud Run aujourd'hui (services
-et jobs) — pas de choix plus large :
+Le service d'éval (`berlue-eval`) reste sans GPU.
 
-| Type | VRAM | Minimums imposés | Régions |
-|---|---|---|---|
-| **`nvidia-l4`** (retenu) | 24 Go | 4 CPU / 16 Gi (8 CPU / 32 Gi recommandé) | `europe-west1` ✅, `europe-west4`, `us-central1`, `us-east4`, `asia-southeast1`, `asia-south1` |
-| `nvidia-rtx-pro-6000` (Blackwell) | 96 Go | 20 CPU / 80 Gi | `europe-west4`, `us-central1`, `asia-southeast1`, `asia-south2` — pas `europe-west1` |
+## Types de GPU
 
-`nvidia-l4` : largement suffisant pour des modèles 7-8B (`llama3.1:8b`,
-`qwen2.5:0.5b`), minimums CPU/mémoire nettement plus légers, et c'est le
-seul des deux disponible dans `europe-west1` (région du projet) — le RTX
-PRO 6000 forcerait soit un changement de région, soit un coût de base
-élevé pour une VRAM surdimensionnée par rapport aux modèles évalués ici.
+Deux types de GPU existent sur Cloud Run :
+
+| Type | VRAM | Minimums imposés | Régions | Utilisé par |
+|---|---|---|---|---|
+| `nvidia-l4` | 24 Go | 4 CPU / 16 Gi, **8 CPU / 32 Gi au plus** | `europe-west1`, `europe-west4`, `us-central1`, `us-east4`, `asia-southeast1`, `asia-south1` | `berlue-api-<env>` (`API_GPU_TYPE`) |
+| `nvidia-rtx-pro-6000` (Blackwell) | 96 Go | **20 CPU / 80 Gi** | `europe-west4`, `us-central1`, `asia-southeast1`, `asia-south2` — pas `europe-west1` | `berlue-llm` (`LLM_GPU_TYPE`) |
+
+**`berlue-llm` sur RTX PRO 6000** : les deux modèles du pipeline
+(`llama3.1:8b` 8,5 Go + `llama3.2:3b` 5,5 Go, VRAM mesurée) tiennent ensemble
+avec leurs slots parallèles. Sur les 24 Go d'un L4, ils saturent la carte et
+s'évincent mutuellement pendant une requête. C'est ce GPU qui fixe la région
+des services, `europe-west4` (cf. `make/config.mk`).
+
+**L'API sur L4** : DeBERTa-large et `all-mpnet-base-v2` tiennent en ~2,4 Go ;
+le L4 est le moins cher des deux et suffit largement.
+
+Repli tout L4, par exemple pour une région sans RTX PRO 6000 (~0,67 $/h le
+GPU, mais les deux modèles se disputent 24 Go) :
+
+```bash
+make cloudrun_llm_deploy LLM_GPU_TYPE=nvidia-l4 LLM_CPU=8 LLM_MEMORY=32Gi
+```
+
+Une API sans GPU : `make cloudrun_deploy API_GPU_TYPE= GAR_CPU=2 GAR_MEMORY=8Gi`.
 
 ## Un seul service Ollama partagé, pas un par rôle
 
-Trois rôles servis par Ollama aujourd'hui (le RAG n'en fait pas partie —
-`berlue/rag/retriever.py` charge un modèle d'embedding
-`sentence-transformers` en process, pas de serveur séparé) :
+Les rôles servis par Ollama (l'embedding du RAG n'en fait pas partie :
+`berlue/rag/retriever.py` charge `sentence-transformers` en process, dans
+l'API) :
 
 - **Génération** (`OllamaClient(model=scope.model_id)`) — le modèle
   **évalué**, variable par nature (comparer différents modèles est tout
   l'intérêt du système) : pas figeable sur une instance dédiée.
-- **Extraction** (`EXTRACT_MODEL`) et **juge** (`JUDGE_MODEL`) — fixes,
-  petits.
+- **Extraction** (`EXTRACT_MODEL`), **jugement RAG** (`RAG_MODEL`) et
+  **juge** d'évaluation (`JUDGE_MODEL`) — fixes, `llama3.1:8b` par défaut.
 - **Échantillonnage SelfCheckGPT** — réutilise le client de génération,
   pas un rôle à part.
 
 Un seul service partagé, plutôt qu'un par rôle :
 
-- `OLLAMA_MAX_LOADED_MODELS` (défaut = 3 × nb GPU, donc **3** sur un L4
-  unique) coïncide exactement avec ces 3 rôles — plusieurs modèles
-  peuvent rester chargés simultanément en VRAM tant qu'ils tiennent
-  ensemble dans les 24 Go, sans rechargement à chaque requête.
+- `OLLAMA_MAX_LOADED_MODELS` (défaut = 3 × nb GPU, donc **3** sur un GPU
+  unique) laisse plusieurs modèles chargés en VRAM tant qu'ils tiennent
+  ensemble, sans rechargement à chaque requête.
 - Le modèle évalué étant par nature variable (ensemble ouvert, pas un
   rôle fixe), une instance dédiée par modèle n'a pas de sens — un serveur
   partagé qui charge à la demande est la seule approche qui tient pour ce
@@ -54,7 +71,7 @@ Un seul service partagé, plutôt qu'un par rôle :
   Cloud Run GPU) : un seul service Ollama, pas un par modèle appelant.
 
 **Quand reconsidérer** (déclencheur, pas une règle absolue) : si un modèle
-évalué devient nettement plus gros que ce que le L4 peut porter en même
+évalué devient nettement plus gros que ce que le GPU peut porter en même
 temps qu'extraction+juge, `OLLAMA_MAX_LOADED_MODELS` retombe sous pression
 VRAM — Ollama met en file d'attente et décharge/recharge les modèles
 inactifs, retombant sur le coût de cold start (11-35s mesuré) en pleine
@@ -110,9 +127,9 @@ VRAM libre réelle (poids/KV-cache identiques à ceux mesurés sur la RTX
 revérifiées par un `common_memory_breakdown_print` sur `berlue-llm`
 lui-même.
 
-`cloudrun_llm_deploy` déploie `llama3.1:8b` avec `NUM_PARALLEL=4` — bien
-sous le plafond de 33 : large marge disponible avant que le parallélisme
-serveur ne devienne le facteur limitant sur ce GPU.
+`cloudrun_llm_deploy` déploie avec `NUM_PARALLEL=4` — bien sous le plafond
+de 33 calculé ci-dessus pour `llama3.1:8b` sur un L4. Sur le RTX PRO 6000 (96 Go),
+le plafond est plus haut encore ; il n'a pas été mesuré.
 
 ## Candidats plus gros pour le modèle évalué
 
@@ -139,17 +156,17 @@ avant de retenir un candidat précis pour l'éval.
 
 ## Combien de vCPU pour `berlue-llm`
 
-`--cpu`/`--memory` sur un service Cloud Run à 1 GPU sont bornés — `.08-1,
-1, 2, 4, 6, 8` sont les seules valeurs de CPU acceptées (`gcloud` refuse le
-reste avec une erreur de validation explicite), **8 vCPU / 32 Gio est donc
-le plafond dur**, pas une recommandation à dépasser prudemment.
+Le nombre de vCPU d'un service à 1 GPU est borné par Cloud Run : **au moins
+20 vCPU / 80 Gio sur RTX PRO 6000** (le défaut de `cloudrun_llm_deploy`), et
+**au plus 8 vCPU / 32 Gio sur L4** (`.08-1, 1, 2, 4, 6, 8` sont les seules
+valeurs acceptées, `gcloud` refuse le reste).
 
 Le vCPU alloué ne sert pas le calcul GPU lui-même (ça, c'est
 `OLLAMA_NUM_PARALLEL`, cf. [`ollama-gpu-parallelism.md`](ollama-gpu-parallelism.md))
 mais la gestion des connexions/requêtes concurrentes côté serveur — un
 sous-dimensionnement s'y manifeste par de vrais rejets HTTP (429/503), pas
-juste une latence plus élevée. Mesuré (`llama3.1:8b`, `OLLAMA_NUM_PARALLEL`
-calé sur la charge à chaque palier, détail dans
+juste une latence plus élevée. Mesuré sur L4 (`llama3.1:8b`,
+`OLLAMA_NUM_PARALLEL` calé sur la charge à chaque palier, détail dans
 [`execution-benchmark.md`](../evaluation/execution-benchmark.md)) :
 
 | vCPU | Prix | 16 concurrents | 32 concurrents |
@@ -165,9 +182,7 @@ Prix = GPU L4 (0,672 $/h, fixe quel que soit le vCPU) + CPU (0,0648 $/h/vCPU)
 À faible concurrence les trois tailles se valent (4 vCPU tient très bien à
 16). Dès qu'on vise une vraie concurrence de run (32+), **8 vCPU l'emporte
 nettement, en débit et en tok/s par dollar dépensé** (102 vs 76 à 6 vCPU) —
-et c'est le seul sans erreur serveur. `cloudrun_llm_deploy` (défaut prod :
-4 vCPU/16 Gio) accepte `LLM_CPU`/`LLM_MEMORY` pour surcharger — passer à
-8/32Gio avant tout run visant une concurrence réelle.
+et c'est le seul sans erreur serveur : en repli L4, déployer à 8 vCPU / 32 Gio.
 
 ## Mécanique détaillée du parallélisme et test de charge
 

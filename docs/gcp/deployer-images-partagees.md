@@ -71,8 +71,8 @@ crée aucun service Cloud Run : rien n'est facturé à cette étape.
 ## 4. Importer les données lourdes
 
 ```bash
-make rag_index_import RAG_SOURCE_BUCKET=<PROJET_SOURCE>-berlue-rag
-make models_import    MODELS_SOURCE_BUCKET=<PROJET_SOURCE>-berlue-models
+make rag_index_import RAG_SOURCE_BUCKET=<PROJET_SOURCE>-berlue-rag-eu
+make models_import    MODELS_SOURCE_BUCKET=<PROJET_SOURCE>-berlue-models-eu
 ```
 
 La copie se fait **de bucket à bucket** : rien ne transite par votre poste, et
@@ -91,7 +91,7 @@ conteneur qui ne démarre pas.
 Le code doit donc être publié **avant** tout déploiement :
 
 ```bash
-make code_push          # publie votre code dans gs://<votre-projet>-berlue-code
+make code_push          # publie votre code dans gs://<votre-projet>-berlue-code-eu
 make gcp_deploy_shared  # vérifie les images, publie code et modèles, déploie
 ```
 
@@ -113,8 +113,9 @@ quelques minutes plus tard.
 make gcp_up WARM_MODELS="llama3.2:3b llama3.1:8b"
 ```
 
-Monte les services à `min-instances=1` et charge les modèles en VRAM. **Le GPU
-L4 est facturé en continu** à partir de là.
+Monte les services à `min-instances=1` et charge les modèles en VRAM. **Les deux
+GPU (L4 de l'API, RTX PRO 6000 de `berlue-llm`) sont facturés en continu** à
+partir de là, ~7 à 8 $/h.
 
 ```bash
 make gcp_down

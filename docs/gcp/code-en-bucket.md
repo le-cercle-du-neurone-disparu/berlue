@@ -24,7 +24,7 @@ fois.
 ## Comment ça marche
 
 ```
-gs://<projet>-berlue-code/
+gs://<projet>-berlue-code-eu/
   current/                            <- CODE_VERSION
     berlue/**                         le package
     models/nli_tfidf_logreg.joblib    la baseline NLI

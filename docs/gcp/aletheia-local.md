@@ -23,14 +23,15 @@ make gcp_setup
 
 ## Démarrer une session
 
-1. Préchauffer `berlue-llm` et `berlue-api-<env>` — sans ça, la première
-   requête Aletheia attend un cold start GPU (30-50s) et peut échouer sur
-   les modèles absents (`/llms` vide juste après un réveil, cf.
-   [`cloudrun.md`](cloudrun.md#service-ollama-berlue-llm)) :
+1. Allumer et préchauffer `berlue-llm` et `berlue-api-<env>` — sans ça, la
+   première requête Aletheia attend le démarrage des GPU et le téléchargement
+   des modèles. `WARM_MODELS` doit couvrir les modèles du pipeline
+   (`BERLUE_OLLAMA_MODEL`, `EXTRACT_MODEL`, `RAG_MODEL`) :
 
 ```bash
-# depuis le repo berlue — WARM_MODELS doit couvrir OLLAMA_MODEL/EXTRACT_MODEL/RAG_MODEL
-make gcp_up WARM_MODELS="llama3.2:3b"   # API + LLM (make gcp_eval_up pour le service d'éval)
+# depuis le repo berlue — ~5 min 30
+make gcp_up WARM_MODELS="llama3.2:3b llama3.1:8b"
+make api_warm      # attend que l'API ait chargé l'index FAISS et le NLI
 ```
 
 2. Récupérer l'URL de l'environnement Berlue visé et la mettre dans le
@@ -43,58 +44,38 @@ make cloudrun_url CLOUDRUN_ENV=test
 
 ```bash
 # dans le .env du repo aletheia
-BERLUE_API_URL=https://berlue-api-test-xxxxxxxxxx.europe-west1.run.app
+BERLUE_API_GCP_URL=https://berlue-api-test-xxxxxxxxxx.europe-west4.run.app
 ```
 
-3. Lancer Aletheia :
+3. Lancer Aletheia en local, branché sur cette URL :
 
 ```bash
 # depuis le repo aletheia
-make run_app
+make run_app_gcp
 ```
 
-## Terminer une session — toujours forcer l'arrêt réel
+L'application répond sur http://localhost:8501. Temps de réponse attendus : ~0,1 s
+pour une question déjà en cache, 1,2 à 5 s pour une question neuve selon le
+nombre d'affirmations (cf. [`latence-predict.md`](latence-predict.md)). Le
+premier appel après un `gcp_up` est plus long (10 à 16 s).
 
-`gcp_down` (`min-instances=0`) retire la garantie de capacité chaude, mais
-**ne garantit pas l'arrêt immédiat d'une instance déjà active** — observé
-en conditions réelles (31/08) : une instance `berlue-llm` restée classée
-*active* (jamais *idle*) par Cloud Run pendant plus de 20 minutes après un
-`gcp_down`, CPU/GPU non nuls en continu sans aucune requête HTTP entrante
-sur cette fenêtre (onglet Metrics de la console Cloud Run — "Container
-instance count"/"Container CPU utilization"/"GPU utilization",
-`min-instances` en CLI seul ne suffit pas à le détecter). `berlue-llm` est
-le seul poste de coût qui compte vraiment ici (GPU, ~0,67 $/h dès la
-première requête) — donc systématiquement, en fin de session :
+## Terminer une session
 
 ```bash
-# gcp_down d'abord (redescend berlue-eval/berlue-api aussi)
+# depuis le repo berlue
 make gcp_down
+make gcp_status    # vérifier : aucun service ne doit rester
 ```
+
+`gcp_down` **supprime** les trois services : c'est le seul arrêt garanti de la
+facturation. Redescendre `min-instances` à 0 ne suffit pas — Cloud Run peut
+garder en vie une instance déjà démarrée, et une instance GPU inactive facture
+plein tarif (cf. [`cloudrun.md`](cloudrun.md#ce-que-gcp_down-fait-exactement)).
+Les deux GPU allumés coûtent ~7 à 8 $/h.
+
+Recréer les services pour la session suivante ne rebuilde rien (images dans
+Artifact Registry, code et modèles dans leurs buckets) :
 
 ```bash
-# puis, toujours, pour berlue-llm spécifiquement — seul levier garanti
-make cloudrun_llm_delete
+make cloudrun_deploy_all
 ```
-
-Vérifier après coup plutôt que de se fier au seul succès de la commande :
-
-```bash
-make gcp_status
-```
-
-Idéalement, confirmer aussi via l'onglet "Metrics" du service `berlue-llm`
-dans la console Cloud Run ("Container instance count" à 0) — c'est ce qui a
-révélé le cas du 31/08, invisible en ne regardant que `min-instances` en
-CLI.
-
-Reconstruire `berlue-llm` avant la prochaine session (le service n'existe
-plus après `cloudrun_llm_delete`) :
-
-```bash
-make docker_build_llm docker_push_llm
-make cloudrun_llm_deploy
-```
-
-`berlue-api-<env>` et `berlue-eval` restent en CPU (coût
-largement inférieur) — `gcp_down` seul y est suffisant en pratique, pas
-besoin d'un équivalent `delete` systématique.
